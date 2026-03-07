@@ -1,0 +1,168 @@
+"use client";
+
+import { useState } from "react";
+import { useLocale } from "@/lib/locale-context";
+import { t } from "@/lib/translations";
+import { MOCK_AGENCIES, type Agency } from "@/lib/mock-data";
+
+const emptyForm = (): Omit<Agency, "id" | "createdAt"> => ({
+  name: "",
+  email: "",
+  approverName: "",
+  approverEmail: "",
+});
+
+export default function AdminAgentsPage() {
+  const { locale } = useLocale();
+  const [agencies, setAgencies] = useState<Agency[]>(MOCK_AGENCIES);
+  const [showModal, setShowModal] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [form, setForm] = useState(emptyForm());
+
+  const openAdd = () => {
+    setEditId(null);
+    setForm(emptyForm());
+    setShowModal(true);
+  };
+
+  const openEdit = (ag: Agency) => {
+    setEditId(ag.id);
+    setForm({ name: ag.name, email: ag.email, approverName: ag.approverName, approverEmail: ag.approverEmail });
+    setShowModal(true);
+  };
+
+  const handleSave = () => {
+    if (editId) {
+      setAgencies((prev) => prev.map((ag) => ag.id === editId ? { ...ag, ...form } : ag));
+    } else {
+      const newAg: Agency = {
+        id: `ag-${Date.now()}`,
+        ...form,
+        createdAt: new Date().toISOString().slice(0, 10),
+      };
+      setAgencies((prev) => [...prev, newAg]);
+    }
+    setShowModal(false);
+  };
+
+  const handleDelete = (id: string) => {
+    if (!confirm(t(locale, "admin.agents.deleteConfirm"))) return;
+    setAgencies((prev) => prev.filter((ag) => ag.id !== id));
+  };
+
+  const inputCls = "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40 dark:border-stone-600 dark:bg-stone-800";
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-display text-xl font-semibold text-[var(--color-ink)]">
+            {t(locale, "admin.agentsTitle")}
+          </h1>
+          <p className="mt-1 font-body text-sm text-[var(--color-ink-muted)]">
+            {t(locale, "admin.agentsDescription")}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={openAdd}
+          className="rounded-lg bg-[var(--color-brand)] px-4 py-2 font-body text-sm font-medium text-white hover:opacity-90"
+        >
+          + {t(locale, "admin.agents.add")}
+        </button>
+      </div>
+
+      <div className="overflow-x-auto rounded-xl border border-stone-200/80 bg-[var(--color-surface-elevated)] shadow-sm dark:border-stone-700/80">
+        <table className="w-full font-body text-sm">
+          <thead>
+            <tr className="border-b border-stone-200/80 dark:border-stone-700/80">
+              {[
+                "admin.agents.name",
+                "admin.agents.email",
+                "admin.agents.approver",
+                "admin.agents.approverEmail",
+                "admin.agents.createdAt",
+                "admin.agents.actions",
+              ].map((k) => (
+                <th key={k} className="px-4 py-3 text-left font-medium text-[var(--color-ink-muted)]">
+                  {t(locale, k)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {agencies.map((ag) => (
+              <tr key={ag.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-800/40">
+                <td className="px-4 py-3 font-medium text-[var(--color-ink)]">{ag.name}</td>
+                <td className="px-4 py-3 text-[var(--color-ink-muted)]">{ag.email}</td>
+                <td className="px-4 py-3 text-[var(--color-ink)]">{ag.approverName}</td>
+                <td className="px-4 py-3 text-[var(--color-ink-muted)]">{ag.approverEmail}</td>
+                <td className="px-4 py-3 text-[var(--color-ink-muted)]">{ag.createdAt}</td>
+                <td className="px-4 py-3">
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(ag)}
+                      className="rounded-md border border-stone-300 px-3 py-1 text-xs text-[var(--color-ink)] hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700"
+                    >
+                      {t(locale, "admin.agents.edit")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(ag.id)}
+                      className="rounded-md border border-red-300 px-3 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/30"
+                    >
+                      {t(locale, "admin.agents.delete")}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Modal */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-2xl border border-stone-200/80 bg-[var(--color-surface-elevated)] p-6 shadow-xl dark:border-stone-700/80">
+            <h2 className="mb-4 font-display text-lg font-semibold text-[var(--color-ink)]">
+              {editId ? t(locale, "admin.agents.edit") : t(locale, "admin.agents.add")}
+            </h2>
+            <div className="space-y-3">
+              {(["name", "email", "approverName", "approverEmail"] as const).map((field) => (
+                <div key={field}>
+                  <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">
+                    {t(locale, `admin.agents.${field === "name" ? "name" : field === "email" ? "email" : field === "approverName" ? "approver" : "approverEmail"}`)}
+                  </label>
+                  <input
+                    type={field.includes("mail") ? "email" : "text"}
+                    value={form[field]}
+                    onChange={(e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))}
+                    className={inputCls}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="rounded-lg border border-stone-300 px-4 py-2 font-body text-sm text-[var(--color-ink)] hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700"
+              >
+                {t(locale, "admin.agents.cancel")}
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                className="rounded-lg bg-[var(--color-brand)] px-4 py-2 font-body text-sm font-medium text-white hover:opacity-90"
+              >
+                {t(locale, "admin.agents.save")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

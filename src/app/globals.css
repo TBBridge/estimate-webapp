@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-brand: #0d6b5c;
+  --color-brand-muted: #0d6b5c20;
+  --color-surface: #fafaf9;
+  --color-surface-elevated: #ffffff;
+  --color-ink: #1c1917;
+  --color-ink-muted: #78716c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-surface: #1c1917;
+    --color-surface-elevated: #292524;
+    --color-ink: #fafaf9;
+    --color-ink-muted: #a8a29e;
+  }
+}
+
+body {
+  @apply antialiased text-[var(--color-ink)] bg-[var(--color-surface)];
+  font-family: var(--font-body), system-ui, sans-serif;
+}
