@@ -14,7 +14,7 @@ export async function GET(_req: Request, { params }: Params) {
     const rows = await sql`
       SELECT id, no, agency_id, agency_name, customer_name,
              delivery_type, contract_type, cloud_billing,
-             amount, maintenance_fee, form_inputs, status,
+             amount, maintenance_fee, form_inputs, excel_url, status,
              TO_CHAR(created_at  AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS created_at,
              TO_CHAR(approved_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS approved_at
       FROM estimates
@@ -30,6 +30,7 @@ export async function GET(_req: Request, { params }: Params) {
       cloudBilling: r.cloud_billing,
       amount: Number(r.amount), maintenanceFee: Number(r.maintenance_fee),
       formInputs: r.form_inputs,
+      excelUrl: r.excel_url ?? "",
       status: r.status,
       createdAt: r.created_at,
       approvedAt: r.approved_at ?? undefined,

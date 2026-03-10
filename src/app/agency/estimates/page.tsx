@@ -100,7 +100,7 @@ export default function AgencyEstimatesPage() {
               <table className="w-full font-body text-sm">
                 <thead>
                   <tr className="border-b border-[var(--color-border)]">
-                    {["見積番号", "顧客名", "提供形態", "契約形態", "ステータス", "申請日"].map((h) => (
+                    {["見積番号", "顧客名", "提供形態", "契約形態", "ステータス", "申請日", "見積書"].map((h) => (
                       <th key={h} className="px-4 py-3 text-left font-medium text-[var(--color-ink-muted)]">{h}</th>
                     ))}
                   </tr>
@@ -118,6 +118,22 @@ export default function AgencyEstimatesPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-[var(--color-ink-muted)]">{e.createdAt}</td>
+                      <td className="px-4 py-3">
+                        {(e as Estimate & { excelUrl?: string }).excelUrl ? (
+                          <a
+                            href={(e as Estimate & { excelUrl?: string }).excelUrl}
+                            download
+                            className="inline-flex items-center gap-1 rounded-md border border-[var(--color-brand)] px-2.5 py-1 text-xs font-medium text-[var(--color-brand)] hover:bg-[var(--color-brand)]/5"
+                          >
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            DL
+                          </a>
+                        ) : (
+                          <span className="text-xs text-stone-400">—</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

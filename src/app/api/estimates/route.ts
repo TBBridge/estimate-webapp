@@ -15,7 +15,7 @@ export async function GET(req: Request) {
 
     const rows = await sql`
       SELECT id, no, agency_id, agency_name, customer_name,
-             delivery_type, contract_type, amount, maintenance_fee, status,
+             delivery_type, contract_type, amount, maintenance_fee, excel_url, status,
              TO_CHAR(created_at  AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS created_at,
              TO_CHAR(approved_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS approved_at
       FROM estimates
@@ -32,6 +32,7 @@ export async function GET(req: Request) {
       id: r.id, no: r.no, agencyId: r.agency_id, agencyName: r.agency_name,
       customerName: r.customer_name, deliveryType: r.delivery_type, contractType: r.contract_type,
       amount: Number(r.amount), maintenanceFee: Number(r.maintenance_fee),
+      excelUrl: r.excel_url ?? "",
       status: r.status, createdAt: r.created_at, approvedAt: r.approved_at ?? undefined,
     })));
   } catch (e) {
