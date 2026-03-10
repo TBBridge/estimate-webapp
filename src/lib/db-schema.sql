@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS estimates (
   maintenance_fee INTEGER NOT NULL DEFAULT 0,
   form_inputs     JSONB NOT NULL DEFAULT '{}',  -- フォーム入力値一式
   excel_url       TEXT NOT NULL DEFAULT '',     -- Vercel Blob の Excel ファイル URL
+  pdf_url         TEXT NOT NULL DEFAULT '',     -- Vercel Blob の PDF ファイル URL
   status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   approved_at     TIMESTAMPTZ
@@ -86,6 +87,7 @@ ALTER TABLE estimates ADD COLUMN IF NOT EXISTS form_inputs JSONB NOT NULL DEFAUL
 ALTER TABLE estimates ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at::TIMESTAMPTZ;
 ALTER TABLE estimates ALTER COLUMN approved_at TYPE TIMESTAMPTZ USING approved_at::TIMESTAMPTZ;
 ALTER TABLE estimates ADD COLUMN IF NOT EXISTS excel_url TEXT NOT NULL DEFAULT '';
+ALTER TABLE estimates ADD COLUMN IF NOT EXISTS pdf_url   TEXT NOT NULL DEFAULT '';
 
 -- 見積書テンプレート
 CREATE TABLE IF NOT EXISTS templates (

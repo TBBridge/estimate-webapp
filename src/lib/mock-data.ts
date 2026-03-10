@@ -43,6 +43,7 @@ export type Estimate = {
   maintenanceFee: number;
   formInputs?: Record<string, unknown>;
   excelUrl?: string;
+  pdfUrl?: string;
   status: EstimateStatus;
   createdAt: string;
   approvedAt?: string;

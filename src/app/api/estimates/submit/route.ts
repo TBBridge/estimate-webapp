@@ -4,18 +4,24 @@
  * 代理店が見積フォームを申請する際に呼び出すエンドポイント。
  * 1. 見積番号を生成
  * 2. DB に estimates レコードを INSERT
- * 3. テンプレート Excel を Blob から取得してデータを書き込み → Blob に保存
- * 4. DB の excel_url を更新
- * 5. 承認通知を送信（Slack / Teams / Gmail）
+ * 3. テンプレート Excel を Blob から取得してデータを書き込み → Blob に Excel 保存
+ * 4. 書き込み済みデータを HTML 化 → Chromium で PDF 変換 → Blob に PDF 保存
+ * 5. DB の excel_url / pdf_url を更新
+ * 6. 承認通知を送信（Slack / Teams / Gmail）
  */
 import { NextResponse } from "next/server";
 import { put } from "@vercel/blob";
 import { getDb } from "@/lib/db";
 import { sendApprovalNotification } from "@/lib/notify";
 import { writeEstimateToTemplate } from "@/lib/excel-writer";
+import { workbookToHtml } from "@/lib/excel-to-html";
+import { htmlToPdf } from "@/lib/pdf-generator";
 import { DELIVERY_TYPES, CONTRACT_TYPES } from "@/lib/constants";
+import ExcelJS from "exceljs";
 
 export const runtime = "nodejs";
+// PDF 生成（Chromium 起動）のため最大実行時間を延長
+export const maxDuration = 60;
 
 /** 提供形態・契約形態・cloudBilling からテンプレート ID を解決 */
 function resolveTemplateId(
@@ -23,13 +29,6 @@ function resolveTemplateId(
   contractType: string,
   cloudBilling?: string
 ): string | null {
-  // tpl-1: オンプレ 新規
-  // tpl-2: オンプレ ライセンス追加
-  // tpl-3: オンプレ オプション追加
-  // tpl-4: サブスクリプション 新規
-  // tpl-5: クラウド 新規（年額）
-  // tpl-6: クラウド 新規（区切り）
-  // tpl-7: クラウド 追加
   if (deliveryType === "onprem") {
     if (contractType === "new") return "tpl-1";
     if (contractType === "license_add") return "tpl-2";
@@ -37,9 +36,7 @@ function resolveTemplateId(
   }
   if (deliveryType === "subscription" && contractType === "new") return "tpl-4";
   if (deliveryType === "cloud") {
-    if (contractType === "new") {
-      return cloudBilling === "period" ? "tpl-6" : "tpl-5";
-    }
+    if (contractType === "new") return cloudBilling === "period" ? "tpl-6" : "tpl-5";
     if (contractType === "license_add") return "tpl-7";
   }
   return null;
@@ -72,9 +69,7 @@ export async function POST(req: Request) {
     const now = new Date();
     const ym = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
     const seqRows = await sql`
-      SELECT COUNT(*) AS cnt
-      FROM estimates
-      WHERE no LIKE ${"EST-" + ym + "-%"}
+      SELECT COUNT(*) AS cnt FROM estimates WHERE no LIKE ${"EST-" + ym + "-%"}
     `;
     const seq = Number(seqRows[0].cnt) + 1;
     const estimateNo = `EST-${ym}-${String(seq).padStart(3, "0")}`;
@@ -94,8 +89,10 @@ export async function POST(req: Request) {
     `;
     const record = rows[0];
 
-    // ── Excel 生成 & Blob 保存 ────────────────────────────
+    // ── Excel & PDF 生成 ──────────────────────────────────
     let excelUrl = "";
+    let pdfUrl = "";
+
     if (process.env.BLOB_READ_WRITE_TOKEN) {
       try {
         const templateId = resolveTemplateId(deliveryType, contractType, cloudBilling);
@@ -104,10 +101,11 @@ export async function POST(req: Request) {
           const blobUrl = tplRows[0]?.blob_url as string | undefined;
 
           if (blobUrl) {
-            // テンプレートを Blob から取得
             const tplRes = await fetch(blobUrl);
             if (tplRes.ok) {
               const templateBuffer = await tplRes.arrayBuffer();
+
+              // ── Excel 生成 ──────────────────────────────
               const excelBuffer = await writeEstimateToTemplate({
                 templateBuffer,
                 agencyName,
@@ -119,18 +117,43 @@ export async function POST(req: Request) {
                 createdAt,
               });
 
-              // 生成した Excel を Blob に保存
-              const fileName = `${estimateNo}.xlsx`;
-              const { url } = await put(
-                `estimates/${record.id}/${fileName}`,
+              const { url: exUrl } = await put(
+                `estimates/${record.id}/${estimateNo}.xlsx`,
                 excelBuffer,
                 { access: "public", addRandomSuffix: false }
               );
-              excelUrl = url;
+              excelUrl = exUrl;
+
+              // ── PDF 生成 ────────────────────────────────
+              // 書き込み済み Workbook を再ロードして HTML 化
+              const workbook = new ExcelJS.Workbook();
+              await workbook.xlsx.load(excelBuffer.buffer as ArrayBuffer);
+
+              const html = await workbookToHtml(workbook, {
+                agencyName,
+                customerName,
+                deliveryType,
+                contractType,
+                cloudBilling,
+                formInputs,
+                estimateNo,
+                createdAt,
+              });
+
+              const pdfBuffer = await htmlToPdf(html);
+
+              const { url: pdUrl } = await put(
+                `estimates/${record.id}/${estimateNo}.pdf`,
+                pdfBuffer,
+                { access: "public", addRandomSuffix: false }
+              );
+              pdfUrl = pdUrl;
 
               // DB 更新
               await sql`
-                UPDATE estimates SET excel_url = ${excelUrl} WHERE id = ${record.id}
+                UPDATE estimates
+                SET excel_url = ${excelUrl}, pdf_url = ${pdfUrl}
+                WHERE id = ${record.id}
               `;
             } else {
               console.warn(`[submit] Template fetch failed: ${tplRes.status} ${blobUrl}`);
@@ -139,12 +162,12 @@ export async function POST(req: Request) {
             console.warn(`[submit] Template ${templateId} has no blob_url`);
           }
         }
-      } catch (excelErr) {
-        // Excel 生成失敗は申請自体を止めない（警告のみ）
-        console.error("[submit] Excel generation error:", excelErr);
+      } catch (genErr) {
+        console.error("[submit] File generation error:", genErr);
+        // 生成失敗は申請自体を止めない
       }
     } else {
-      console.warn("[submit] BLOB_READ_WRITE_TOKEN not set, skipping Excel generation");
+      console.warn("[submit] BLOB_READ_WRITE_TOKEN not set, skipping file generation");
     }
 
     // ── 承認通知 ─────────────────────────────────────────
@@ -168,6 +191,7 @@ export async function POST(req: Request) {
       status: record.status,
       createdAt: record.created_at,
       excelUrl,
+      pdfUrl,
     }, { status: 201 });
 
   } catch (e) {
