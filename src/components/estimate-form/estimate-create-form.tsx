@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { DELIVERY_TYPES } from "@/lib/constants";
 import { useLocale } from "@/lib/locale-context";
+import { useAuth } from "@/lib/auth-context";
 import { t } from "@/lib/translations";
 import {
   getContractTypesForDelivery,
@@ -16,15 +17,19 @@ import {
 } from "@/lib/estimate-schema";
 
 type FormValues = Record<string, unknown>;
+type SubmitState = "idle" | "submitting" | "done" | "error";
 
 export default function EstimateCreateForm() {
   const { locale } = useLocale();
+  const { user } = useAuth();
   const isEn = locale === "en";
   const [deliveryType, setDeliveryType] = useState<DeliveryType | "">("");
   const [contractType, setContractType] = useState<ContractType | "">("");
   const [cloudBilling, setCloudBilling] = useState<"annual" | "period" | "">("");
   const [values, setValues] = useState<FormValues>({});
-  const [submitted, setSubmitted] = useState(false);
+  const [submitState, setSubmitState] = useState<SubmitState>("idle");
+  const [resultNo, setResultNo] = useState<string>("");
+  const [errorMsg, setErrorMsg] = useState<string>("");
 
   const contractOptions = deliveryType ? getContractTypesForDelivery(deliveryType as DeliveryType) : [];
   const showCloudBilling = deliveryType === "cloud" && contractType === "new";
@@ -49,8 +54,20 @@ export default function EstimateCreateForm() {
     setValues((prev) => ({ ...prev, [id]: value }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const resetForm = () => {
+    setDeliveryType("");
+    setContractType("");
+    setCloudBilling("");
+    setValues({});
+    setSubmitState("idle");
+    setResultNo("");
+    setErrorMsg("");
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // ライセンス数バリデーション
     const licenseCount = values.licenseCount;
     if (
       licenseCount !== undefined &&
@@ -59,8 +76,38 @@ export default function EstimateCreateForm() {
     ) {
       return;
     }
-    setSubmitted(true);
-    // TODO: API で見積作成（kintone/HubSpot、Excel→PDF、Vercel Blob、通知）
+
+    setSubmitState("submitting");
+    setErrorMsg("");
+
+    try {
+      const res = await fetch("/api/estimates/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agencyId:    user?.agencyId ?? "unknown",
+          agencyName:  user?.name ?? "不明",
+          customerName: (values.customerName as string) ?? "",
+          deliveryType,
+          contractType,
+          cloudBilling: cloudBilling || undefined,
+          formInputs: values,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error ?? "Unknown error");
+      }
+
+      const data = await res.json() as { no: string };
+      setResultNo(data.no);
+      setSubmitState("done");
+    } catch (err) {
+      console.error("[submit]", err);
+      setErrorMsg(err instanceof Error ? err.message : String(err));
+      setSubmitState("error");
+    }
   };
 
   return (
@@ -193,19 +240,46 @@ export default function EstimateCreateForm() {
             <div className="flex gap-3">
               <button
                 type="submit"
-                className="rounded-lg bg-[var(--color-brand)] px-4 py-2.5 font-body text-sm font-medium text-white hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)]/50"
+                disabled={submitState === "submitting"}
+                className="rounded-lg bg-[var(--color-brand)] px-4 py-2.5 font-body text-sm font-medium text-white hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)]/50 disabled:opacity-60"
               >
-                {t(locale, "estimate.submit")}
+                {submitState === "submitting"
+                  ? t(locale, "estimate.submitting")
+                  : t(locale, "estimate.submit")}
               </button>
             </div>
+
+            {submitState === "error" && (
+              <p className="font-body text-sm text-red-600 dark:text-red-400" role="alert">
+                {errorMsg || t(locale, "estimate.submitError")}
+              </p>
+            )}
           </>
         )}
       </form>
 
-      {submitted && (
-        <p className="mt-4 font-body text-sm text-[var(--color-brand)]">
-          {t(locale, "estimate.submitted")}
-        </p>
+      {/* 申請完了画面 */}
+      {submitState === "done" && (
+        <div className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-6 dark:border-emerald-800/60 dark:bg-emerald-950/20">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl">✅</span>
+            <div className="space-y-1">
+              <p className="font-body text-sm font-medium text-emerald-800 dark:text-emerald-200">
+                {t(locale, "estimate.submitted")}
+              </p>
+              <p className="font-body text-sm text-emerald-700 dark:text-emerald-300">
+                {t(locale, "estimate.submittedNo")}：<span className="font-mono font-semibold">{resultNo}</span>
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={resetForm}
+            className="mt-4 rounded-lg border border-emerald-400 px-4 py-2 font-body text-sm text-emerald-800 hover:bg-emerald-100 dark:border-emerald-700 dark:text-emerald-200 dark:hover:bg-emerald-900/30"
+          >
+            {t(locale, "estimate.backToNew")}
+          </button>
+        </div>
       )}
     </div>
   );

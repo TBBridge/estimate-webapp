@@ -46,19 +46,37 @@ CREATE TABLE IF NOT EXISTS unit_prices (
 
 -- 見積（案件）
 CREATE TABLE IF NOT EXISTS estimates (
-  id            TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
-  no            TEXT NOT NULL UNIQUE,
-  agency_id     TEXT NOT NULL REFERENCES agencies(id),
-  agency_name   TEXT NOT NULL,
-  customer_name TEXT NOT NULL,
-  delivery_type TEXT NOT NULL CHECK (delivery_type IN ('onprem','subscription','cloud')),
-  contract_type TEXT NOT NULL CHECK (contract_type IN ('new','license_add','option_add')),
-  amount        INTEGER NOT NULL DEFAULT 0,
+  id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+  no              TEXT NOT NULL UNIQUE,
+  agency_id       TEXT NOT NULL REFERENCES agencies(id),
+  agency_name     TEXT NOT NULL,
+  customer_name   TEXT NOT NULL,
+  delivery_type   TEXT NOT NULL CHECK (delivery_type IN ('onprem','subscription','cloud')),
+  contract_type   TEXT NOT NULL CHECK (contract_type IN ('new','license_add','option_add')),
+  cloud_billing   TEXT,            -- 'annual' | 'period' (クラウド新規のみ)
+  amount          INTEGER NOT NULL DEFAULT 0,
   maintenance_fee INTEGER NOT NULL DEFAULT 0,
-  status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
-  created_at    DATE NOT NULL DEFAULT CURRENT_DATE,
-  approved_at   DATE
+  form_inputs     JSONB NOT NULL DEFAULT '{}',  -- フォーム入力値一式
+  status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  approved_at     TIMESTAMPTZ
 );
+
+-- スキーマ追加（既存テーブルへの ALTER: 初回実行時はスキップ可）
+ALTER TABLE estimates ADD COLUMN IF NOT EXISTS cloud_billing TEXT;
+ALTER TABLE estimates ADD COLUMN IF NOT EXISTS form_inputs JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE estimates ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at::TIMESTAMPTZ;
+ALTER TABLE estimates ALTER COLUMN approved_at TYPE TIMESTAMPTZ USING approved_at::TIMESTAMPTZ;
+
+-- 通知設定
+CREATE TABLE IF NOT EXISTS app_settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+INSERT INTO app_settings (key, value) VALUES
+  ('notification_channel', 'slack'),
+  ('notification_target',  '#approval-requests')
+ON CONFLICT (key) DO NOTHING;
 
 -- =====================================================
 -- 初期データ投入（初回のみ実行）
