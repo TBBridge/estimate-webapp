@@ -16,16 +16,16 @@ export async function GET(req: Request) {
     const rows = await sql`
       SELECT id, no, agency_id, agency_name, customer_name,
              delivery_type, contract_type, amount, maintenance_fee, status,
-             TO_CHAR(created_at,  'YYYY-MM-DD') AS created_at,
-             TO_CHAR(approved_at, 'YYYY-MM-DD') AS approved_at
+             TO_CHAR(created_at  AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS created_at,
+             TO_CHAR(approved_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS approved_at
       FROM estimates
       WHERE (${agencyId}     = '' OR agency_id     = ${agencyId})
         AND (${deliveryType} = '' OR delivery_type = ${deliveryType})
         AND (${contractType} = '' OR contract_type = ${contractType})
         AND (${status}       = '' OR status        = ${status})
         AND (${customerName} = '' OR customer_name ILIKE ${'%' + customerName + '%'})
-        AND (${from}         = '' OR created_at   >= ${from}::DATE)
-        AND (${to}           = '' OR created_at   <= ${to}::DATE)
+        AND (${from}         = '' OR created_at::DATE >= ${from}::DATE)
+        AND (${to}           = '' OR created_at::DATE <= ${to}::DATE)
       ORDER BY created_at DESC
     `;
     return NextResponse.json(rows.map((r) => ({
