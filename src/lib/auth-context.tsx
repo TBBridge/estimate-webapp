@@ -37,9 +37,9 @@ const MOCK_USERS: (User & { password: string })[] = [
   {
     id: "2",
     email: "agency@example.com",
-    name: "代理店A",
+    name: "株式会社アルファ",
     role: "agency",
-    agencyId: "agency-1",
+    agencyId: "ag-1",
     password: "agency",
   },
   {
@@ -47,7 +47,7 @@ const MOCK_USERS: (User & { password: string })[] = [
     email: "approver@example.com",
     name: "承認者",
     role: "approver",
-    agencyId: "agency-1",
+    agencyId: "ag-1",
     password: "approver",
   },
 ];

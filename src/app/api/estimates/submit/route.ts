@@ -87,7 +87,8 @@ export async function POST(req: Request) {
     }, { status: 201 });
 
   } catch (e) {
-    console.error("[submit] Error:", e);
-    return NextResponse.json({ error: "申請に失敗しました。" }, { status: 500 });
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[submit] Error:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
