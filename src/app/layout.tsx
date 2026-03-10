@@ -3,6 +3,7 @@ import { Instrument_Sans, Fraunces } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import { LocaleProvider } from "@/lib/locale-context";
+import { ThemeProvider } from "@/lib/theme-context";
 import LocaleLangSync from "@/components/locale-lang-sync";
 
 const instrumentSans = Instrument_Sans({
@@ -30,10 +31,12 @@ export default function RootLayout({
   return (
     <html lang="ja" className={`${instrumentSans.variable} ${fraunces.variable}`} suppressHydrationWarning>
       <body>
-        <LocaleProvider>
-          <LocaleLangSync />
-          <AuthProvider>{children}</AuthProvider>
-        </LocaleProvider>
+        <ThemeProvider>
+          <LocaleProvider>
+            <LocaleLangSync />
+            <AuthProvider>{children}</AuthProvider>
+          </LocaleProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
