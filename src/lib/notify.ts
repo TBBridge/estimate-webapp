@@ -1,35 +1,77 @@
 /**
  * 承認通知ヘルパー
- * 環境変数で設定されたチャネル（Slack / Teams / Gmail）に通知を送信する
+ * DB の app_settings テーブルから通知設定を取得して送信する。
  *
- * 環境変数:
- *   NOTIFICATION_CHANNEL  = "slack" | "teams" | "gmail"
- *   NOTIFICATION_TARGET   = Slack: webhook URL, Teams: webhook URL, Gmail: 送信先メールアドレス
- *   GMAIL_FROM            = 送信元メールアドレス（Gmail の場合のみ）
- *   GMAIL_APP_PASSWORD    = Gmail アプリパスワード（Gmail の場合のみ）
+ * app_settings キー:
+ *   active_channel  = "slack" | "teams" | "gmail"
+ *   slack_target    = Slack Incoming Webhook URL
+ *   teams_target    = Teams Incoming Webhook URL
+ *   gmail_target    = 送信先メールアドレス
+ *   gmail_from      = 送信元メールアドレス
+ *   gmail_password  = Gmail アプリパスワード
  */
 
-import { getApprovalSubject, getApprovalBody, getApprovalShortTitle, type NotificationVars } from "./notification-templates";
+import { getDb } from "./db";
+import {
+  getApprovalSubject,
+  getApprovalBody,
+  getApprovalShortTitle,
+  type NotificationVars,
+} from "./notification-templates";
 
 export type NotifyResult = { ok: boolean; error?: string };
 
-export async function sendApprovalNotification(vars: NotificationVars): Promise<NotifyResult> {
-  const channel = (process.env.NOTIFICATION_CHANNEL ?? "slack") as "slack" | "teams" | "gmail";
-  const target = process.env.NOTIFICATION_TARGET ?? "";
+type NotifySettings = {
+  active_channel: "slack" | "teams" | "gmail";
+  slack_target: string;
+  teams_target: string;
+  gmail_target: string;
+  gmail_from: string;
+  gmail_password: string;
+};
 
-  if (!target) {
-    console.warn("[notify] NOTIFICATION_TARGET is not set. Skipping notification.");
-    return { ok: true };
+async function loadSettings(): Promise<NotifySettings> {
+  try {
+    const sql = getDb();
+    const rows = await sql`SELECT key, value FROM app_settings`;
+    const map: Record<string, string> = {};
+    for (const r of rows) map[r.key] = r.value;
+    return {
+      active_channel: (map["active_channel"] as NotifySettings["active_channel"]) ?? "slack",
+      slack_target:   map["slack_target"]   ?? "",
+      teams_target:   map["teams_target"]   ?? "",
+      gmail_target:   map["gmail_target"]   ?? "",
+      gmail_from:     map["gmail_from"]     ?? "",
+      gmail_password: map["gmail_password"] ?? "",
+    };
+  } catch {
+    // DB 接続失敗時はデフォルトを返す
+    return {
+      active_channel: "slack",
+      slack_target: process.env.NOTIFICATION_TARGET ?? "",
+      teams_target: "",
+      gmail_target: "",
+      gmail_from: process.env.GMAIL_FROM ?? "",
+      gmail_password: process.env.GMAIL_APP_PASSWORD ?? "",
+    };
   }
+}
+
+export async function sendApprovalNotification(vars: NotificationVars): Promise<NotifyResult> {
+  const cfg = await loadSettings();
+  const channel = cfg.active_channel;
 
   try {
     switch (channel) {
       case "slack":
-        return await sendSlack(target, vars);
+        if (!cfg.slack_target) return { ok: true }; // 未設定はスキップ
+        return await sendSlack(cfg.slack_target, vars);
       case "teams":
-        return await sendTeams(target, vars);
+        if (!cfg.teams_target) return { ok: true };
+        return await sendTeams(cfg.teams_target, vars);
       case "gmail":
-        return await sendGmail(target, vars);
+        if (!cfg.gmail_target || !cfg.gmail_from || !cfg.gmail_password) return { ok: true };
+        return await sendGmail(cfg, vars);
       default:
         return { ok: false, error: `Unknown channel: ${channel}` };
     }
@@ -105,25 +147,20 @@ async function sendTeams(webhookUrl: string, vars: NotificationVars): Promise<No
   return { ok: true };
 }
 
-// ── Gmail (SMTP via nodemailer) ─────────────────────────
-// nodemailer は動的インポートで解決（Vercel Edge 非対応のため Node.js Runtime）
-async function sendGmail(toEmail: string, vars: NotificationVars): Promise<NotifyResult> {
-  const from = process.env.GMAIL_FROM;
-  const pass = process.env.GMAIL_APP_PASSWORD;
-  if (!from || !pass) {
-    return { ok: false, error: "GMAIL_FROM / GMAIL_APP_PASSWORD not set" };
-  }
-
-    // nodemailer を動的インポート（Edge Runtime 非対応のため Node.js Runtime 限定）
+// ── Gmail (nodemailer) ─────────────────────────────────
+async function sendGmail(
+  cfg: Pick<NotifySettings, "gmail_target" | "gmail_from" | "gmail_password">,
+  vars: NotificationVars,
+): Promise<NotifyResult> {
   const { default: nm } = await import("nodemailer");
   const transporter = nm.createTransport({
     service: "gmail",
-    auth: { user: from, pass },
+    auth: { user: cfg.gmail_from, pass: cfg.gmail_password },
   });
 
   await transporter.sendMail({
-    from,
-    to: toEmail,
+    from: cfg.gmail_from,
+    to: cfg.gmail_target,
     subject: getApprovalSubject(vars),
     text: getApprovalBody(vars),
   });

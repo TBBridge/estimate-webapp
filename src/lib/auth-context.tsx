@@ -26,29 +26,21 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const MOCK_USERS: (User & { password: string })[] = [
+// 管理者・承認者はハードコード（環境変数 or DB 管理への移行は今後の拡張）
+const SYSTEM_USERS: (User & { password: string })[] = [
   {
-    id: "1",
+    id: "sys-admin",
     email: "admin@example.com",
     name: "自社管理者",
     role: "admin",
-    password: "admin",
+    password: process.env.NEXT_PUBLIC_ADMIN_PASSWORD ?? "admin",
   },
   {
-    id: "2",
-    email: "agency@example.com",
-    name: "株式会社アルファ",
-    role: "agency",
-    agencyId: "ag-1",
-    password: "agency",
-  },
-  {
-    id: "3",
+    id: "sys-approver",
     email: "approver@example.com",
     name: "承認者",
     role: "approver",
-    agencyId: "ag-1",
-    password: "approver",
+    password: process.env.NEXT_PUBLIC_APPROVER_PASSWORD ?? "approver",
   },
 ];
 
@@ -56,13 +48,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
 
   const login = useCallback(async (email: string, password: string) => {
-    const found = MOCK_USERS.find(
+    // 管理者・承認者はクライアント側で照合
+    const sys = SYSTEM_USERS.find(
       (u) => u.email === email && u.password === password
     );
-    if (!found) return false;
-    const { password: _, ...u } = found;
-    setUser(u);
-    return true;
+    if (sys) {
+      const { password: _, ...u } = sys;
+      setUser(u);
+      return true;
+    }
+
+    // 代理店は DB 経由で認証
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      if (!res.ok) return false;
+      const data = await res.json() as User;
+      setUser(data);
+      return true;
+    } catch {
+      return false;
+    }
   }, []);
 
   const logout = useCallback(() => {

@@ -7,7 +7,7 @@ import { useAgencies, createAgency, updateAgency, deleteAgency } from "@/hooks/u
 import type { Agency } from "@/lib/mock-data";
 
 const emptyForm = (): Omit<Agency, "id" | "createdAt"> => ({
-  name: "", email: "", approverName: "", approverEmail: "",
+  name: "", email: "", loginPassword: "", approverName: "", approverEmail: "",
 });
 
 export default function AdminAgentsPage() {
@@ -21,7 +21,7 @@ export default function AdminAgentsPage() {
   const openAdd = () => { setEditId(null); setForm(emptyForm()); setShowModal(true); };
   const openEdit = (ag: Agency) => {
     setEditId(ag.id);
-    setForm({ name: ag.name, email: ag.email, approverName: ag.approverName, approverEmail: ag.approverEmail });
+    setForm({ name: ag.name, email: ag.email, loginPassword: ag.loginPassword ?? "", approverName: ag.approverName, approverEmail: ag.approverEmail });
     setShowModal(true);
   };
 
@@ -106,17 +106,32 @@ export default function AdminAgentsPage() {
               {editId ? t(locale, "admin.agents.edit") : t(locale, "admin.agents.add")}
             </h2>
             <div className="space-y-3">
-              {(["name","email","approverName","approverEmail"] as const).map((field) => (
-                <div key={field}>
-                  <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">
-                    {t(locale, `admin.agents.${field === "name" ? "name" : field === "email" ? "email" : field === "approverName" ? "approver" : "approverEmail"}`)}
-                  </label>
-                  <input type={field.includes("mail") ? "email" : "text"}
-                    value={form[field]}
-                    onChange={(e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))}
-                    className={inputCls} />
-                </div>
-              ))}
+              {/* 代理店名 */}
+              <div>
+                <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.name")}</label>
+                <input type="text" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} className={inputCls} />
+              </div>
+              {/* ログインメール */}
+              <div>
+                <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.email")}</label>
+                <input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} className={inputCls} />
+              </div>
+              {/* ログインパスワード */}
+              <div>
+                <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.loginPassword")}</label>
+                <input type="password" value={form.loginPassword ?? ""} onChange={(e) => setForm((p) => ({ ...p, loginPassword: e.target.value }))} className={inputCls} placeholder="••••••••" />
+                <p className="mt-1 font-body text-xs text-[var(--color-ink-muted)]">{t(locale, "admin.agents.loginPasswordHint")}</p>
+              </div>
+              {/* 承認者名 */}
+              <div>
+                <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.approver")}</label>
+                <input type="text" value={form.approverName} onChange={(e) => setForm((p) => ({ ...p, approverName: e.target.value }))} className={inputCls} />
+              </div>
+              {/* 承認者メール */}
+              <div>
+                <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.approverEmail")}</label>
+                <input type="email" value={form.approverEmail} onChange={(e) => setForm((p) => ({ ...p, approverEmail: e.target.value }))} className={inputCls} />
+              </div>
             </div>
             <div className="mt-6 flex justify-end gap-2">
               <button type="button" onClick={() => setShowModal(false)}

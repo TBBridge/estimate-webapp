@@ -6,13 +6,17 @@
 
 -- 代理店
 CREATE TABLE IF NOT EXISTS agencies (
-  id            TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
-  name          TEXT NOT NULL,
-  email         TEXT NOT NULL UNIQUE,
-  approver_name TEXT NOT NULL,
+  id             TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+  name           TEXT NOT NULL,
+  email          TEXT NOT NULL UNIQUE,
+  login_password TEXT NOT NULL DEFAULT '',   -- 代理店ログインパスワード（平文: 運用上簡易認証）
+  approver_name  TEXT NOT NULL,
   approver_email TEXT NOT NULL,
-  created_at    DATE NOT NULL DEFAULT CURRENT_DATE
+  created_at     DATE NOT NULL DEFAULT CURRENT_DATE
 );
+
+-- スキーマ追加（既存テーブルへの ALTER）
+ALTER TABLE agencies ADD COLUMN IF NOT EXISTS login_password TEXT NOT NULL DEFAULT '';
 
 -- 仕切り率（本製品: 代理店 × 製品 × 提供形態）
 CREATE TABLE IF NOT EXISTS margin_rates (
@@ -74,8 +78,12 @@ CREATE TABLE IF NOT EXISTS app_settings (
   value TEXT NOT NULL
 );
 INSERT INTO app_settings (key, value) VALUES
-  ('notification_channel', 'slack'),
-  ('notification_target',  '#approval-requests')
+  ('active_channel',  'slack'),          -- 有効チャネル: 'slack' | 'teams' | 'gmail'
+  ('slack_target',    ''),               -- Slack Incoming Webhook URL
+  ('teams_target',    ''),               -- Teams Incoming Webhook URL
+  ('gmail_target',    ''),               -- Gmail 送信先メールアドレス
+  ('gmail_from',      ''),               -- Gmail 送信元アドレス
+  ('gmail_password',  '')                -- Gmail アプリパスワード
 ON CONFLICT (key) DO NOTHING;
 
 -- =====================================================

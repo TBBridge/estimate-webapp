@@ -11,6 +11,7 @@ export type Agency = {
   id: string;
   name: string;
   email: string;
+  loginPassword?: string;
   approverName: string;
   approverEmail: string;
   createdAt: string;
