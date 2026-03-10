@@ -43,11 +43,13 @@ function readStoredTheme(): Theme {
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>("light");
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     const stored = readStoredTheme();
     setTheme(stored);
     applyTheme(stored);
+    setMounted(true);
   }, []);
 
   const toggleTheme = useCallback(() => {

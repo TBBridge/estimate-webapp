@@ -14,9 +14,13 @@ const STATUS_BADGE: Record<EstimateStatus, string> = {
   rejected: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
 };
 
-function statusLabel(locale: "ja" | "en", s: EstimateStatus) {
-  const key = `admin.estimates.status${s.charAt(0).toUpperCase()}${s.slice(1)}` as Parameters<typeof t>[1];
-  return t(locale, key);
+function statusLabel(locale: "ja" | "en", s: string) {
+  const map: Record<string, string> = {
+    pending:  t(locale, "admin.estimates.statusPending"),
+    approved: t(locale, "admin.estimates.statusApproved"),
+    rejected: t(locale, "admin.estimates.statusRejected"),
+  };
+  return map[s] ?? s;
 }
 
 const selectCls = "rounded-lg border border-stone-300 bg-white px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40 dark:border-stone-600 dark:bg-stone-800";
@@ -40,7 +44,7 @@ export default function AdminEstimatesPage() {
     return Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== ""));
   }, [filters]);
 
-  const { estimates, isLoading } = useEstimates(activeFilters);
+  const { estimates, isLoading, error: estimatesError } = useEstimates(activeFilters);
 
   return (
     <div className="space-y-6">
@@ -91,6 +95,13 @@ export default function AdminEstimatesPage() {
         </p>
       </div>
 
+      {estimatesError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-body text-sm text-red-700 dark:border-red-800 dark:bg-red-950/20 dark:text-red-400">
+          データの取得に失敗しました。データベースの接続設定を確認してください。
+          <span className="ml-2 font-mono text-xs opacity-70">{String(estimatesError)}</span>
+        </div>
+      )}
+
       {/* テーブル */}
       <div className="overflow-x-auto rounded-xl border border-stone-200/80 bg-[var(--color-surface-elevated)] shadow-sm dark:border-stone-700/80">
         <table className="w-full font-body text-sm">
@@ -119,7 +130,7 @@ export default function AdminEstimatesPage() {
                   ¥{(e.amount + e.maintenanceFee).toLocaleString()}
                 </td>
                 <td className="px-4 py-3">
-                  <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[e.status]}`}>
+                  <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[e.status as EstimateStatus] ?? "bg-stone-100 text-stone-600"}`}>
                     {statusLabel(locale, e.status)}
                   </span>
                 </td>

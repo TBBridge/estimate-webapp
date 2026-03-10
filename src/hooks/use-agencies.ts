@@ -2,7 +2,11 @@ import useSWR, { mutate } from "swr";
 import type { Agency } from "@/lib/mock-data";
 
 const KEY = "/api/agencies";
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+const fetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+};
 
 export function useAgencies() {
   const { data, error, isLoading } = useSWR<Agency[]>(KEY, fetcher);

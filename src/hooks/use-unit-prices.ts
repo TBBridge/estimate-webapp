@@ -2,7 +2,11 @@ import useSWR, { mutate } from "swr";
 import type { UnitPrice, PriceTier } from "@/lib/mock-data";
 
 const KEY = "/api/unit-prices";
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+const fetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+};
 
 export function useUnitPrices() {
   const { data, error, isLoading } = useSWR<UnitPrice[]>(KEY, fetcher);

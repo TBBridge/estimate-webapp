@@ -2,7 +2,11 @@ import useSWR, { mutate } from "swr";
 import type { MarginRate } from "@/lib/mock-data";
 
 const KEY = "/api/margin-rates";
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+const fetcher = async (url: string) => {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+};
 
 export function useMarginRates() {
   const { data, error, isLoading } = useSWR<MarginRate[]>(KEY, fetcher);
