@@ -24,8 +24,8 @@ export async function GET(req: Request) {
         AND (${contractType} = '' OR contract_type = ${contractType})
         AND (${status}       = '' OR status        = ${status})
         AND (${customerName} = '' OR customer_name ILIKE ${'%' + customerName + '%'})
-        AND (${from}         = '' OR created_at::DATE >= ${from}::DATE)
-        AND (${to}           = '' OR created_at::DATE <= ${to}::DATE)
+        AND (${from} = '' OR (created_at AT TIME ZONE 'Asia/Tokyo')::DATE >= ${from || null}::DATE)
+        AND (${to}   = '' OR (created_at AT TIME ZONE 'Asia/Tokyo')::DATE <= ${to   || null}::DATE)
       ORDER BY created_at DESC
     `;
     return NextResponse.json(rows.map((r) => ({
