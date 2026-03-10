@@ -29,13 +29,26 @@ CREATE TABLE IF NOT EXISTS margin_rates (
   UNIQUE (agency_id, product_id, delivery_type)
 );
 
--- 仕切り率（保守: 代理店ごと）
+-- 仕切り率（保守: 代理店 × 製品）
 CREATE TABLE IF NOT EXISTS maintenance_rates (
   id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
-  agency_id   TEXT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE UNIQUE,
+  agency_id   TEXT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
   agency_name TEXT NOT NULL,
-  rate        NUMERIC(5,4) NOT NULL
+  product_id  TEXT NOT NULL DEFAULT 'ireporter',
+  rate        NUMERIC(5,4) NOT NULL,
+  UNIQUE (agency_id, product_id)
 );
+
+-- スキーマ追加（既存テーブルへの ALTER）
+ALTER TABLE maintenance_rates ADD COLUMN IF NOT EXISTS product_id TEXT NOT NULL DEFAULT 'ireporter';
+ALTER TABLE maintenance_rates DROP CONSTRAINT IF EXISTS maintenance_rates_agency_id_key;
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'maintenance_rates_agency_id_product_id_key'
+  ) THEN
+    ALTER TABLE maintenance_rates ADD CONSTRAINT maintenance_rates_agency_id_product_id_key UNIQUE (agency_id, product_id);
+  END IF;
+END $$;
 
 -- 製品単価（ティア構造を JSONB で保持）
 -- tiers: [{ "min_licenses": 5, "price": 35000 }, ...]

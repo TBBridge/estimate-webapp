@@ -8,249 +8,196 @@ import { useMaintenanceRates, updateMaintenanceRate, createMaintenanceRate, dele
 import { useUnitPrices, updateUnitPriceTiers } from "@/hooks/use-unit-prices";
 import { useAgencies } from "@/hooks/use-agencies";
 import { MOCK_TEMPLATES, type TemplateDef, type PriceTier } from "@/lib/mock-data";
-import { PRODUCTS, type MarginRate, type MaintenanceRate, type UnitPrice } from "@/lib/mock-data";
+import { PRODUCTS, type UnitPrice } from "@/lib/mock-data";
 import { DELIVERY_TYPES, CONTRACT_TYPES } from "@/lib/constants";
 
 type Tab = "margin" | "maintenance" | "unitPrice" | "template";
 
-const thCls = "px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-[var(--color-ink-muted)]";
-const tdCls = "px-4 py-3";
+// 本製品タブの列定義: 製品 × 提供形態
+type ColDef = { productId: string; deliveryType: string; label: string };
 
-function LoadingRow({ cols }: { cols: number }) {
-  return (
-    <tr>
-      <td colSpan={cols} className="px-4 py-8 text-center font-body text-sm text-[var(--color-ink-muted)]">
-        読み込み中…
-      </td>
-    </tr>
-  );
+const MARGIN_COLS: ColDef[] = (PRODUCTS as readonly { id: string; nameJa: string; isOption: boolean }[]).flatMap((p) => {
+  if (!p.isOption) {
+    return DELIVERY_TYPES.map((d) => ({
+      productId: p.id,
+      deliveryType: d.value,
+      label: `${p.nameJa}\n(${d.labelJa})`,
+    }));
+  }
+  return [{ productId: p.id, deliveryType: "onprem", label: p.nameJa }];
+});
+
+// 保守タブの列定義: 製品のみ（提供形態なし）
+const MAINTENANCE_COLS: { productId: string; label: string }[] =
+  (PRODUCTS as readonly { id: string; nameJa: string; isOption: boolean }[]).map((p) => ({
+    productId: p.id,
+    label: p.nameJa,
+  }));
+
+// ── インライン編集セル ─────────────────────────────
+type CellKey = string; // `${agencyId}__${productId}__${deliveryType}`
+
+function rateDisplay(rate: number) {
+  return `${Math.round(rate * 1000) / 10}%`;
 }
 
-// ── 仕切り率（本製品）──────────────────────────────────
-function MarginTab({ locale }: { locale: string }) {
+// ── 仕切り率（本製品）グリッド ────────────────────
+function MarginGrid({ locale }: { locale: string }) {
   const l = (k: string) => t(locale as "ja" | "en", k);
   const { marginRates, isLoading: ratesLoading } = useMarginRates();
   const { agencies, isLoading: agenciesLoading } = useAgencies();
+  const isLoading = ratesLoading || agenciesLoading;
 
-  const [activeAgencyId, setActiveAgencyId] = useState<string>("");
-  const [editId, setEditId] = useState<string | null>(null);
-  const [editRate, setEditRate] = useState("");
+  // editKey: `${agencyId}__${productId}__${deliveryType}` | null
+  const [editKey, setEditKey] = useState<CellKey | null>(null);
+  const [editValue, setEditValue] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // 新規追加モーダル用
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [newProductId, setNewProductId] = useState<string>(PRODUCTS[0].id);
-  const [newDeliveryType, setNewDeliveryType] = useState("onprem");
-  const [newRate, setNewRate] = useState("70");
+  // 検索フィルタ
+  const [search, setSearch] = useState("");
+  const filteredAgencies = agencies.filter((a) =>
+    a.name.toLowerCase().includes(search.toLowerCase())
+  );
 
-  const isLoading = ratesLoading || agenciesLoading;
-  const currentAgencyId = activeAgencyId || agencies[0]?.id || "";
-  const currentAgency = agencies.find((a) => a.id === currentAgencyId);
-  const agencyRows = marginRates.filter((r) => r.agencyId === currentAgencyId);
+  const rateMap = new Map(
+    marginRates.map((r) => [`${r.agencyId}__${r.productId}__${r.deliveryType}`, r])
+  );
 
-  const productOf = (id: string) => PRODUCTS.find((p) => p.id === id);
-  const deliveryLabel = (dt: string) => DELIVERY_TYPES.find((d) => d.value === dt)?.labelJa ?? dt;
-
-  const startEdit = (r: MarginRate) => {
-    setEditId(r.id);
-    setEditRate(String(Math.round(r.rate * 1000) / 10));
+  const startEdit = (key: CellKey, currentRate: number | null) => {
+    setEditKey(key);
+    setEditValue(currentRate !== null ? String(Math.round(currentRate * 1000) / 10) : "70");
   };
 
-  const save = async (id: string) => {
+  const saveCell = async (agencyId: string, agencyName: string, productId: string, deliveryType: string) => {
+    const key = `${agencyId}__${productId}__${deliveryType}`;
+    const existing = rateMap.get(key);
+    const rate = Number(editValue) / 100;
     setSaving(true);
-    try { await updateMarginRate(id, Number(editRate) / 100); setEditId(null); }
-    finally { setSaving(false); }
+    try {
+      if (existing) {
+        await updateMarginRate(existing.id, rate);
+      } else {
+        await createMarginRate(agencyId, agencyName, productId, deliveryType, rate);
+      }
+      setEditKey(null);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleDelete = async (id: string) => {
+  const deleteCell = async (key: CellKey) => {
+    const existing = rateMap.get(key);
+    if (!existing) return;
     if (!confirm(l("admin.masters.confirmDeleteRate"))) return;
     setSaving(true);
-    try { await deleteMarginRate(id); }
+    try { await deleteMarginRate(existing.id); setEditKey(null); }
     finally { setSaving(false); }
   };
 
-  const handleAddAllProducts = async () => {
-    if (!currentAgency) return;
-    if (!confirm(`${currentAgency.name} の全製品×提供形態の仕切り率を一括追加しますか？（既存は上書きされません）`)) return;
-    setSaving(true);
-    try {
-      for (const p of PRODUCTS) {
-        const deliveryTypes = p.isOption ? ["onprem"] : ["onprem", "subscription", "cloud"];
-        for (const dt of deliveryTypes) {
-          const exists = marginRates.find(
-            (r) => r.agencyId === currentAgencyId && r.productId === p.id && r.deliveryType === dt
-          );
-          if (!exists) {
-            await createMarginRate(currentAgencyId, currentAgency.name, p.id, dt, 0.70);
-          }
-        }
-      }
-    } finally { setSaving(false); }
-  };
-
-  const handleAddSingle = async () => {
-    if (!currentAgency) return;
-    setSaving(true);
-    try {
-      await createMarginRate(currentAgencyId, currentAgency.name, newProductId, newDeliveryType, Number(newRate) / 100);
-      setShowAddModal(false);
-    } finally { setSaving(false); }
-  };
+  if (isLoading) return (
+    <div className="px-4 py-12 text-center font-body text-sm text-[var(--color-ink-muted)]">読み込み中…</div>
+  );
 
   return (
     <div>
-      {/* 代理店タブ */}
-      <div className="flex items-center gap-1 overflow-x-auto border-b border-stone-200/80 px-4 pt-4 dark:border-stone-700/80">
-        {isLoading ? (
-          <span className="px-4 py-2 font-body text-sm text-[var(--color-ink-muted)]">読み込み中…</span>
-        ) : agencies.length === 0 ? (
-          <span className="px-4 py-2 font-body text-sm text-[var(--color-ink-muted)]">代理店が登録されていません</span>
-        ) : agencies.map((ag) => (
-          <button key={ag.id} type="button"
-            onClick={() => { setActiveAgencyId(ag.id); setEditId(null); setShowAddModal(false); }}
-            className={`shrink-0 rounded-t-lg px-4 py-2 font-body text-sm transition ${
-              currentAgencyId === ag.id
-                ? "border-b-2 border-[var(--color-brand)] font-medium text-[var(--color-brand)]"
-                : "text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
-            }`}>
-            {ag.name}
-          </button>
-        ))}
+      {/* 検索バー */}
+      <div className="flex items-center gap-3 border-b border-stone-200/80 px-4 py-3 dark:border-stone-700/80">
+        <input
+          type="text"
+          placeholder="代理店名で絞り込み…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-56 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40"
+        />
+        <span className="font-body text-xs text-[var(--color-ink-muted)]">
+          {filteredAgencies.length} 社
+        </span>
+        {saving && <span className="font-body text-xs text-[var(--color-ink-muted)]">保存中…</span>}
       </div>
 
-      {/* ツールバー */}
-      {currentAgency && (
-        <div className="flex items-center justify-between px-4 py-3">
-          <p className="font-body text-xs text-[var(--color-ink-muted)]">
-            {agencyRows.length} 件設定済み
-          </p>
-          <div className="flex gap-2">
-            <button type="button" onClick={handleAddAllProducts} disabled={saving}
-              className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 font-body text-xs text-[var(--color-ink-muted)] hover:bg-[var(--color-surface-sub)] disabled:opacity-50">
-              {l("admin.masters.addAllProducts")}
-            </button>
-            <button type="button" onClick={() => setShowAddModal(true)} disabled={saving}
-              className="rounded-lg bg-[var(--color-brand)] px-3 py-1.5 font-body text-xs font-medium text-white hover:opacity-90 disabled:opacity-50">
-              + {l("admin.masters.addRate")}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 新規追加モーダル */}
-      {showAddModal && currentAgency && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-6 shadow-xl">
-            <h3 className="mb-4 font-display text-base font-semibold text-[var(--color-ink)]">
-              仕切り率を追加 — {currentAgency.name}
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block font-body text-sm text-[var(--color-ink-muted)]">製品</label>
-                <select value={newProductId} onChange={(e) => setNewProductId(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40">
-                  {PRODUCTS.map((p) => (
-                    <option key={p.id} value={p.id}>{p.nameJa}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block font-body text-sm text-[var(--color-ink-muted)]">提供形態</label>
-                <select value={newDeliveryType} onChange={(e) => setNewDeliveryType(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40">
-                  {DELIVERY_TYPES.map((d) => (
-                    <option key={d.value} value={d.value}>{d.labelJa}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block font-body text-sm text-[var(--color-ink-muted)]">{l("admin.masters.ratePercent")}</label>
-                <div className="mt-1 flex items-center gap-2">
-                  <input type="number" min={0} max={100} step={0.1} value={newRate}
-                    onChange={(e) => setNewRate(e.target.value)}
-                    className="w-24 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40" />
-                  <span className="font-body text-sm text-[var(--color-ink-muted)]">%</span>
-                </div>
-              </div>
-            </div>
-            <div className="mt-6 flex justify-end gap-2">
-              <button type="button" onClick={() => setShowAddModal(false)}
-                className="rounded-lg border border-[var(--color-border)] px-4 py-2 font-body text-sm text-[var(--color-ink-muted)] hover:bg-[var(--color-surface-sub)]">
-                {l("admin.masters.cancel")}
-              </button>
-              <button type="button" onClick={handleAddSingle} disabled={saving}
-                className="rounded-lg bg-[var(--color-brand)] px-4 py-2 font-body text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
-                {saving ? "保存中…" : l("admin.masters.save")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* テーブル */}
+      {/* グリッドテーブル（横スクロール） */}
       <div className="overflow-x-auto">
-        <table className="w-full font-body text-sm">
+        <table className="min-w-max font-body text-xs">
           <thead>
             <tr className="border-b border-stone-200/80 dark:border-stone-700/80">
-              {["admin.masters.product","admin.masters.deliveryType","admin.masters.rate","admin.masters.edit",""].map((k, i) => (
-                <th key={i} className={thCls}>{k ? l(k) : ""}</th>
+              {/* 代理店名列（固定） */}
+              <th className="sticky left-0 z-10 min-w-[160px] bg-[var(--color-surface-elevated)] px-4 py-3 text-left font-medium text-[var(--color-ink-muted)]">
+                代理店
+              </th>
+              {MARGIN_COLS.map((col) => (
+                <th key={`${col.productId}__${col.deliveryType}`}
+                  className="min-w-[90px] whitespace-pre-line px-2 py-2 text-center font-medium text-[var(--color-ink-muted)] leading-tight">
+                  {col.label}
+                </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {isLoading ? <LoadingRow cols={5} /> :
-             agencyRows.length === 0 ? (
+            {filteredAgencies.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center font-body text-sm text-[var(--color-ink-muted)]">
-                  仕切り率が設定されていません。「全製品を一括追加」または「＋ 仕切り率を追加」で設定してください。
+                <td colSpan={MARGIN_COLS.length + 1} className="px-4 py-8 text-center text-[var(--color-ink-muted)]">
+                  代理店が登録されていません
                 </td>
               </tr>
-            ) : agencyRows.map((r) => (
-              <tr key={r.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-800/40">
-                <td className={tdCls}>
-                  <span className={`inline-flex items-center gap-1 font-medium text-[var(--color-ink)] ${productOf(r.productId)?.isOption ? "pl-3" : ""}`}>
-                    {productOf(r.productId)?.isOption && <span className="text-[var(--color-ink-muted)]">└</span>}
-                    {productOf(r.productId)?.nameJa ?? r.productId}
-                  </span>
+            ) : filteredAgencies.map((ag) => (
+              <tr key={ag.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50/60 dark:border-stone-800 dark:hover:bg-stone-800/20">
+                {/* 代理店名（固定列） */}
+                <td className="sticky left-0 z-10 bg-[var(--color-surface-elevated)] px-4 py-2 font-medium text-[var(--color-ink)]">
+                  {ag.name}
                 </td>
-                <td className={tdCls}>
-                  <span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs dark:bg-stone-800">{deliveryLabel(r.deliveryType)}</span>
-                </td>
-                <td className={tdCls}>
-                  {editId === r.id ? (
-                    <div className="flex items-center gap-2">
-                      <input type="number" min={0} max={100} step={0.1} value={editRate}
-                        onChange={(e) => setEditRate(e.target.value)}
-                        className="w-20 rounded-lg border border-stone-300 px-2 py-1 font-body text-sm dark:border-stone-600 dark:bg-stone-800" />
-                      <span className="text-[var(--color-ink-muted)]">%</span>
-                    </div>
-                  ) : <span className="font-medium">{Math.round(r.rate * 1000) / 10} %</span>}
-                </td>
-                <td className={tdCls}>
-                  {editId === r.id ? (
-                    <div className="flex gap-2">
-                      <button type="button" disabled={saving} onClick={() => save(r.id)}
-                        className="rounded-md bg-[var(--color-brand)] px-3 py-1 text-xs text-white hover:opacity-90 disabled:opacity-60">
-                        {l("admin.masters.save")}
-                      </button>
-                      <button type="button" onClick={() => setEditId(null)}
-                        className="rounded-md border border-stone-300 px-3 py-1 text-xs dark:border-stone-600">
-                        {l("admin.masters.cancel")}
-                      </button>
-                    </div>
-                  ) : (
-                    <button type="button" onClick={() => startEdit(r)}
-                      className="rounded-md border border-stone-300 px-3 py-1 text-xs hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700">
-                      {l("admin.masters.edit")}
-                    </button>
-                  )}
-                </td>
-                <td className={tdCls}>
-                  <button type="button" onClick={() => handleDelete(r.id)} disabled={saving}
-                    className="rounded-md border border-red-200 px-3 py-1 text-xs text-red-500 hover:bg-red-50 disabled:opacity-40 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/20">
-                    {l("admin.masters.deleteRate")}
-                  </button>
-                </td>
+                {MARGIN_COLS.map((col) => {
+                  const key = `${ag.id}__${col.productId}__${col.deliveryType}`;
+                  const existing = rateMap.get(key);
+                  const isEditing = editKey === key;
+
+                  return (
+                    <td key={key} className="px-1 py-1 text-center">
+                      {isEditing ? (
+                        <div className="flex flex-col items-center gap-1">
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number" min={0} max={100} step={0.1}
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              autoFocus
+                              className="w-16 rounded border border-[var(--color-brand)] px-1.5 py-1 text-center text-xs outline-none dark:bg-stone-800"
+                            />
+                            <span className="text-[var(--color-ink-muted)]">%</span>
+                          </div>
+                          <div className="flex gap-1">
+                            <button type="button"
+                              onClick={() => saveCell(ag.id, ag.name, col.productId, col.deliveryType)}
+                              disabled={saving}
+                              className="rounded bg-[var(--color-brand)] px-2 py-0.5 text-xs text-white hover:opacity-90 disabled:opacity-50">
+                              保存
+                            </button>
+                            <button type="button" onClick={() => setEditKey(null)}
+                              className="rounded border border-stone-300 px-2 py-0.5 text-xs dark:border-stone-600">
+                              ×
+                            </button>
+                            {existing && (
+                              <button type="button" onClick={() => deleteCell(key)} disabled={saving}
+                                className="rounded border border-red-200 px-2 py-0.5 text-xs text-red-500 hover:bg-red-50 disabled:opacity-40 dark:border-red-800">
+                                削除
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => startEdit(key, existing?.rate ?? null)}
+                          className={`w-full rounded px-2 py-1.5 text-xs transition hover:ring-2 hover:ring-[var(--color-brand)]/30 ${
+                            existing
+                              ? "font-medium text-[var(--color-ink)]"
+                              : "text-stone-300 dark:text-stone-600"
+                          }`}>
+                          {existing ? rateDisplay(existing.rate) : "—"}
+                        </button>
+                      )}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
@@ -260,144 +207,161 @@ function MarginTab({ locale }: { locale: string }) {
   );
 }
 
-// ── 仕切り率（保守）──────────────────────────────────
-function MaintenanceTab({ locale }: { locale: string }) {
+// ── 仕切り率（保守）グリッド ──────────────────────
+function MaintenanceGrid({ locale }: { locale: string }) {
   const l = (k: string) => t(locale as "ja" | "en", k);
   const { maintenanceRates, isLoading: ratesLoading } = useMaintenanceRates();
   const { agencies, isLoading: agenciesLoading } = useAgencies();
-
-  const [editId, setEditId] = useState<string | null>(null);
-  const [editRate, setEditRate] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  // 新規追加用
-  const [addingAgencyId, setAddingAgencyId] = useState<string | null>(null);
-  const [newRate, setNewRate] = useState("70");
-
   const isLoading = ratesLoading || agenciesLoading;
 
-  const rateByAgency = new Map(maintenanceRates.map((r) => [r.agencyId, r]));
+  const [editKey, setEditKey] = useState<CellKey | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState("");
 
-  const startEdit = (r: MaintenanceRate) => {
-    setEditId(r.id);
-    setEditRate(String(Math.round(r.rate * 1000) / 10));
+  const filteredAgencies = agencies.filter((a) =>
+    a.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  // key: `${agencyId}__${productId}`
+  const rateMap = new Map(
+    maintenanceRates.map((r) => [`${r.agencyId}__${r.productId}`, r])
+  );
+
+  const startEdit = (key: CellKey, currentRate: number | null) => {
+    setEditKey(key);
+    setEditValue(currentRate !== null ? String(Math.round(currentRate * 1000) / 10) : "70");
   };
 
-  const save = async (id: string) => {
-    setSaving(true);
-    try { await updateMaintenanceRate(id, Number(editRate) / 100); setEditId(null); }
-    finally { setSaving(false); }
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm(l("admin.masters.confirmDeleteRate"))) return;
-    setSaving(true);
-    try { await deleteMaintenanceRate(id); }
-    finally { setSaving(false); }
-  };
-
-  const handleAdd = async (agencyId: string, agencyName: string) => {
+  const saveCell = async (agencyId: string, agencyName: string, productId: string) => {
+    const key = `${agencyId}__${productId}`;
+    const existing = rateMap.get(key);
+    const rate = Number(editValue) / 100;
     setSaving(true);
     try {
-      await createMaintenanceRate(agencyId, agencyName, Number(newRate) / 100);
-      setAddingAgencyId(null);
-      setNewRate("70");
-    } finally { setSaving(false); }
+      if (existing) {
+        await updateMaintenanceRate(existing.id, rate);
+      } else {
+        await createMaintenanceRate(agencyId, agencyName, productId, rate);
+      }
+      setEditKey(null);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full font-body text-sm">
-        <thead>
-          <tr className="border-b border-stone-200/80 dark:border-stone-700/80">
-            {["admin.masters.agency", "admin.masters.rate", "admin.masters.edit", ""].map((k, i) => (
-              <th key={i} className={thCls}>{k ? l(k) : ""}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {isLoading ? <LoadingRow cols={4} /> : agencies.map((ag) => {
-            const existing = rateByAgency.get(ag.id);
-            const isEditing = existing && editId === existing.id;
-            const isAdding = !existing && addingAgencyId === ag.id;
+  const deleteCell = async (key: CellKey) => {
+    const existing = rateMap.get(key);
+    if (!existing) return;
+    if (!confirm(l("admin.masters.confirmDeleteRate"))) return;
+    setSaving(true);
+    try { await deleteMaintenanceRate(existing.id); setEditKey(null); }
+    finally { setSaving(false); }
+  };
 
-            return (
-              <tr key={ag.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-800/40">
-                <td className={`${tdCls} font-medium text-[var(--color-ink)]`}>{ag.name}</td>
-                <td className={tdCls}>
-                  {existing ? (
-                    isEditing ? (
-                      <div className="flex items-center gap-2">
-                        <input type="number" min={0} max={100} step={0.1} value={editRate}
-                          onChange={(e) => setEditRate(e.target.value)}
-                          className="w-20 rounded-lg border border-stone-300 px-2 py-1 font-body text-sm dark:border-stone-600 dark:bg-stone-800" />
-                        <span className="text-[var(--color-ink-muted)]">%</span>
-                      </div>
-                    ) : (
-                      <span className="font-medium">{Math.round(existing.rate * 1000) / 10} %</span>
-                    )
-                  ) : isAdding ? (
-                    <div className="flex items-center gap-2">
-                      <input type="number" min={0} max={100} step={0.1} value={newRate}
-                        onChange={(e) => setNewRate(e.target.value)}
-                        className="w-20 rounded-lg border border-[var(--color-brand)] px-2 py-1 font-body text-sm dark:bg-stone-800" />
-                      <span className="text-[var(--color-ink-muted)]">%</span>
-                    </div>
-                  ) : (
-                    <span className="font-body text-xs text-[var(--color-ink-muted)]">{l("admin.masters.notSet")}</span>
-                  )}
-                </td>
-                <td className={tdCls}>
-                  {existing ? (
-                    isEditing ? (
-                      <div className="flex gap-2">
-                        <button type="button" disabled={saving} onClick={() => save(existing.id)}
-                          className="rounded-md bg-[var(--color-brand)] px-3 py-1 text-xs text-white hover:opacity-90 disabled:opacity-60">
-                          {l("admin.masters.save")}
-                        </button>
-                        <button type="button" onClick={() => setEditId(null)}
-                          className="rounded-md border border-stone-300 px-3 py-1 text-xs dark:border-stone-600">
-                          {l("admin.masters.cancel")}
-                        </button>
-                      </div>
-                    ) : (
-                      <button type="button" onClick={() => startEdit(existing)}
-                        className="rounded-md border border-stone-300 px-3 py-1 text-xs hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700">
-                        {l("admin.masters.edit")}
-                      </button>
-                    )
-                  ) : isAdding ? (
-                    <div className="flex gap-2">
-                      <button type="button" disabled={saving} onClick={() => handleAdd(ag.id, ag.name)}
-                        className="rounded-md bg-[var(--color-brand)] px-3 py-1 text-xs text-white hover:opacity-90 disabled:opacity-60">
-                        {l("admin.masters.save")}
-                      </button>
-                      <button type="button" onClick={() => setAddingAgencyId(null)}
-                        className="rounded-md border border-stone-300 px-3 py-1 text-xs dark:border-stone-600">
-                        {l("admin.masters.cancel")}
-                      </button>
-                    </div>
-                  ) : (
-                    <button type="button"
-                      onClick={() => { setAddingAgencyId(ag.id); setNewRate("70"); }}
-                      className="rounded-md border border-[var(--color-brand)]/50 px-3 py-1 text-xs text-[var(--color-brand)] hover:bg-[var(--color-brand)]/5">
-                      + {l("admin.masters.addRate")}
-                    </button>
-                  )}
-                </td>
-                <td className={tdCls}>
-                  {existing && !isEditing && (
-                    <button type="button" onClick={() => handleDelete(existing.id)} disabled={saving}
-                      className="rounded-md border border-red-200 px-3 py-1 text-xs text-red-500 hover:bg-red-50 disabled:opacity-40 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/20">
-                      {l("admin.masters.deleteRate")}
-                    </button>
-                  )}
+  if (isLoading) return (
+    <div className="px-4 py-12 text-center font-body text-sm text-[var(--color-ink-muted)]">読み込み中…</div>
+  );
+
+  return (
+    <div>
+      <div className="flex items-center gap-3 border-b border-stone-200/80 px-4 py-3 dark:border-stone-700/80">
+        <input
+          type="text"
+          placeholder="代理店名で絞り込み…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-56 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40"
+        />
+        <span className="font-body text-xs text-[var(--color-ink-muted)]">{filteredAgencies.length} 社</span>
+        {saving && <span className="font-body text-xs text-[var(--color-ink-muted)]">保存中…</span>}
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="min-w-max font-body text-xs">
+          <thead>
+            <tr className="border-b border-stone-200/80 dark:border-stone-700/80">
+              <th className="sticky left-0 z-10 min-w-[160px] bg-[var(--color-surface-elevated)] px-4 py-3 text-left font-medium text-[var(--color-ink-muted)]">
+                代理店
+              </th>
+              {MAINTENANCE_COLS.map((col) => (
+                <th key={col.productId}
+                  className="min-w-[90px] px-2 py-2 text-center font-medium text-[var(--color-ink-muted)]">
+                  {col.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filteredAgencies.length === 0 ? (
+              <tr>
+                <td colSpan={MAINTENANCE_COLS.length + 1} className="px-4 py-8 text-center text-[var(--color-ink-muted)]">
+                  代理店が登録されていません
                 </td>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
+            ) : filteredAgencies.map((ag) => (
+              <tr key={ag.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50/60 dark:border-stone-800 dark:hover:bg-stone-800/20">
+                <td className="sticky left-0 z-10 bg-[var(--color-surface-elevated)] px-4 py-2 font-medium text-[var(--color-ink)]">
+                  {ag.name}
+                </td>
+                {MAINTENANCE_COLS.map((col) => {
+                  const key = `${ag.id}__${col.productId}`;
+                  const existing = rateMap.get(key);
+                  const isEditing = editKey === key;
+
+                  return (
+                    <td key={key} className="px-1 py-1 text-center">
+                      {isEditing ? (
+                        <div className="flex flex-col items-center gap-1">
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number" min={0} max={100} step={0.1}
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              autoFocus
+                              className="w-16 rounded border border-[var(--color-brand)] px-1.5 py-1 text-center text-xs outline-none dark:bg-stone-800"
+                            />
+                            <span className="text-[var(--color-ink-muted)]">%</span>
+                          </div>
+                          <div className="flex gap-1">
+                            <button type="button"
+                              onClick={() => saveCell(ag.id, ag.name, col.productId)}
+                              disabled={saving}
+                              className="rounded bg-[var(--color-brand)] px-2 py-0.5 text-xs text-white hover:opacity-90 disabled:opacity-50">
+                              保存
+                            </button>
+                            <button type="button" onClick={() => setEditKey(null)}
+                              className="rounded border border-stone-300 px-2 py-0.5 text-xs dark:border-stone-600">
+                              ×
+                            </button>
+                            {existing && (
+                              <button type="button" onClick={() => deleteCell(key)} disabled={saving}
+                                className="rounded border border-red-200 px-2 py-0.5 text-xs text-red-500 hover:bg-red-50 disabled:opacity-40 dark:border-red-800">
+                                削除
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => startEdit(key, existing?.rate ?? null)}
+                          className={`w-full rounded px-2 py-1.5 text-xs transition hover:ring-2 hover:ring-[var(--color-brand)]/30 ${
+                            existing
+                              ? "font-medium text-[var(--color-ink)]"
+                              : "text-stone-300 dark:text-stone-600"
+                          }`}>
+                          {existing ? rateDisplay(existing.rate) : "—"}
+                        </button>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -561,21 +525,21 @@ function TemplateTab({ locale }: { locale: string }) {
         <thead>
           <tr className="border-b border-stone-200/80 dark:border-stone-700/80">
             {["admin.masters.deliveryType","admin.masters.contractType","admin.masters.subType","admin.masters.fileName","admin.masters.uploadedAt","admin.masters.upload"].map((k) => (
-              <th key={k} className={thCls}>{l(k)}</th>
+              <th key={k} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-[var(--color-ink-muted)]">{l(k)}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-800/40">
-              <td className={tdCls}>{DELIVERY_TYPES.find((d) => d.value === r.deliveryType)?.labelJa}</td>
-              <td className={tdCls}>{CONTRACT_TYPES.find((c) => c.value === r.contractType)?.labelJa}</td>
-              <td className={tdCls}>{r.subType ?? "—"}</td>
-              <td className={tdCls}>
+              <td className="px-4 py-3">{DELIVERY_TYPES.find((d) => d.value === r.deliveryType)?.labelJa}</td>
+              <td className="px-4 py-3">{CONTRACT_TYPES.find((c) => c.value === r.contractType)?.labelJa}</td>
+              <td className="px-4 py-3">{r.subType ?? "—"}</td>
+              <td className="px-4 py-3">
                 <span className="rounded-md bg-stone-100 px-2 py-0.5 font-mono text-xs dark:bg-stone-800">{r.fileName}</span>
               </td>
-              <td className={tdCls}>{r.uploadedAt}</td>
-              <td className={tdCls}>
+              <td className="px-4 py-3">{r.uploadedAt}</td>
+              <td className="px-4 py-3">
                 <label className="cursor-pointer rounded-md border border-stone-300 px-3 py-1 text-xs hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700">
                   {l("admin.masters.upload")}
                   <input type="file" accept=".xlsx" className="hidden" onChange={() => alert("ファイルアップロードは API 連携後に実装します。")} />
@@ -624,10 +588,10 @@ export default function AdminMastersPage() {
         ))}
       </div>
       <div className="rounded-xl border border-stone-200/80 bg-[var(--color-surface-elevated)] shadow-sm dark:border-stone-700/80">
-        {tab === "margin"      && <MarginTab      locale={locale} />}
-        {tab === "maintenance" && <MaintenanceTab locale={locale} />}
-        {tab === "unitPrice"   && <UnitPriceTab   locale={locale} />}
-        {tab === "template"    && <TemplateTab    locale={locale} />}
+        {tab === "margin"      && <MarginGrid      locale={locale} />}
+        {tab === "maintenance" && <MaintenanceGrid locale={locale} />}
+        {tab === "unitPrice"   && <UnitPriceTab    locale={locale} />}
+        {tab === "template"    && <TemplateTab     locale={locale} />}
       </div>
     </div>
   );

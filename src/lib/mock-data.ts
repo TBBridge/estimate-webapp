@@ -128,15 +128,16 @@ export type MaintenanceRate = {
   id: string;
   agencyId: string;
   agencyName: string;
+  productId: string;
   rate: number;
 };
 
 export const MOCK_MAINTENANCE_RATES: MaintenanceRate[] = [
-  { id: "mtr-1", agencyId: "ag-1", agencyName: "株式会社アルファ", rate: 0.70 },
-  { id: "mtr-2", agencyId: "ag-2", agencyName: "ベータ商事", rate: 0.65 },
-  { id: "mtr-3", agencyId: "ag-3", agencyName: "ガンマテック株式会社", rate: 0.75 },
-  { id: "mtr-4", agencyId: "ag-4", agencyName: "デルタソリューションズ", rate: 0.68 },
-  { id: "mtr-5", agencyId: "ag-5", agencyName: "イプシロン情報", rate: 0.72 },
+  { id: "mtr-1", agencyId: "ag-1", agencyName: "株式会社アルファ", productId: "ireporter", rate: 0.70 },
+  { id: "mtr-2", agencyId: "ag-2", agencyName: "ベータ商事", productId: "ireporter", rate: 0.65 },
+  { id: "mtr-3", agencyId: "ag-3", agencyName: "ガンマテック株式会社", productId: "ireporter", rate: 0.75 },
+  { id: "mtr-4", agencyId: "ag-4", agencyName: "デルタソリューションズ", productId: "ireporter", rate: 0.68 },
+  { id: "mtr-5", agencyId: "ag-5", agencyName: "イプシロン情報", productId: "ireporter", rate: 0.72 },
 ];
 
 // ─────────────────────────────────────────────
