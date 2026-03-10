@@ -38,8 +38,10 @@ export type Estimate = {
   customerName: string;
   deliveryType: DeliveryType;
   contractType: ContractType;
+  cloudBilling?: string;
   amount: number;
   maintenanceFee: number;
+  formInputs?: Record<string, unknown>;
   status: EstimateStatus;
   createdAt: string;
   approvedAt?: string;
