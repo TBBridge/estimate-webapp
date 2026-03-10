@@ -7,8 +7,9 @@ import { useMarginRates, updateMarginRate, createMarginRate, deleteMarginRate } 
 import { useMaintenanceRates, updateMaintenanceRate, createMaintenanceRate, deleteMaintenanceRate } from "@/hooks/use-maintenance-rates";
 import { useUnitPrices, updateUnitPriceTiers } from "@/hooks/use-unit-prices";
 import { useAgencies } from "@/hooks/use-agencies";
-import { MOCK_TEMPLATES, type TemplateDef, type PriceTier } from "@/lib/mock-data";
+import { type PriceTier } from "@/lib/mock-data";
 import { PRODUCTS, type UnitPrice } from "@/lib/mock-data";
+import { useTemplates, uploadTemplate, deleteTemplate, type TemplateMeta } from "@/hooks/use-templates";
 import { DELIVERY_TYPES, CONTRACT_TYPES } from "@/lib/constants";
 
 type Tab = "margin" | "maintenance" | "unitPrice" | "template";
@@ -517,38 +518,179 @@ function UnitPriceTab({ locale }: { locale: string }) {
 
 // ── テンプレート ──────────────────────────────────────
 function TemplateTab({ locale }: { locale: string }) {
-  const [rows] = useState<TemplateDef[]>(MOCK_TEMPLATES);
   const l = (k: string) => t(locale as "ja" | "en", k);
+  const { templates, isLoading, error } = useTemplates();
+
+  // uploadState: { [id]: "idle" | "uploading" | "done" | "error" }
+  const [uploadStates, setUploadStates] = useState<Record<string, { state: string; msg?: string }>>({});
+
+  const setUploadState = (id: string, state: string, msg?: string) =>
+    setUploadStates((prev) => ({ ...prev, [id]: { state, msg } }));
+
+  const handleFileChange = async (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = ""; // リセット（同じファイルの再選択を許可）
+    setUploadState(id, "uploading");
+    try {
+      await uploadTemplate(id, file);
+      setUploadState(id, "done");
+      setTimeout(() => setUploadState(id, "idle"), 3000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setUploadState(id, "error", msg);
+    }
+  };
+
+  const handleDelete = async (tpl: TemplateMeta) => {
+    if (!confirm(l("admin.masters.confirmDeleteFile"))) return;
+    setUploadState(tpl.id, "uploading");
+    try {
+      await deleteTemplate(tpl.id);
+      setUploadState(tpl.id, "idle");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setUploadState(tpl.id, "error", msg);
+    }
+  };
+
+  const subTypeLabel = (s?: string) => {
+    if (s === "annual") return "年額";
+    if (s === "period") return "区切り";
+    return "—";
+  };
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full font-body text-sm">
-        <thead>
-          <tr className="border-b border-stone-200/80 dark:border-stone-700/80">
-            {["admin.masters.deliveryType","admin.masters.contractType","admin.masters.subType","admin.masters.fileName","admin.masters.uploadedAt","admin.masters.upload"].map((k) => (
-              <th key={k} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-[var(--color-ink-muted)]">{l(k)}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-800/40">
-              <td className="px-4 py-3">{DELIVERY_TYPES.find((d) => d.value === r.deliveryType)?.labelJa}</td>
-              <td className="px-4 py-3">{CONTRACT_TYPES.find((c) => c.value === r.contractType)?.labelJa}</td>
-              <td className="px-4 py-3">{r.subType ?? "—"}</td>
-              <td className="px-4 py-3">
-                <span className="rounded-md bg-stone-100 px-2 py-0.5 font-mono text-xs dark:bg-stone-800">{r.fileName}</span>
-              </td>
-              <td className="px-4 py-3">{r.uploadedAt}</td>
-              <td className="px-4 py-3">
-                <label className="cursor-pointer rounded-md border border-stone-300 px-3 py-1 text-xs hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700">
-                  {l("admin.masters.upload")}
-                  <input type="file" accept=".xlsx" className="hidden" onChange={() => alert("ファイルアップロードは API 連携後に実装します。")} />
-                </label>
-              </td>
+    <div>
+      {/* Blob 未設定の警告 */}
+      {error && String(error).includes("503") && (
+        <div className="mx-4 mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 font-body text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-300">
+          {l("admin.masters.blobNotConfigured")}
+        </div>
+      )}
+
+      <div className="overflow-x-auto">
+        <table className="w-full font-body text-sm">
+          <thead>
+            <tr className="border-b border-stone-200/80 dark:border-stone-700/80">
+              {[
+                "admin.masters.deliveryType",
+                "admin.masters.contractType",
+                "admin.masters.subType",
+                "admin.masters.fileName",
+                "admin.masters.uploadedAt",
+                "admin.masters.upload",
+              ].map((k) => (
+                <th key={k} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-[var(--color-ink-muted)]">
+                  {l(k)}
+                </th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-[var(--color-ink-muted)]">読み込み中…</td>
+              </tr>
+            ) : templates.map((tpl) => {
+              const us = uploadStates[tpl.id] ?? { state: "idle" };
+              const hasFile = !!tpl.blobUrl;
+
+              return (
+                <tr key={tpl.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-800/40">
+                  {/* 提供形態 */}
+                  <td className="px-4 py-3">
+                    {DELIVERY_TYPES.find((d) => d.value === tpl.deliveryType)?.labelJa}
+                  </td>
+                  {/* 契約形態 */}
+                  <td className="px-4 py-3">
+                    {CONTRACT_TYPES.find((c) => c.value === tpl.contractType)?.labelJa}
+                  </td>
+                  {/* サブ種別 */}
+                  <td className="px-4 py-3 text-[var(--color-ink-muted)]">
+                    {subTypeLabel(tpl.subType)}
+                  </td>
+                  {/* ファイル名 */}
+                  <td className="px-4 py-3">
+                    {hasFile ? (
+                      <a
+                        href={tpl.blobUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-md bg-stone-100 px-2 py-0.5 font-mono text-xs text-[var(--color-brand)] hover:underline dark:bg-stone-800"
+                        title={l("admin.masters.download")}
+                      >
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        {tpl.fileName}
+                      </a>
+                    ) : (
+                      <span className="font-body text-xs text-stone-400 dark:text-stone-600">
+                        {l("admin.masters.noFile")}
+                      </span>
+                    )}
+                  </td>
+                  {/* 更新日 */}
+                  <td className="px-4 py-3 text-[var(--color-ink-muted)]">
+                    {hasFile ? tpl.uploadedAt : "—"}
+                  </td>
+                  {/* 操作 */}
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* アップロードボタン */}
+                      {us.state === "uploading" ? (
+                        <span className="font-body text-xs text-[var(--color-ink-muted)]">
+                          {l("admin.masters.uploading")}
+                        </span>
+                      ) : us.state === "done" ? (
+                        <span className="font-body text-xs text-emerald-600 dark:text-emerald-400">
+                          ✓ {l("admin.masters.uploadSuccess")}
+                        </span>
+                      ) : (
+                        <label className="cursor-pointer rounded-md border border-[var(--color-border)] px-3 py-1 text-xs text-[var(--color-ink-muted)] hover:bg-[var(--color-surface-sub)] dark:hover:bg-stone-700">
+                          {hasFile ? l("admin.masters.upload") : `+ ${l("admin.masters.upload")}`}
+                          <input
+                            type="file"
+                            accept=".xlsx"
+                            className="hidden"
+                            onChange={(e) => handleFileChange(tpl.id, e)}
+                          />
+                        </label>
+                      )}
+
+                      {/* 削除ボタン（ファイルがある場合のみ） */}
+                      {hasFile && us.state !== "uploading" && (
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(tpl)}
+                          className="rounded-md border border-red-200 px-3 py-1 text-xs text-red-500 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/20"
+                        >
+                          {l("admin.masters.deleteFile")}
+                        </button>
+                      )}
+
+                      {/* エラー表示 */}
+                      {us.state === "error" && (
+                        <div className="w-full mt-1">
+                          <p className="font-body text-xs text-red-600 dark:text-red-400">
+                            {l("admin.masters.uploadError")}: {us.msg}
+                          </p>
+                          {us.msg?.includes("BLOB_READ_WRITE_TOKEN") && (
+                            <p className="mt-1 font-body text-xs text-amber-700 dark:text-amber-400">
+                              {l("admin.masters.blobNotConfigured")}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

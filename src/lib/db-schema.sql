@@ -85,6 +85,17 @@ ALTER TABLE estimates ADD COLUMN IF NOT EXISTS form_inputs JSONB NOT NULL DEFAUL
 ALTER TABLE estimates ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at::TIMESTAMPTZ;
 ALTER TABLE estimates ALTER COLUMN approved_at TYPE TIMESTAMPTZ USING approved_at::TIMESTAMPTZ;
 
+-- 見積書テンプレート
+CREATE TABLE IF NOT EXISTS templates (
+  id            TEXT PRIMARY KEY,          -- 'tpl-1' 〜 'tpl-7' (固定ID)
+  delivery_type TEXT NOT NULL,
+  contract_type TEXT NOT NULL,
+  sub_type      TEXT,                      -- 'annual' | 'period' | NULL
+  file_name     TEXT NOT NULL DEFAULT '',  -- アップロードされたファイル名
+  blob_url      TEXT NOT NULL DEFAULT '',  -- Vercel Blob の URL
+  uploaded_at   DATE NOT NULL DEFAULT CURRENT_DATE
+);
+
 -- 通知設定
 CREATE TABLE IF NOT EXISTS app_settings (
   key   TEXT PRIMARY KEY,
