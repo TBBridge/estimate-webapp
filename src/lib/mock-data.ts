@@ -63,16 +63,79 @@ export const MOCK_ESTIMATES: Estimate[] = [
 // ─────────────────────────────────────────────
 // 製品一覧（仕切り率・単価のキー）
 // ─────────────────────────────────────────────
+/**
+ * 製品マスタ
+ * deliveryTypes: この製品で仕切り率を設定する提供形態の一覧
+ * hasMaintenanceRate: 保守仕切り率を設定するか（onprem の永久ライセンスがある製品のみ true）
+ * isOption: 見積フォームでオプション扱いかどうか
+ */
 export const PRODUCTS = [
-  { id: "ireporter",    nameJa: "i-Reporter",                 isOption: false },
-  { id: "webapi",       nameJa: "Web API",                    isOption: true  },
-  { id: "conmas_std",   nameJa: "ConMas IoT standard版",      isOption: true  },
-  { id: "conmas_pro",   nameJa: "ConMas IoT professional版",  isOption: true  },
-  { id: "conmas_map",   nameJa: "ConMas IoT MappingTOOL",     isOption: true  },
-  { id: "irepo_link",   nameJa: "i-Repo Link",                isOption: true  },
-  { id: "irepo_edgeocr",nameJa: "i-Repo EdgeOCR",            isOption: true  },
-  { id: "irepo_freedraw",nameJa:"i-Repo FreeDraw",            isOption: true  },
-  { id: "irepo_workflow",nameJa:"i-Repo WorkFlow",            isOption: true  },
+  {
+    id: "ireporter",     nameJa: "i-Reporter",
+    isOption: false,
+    deliveryTypes: ["onprem", "subscription", "cloud"] as const,
+    hasMaintenanceRate: true,
+  },
+  {
+    id: "webapi",        nameJa: "Web API（外部連携API）",
+    isOption: true,
+    deliveryTypes: ["onprem", "subscription", "cloud"] as const,
+    hasMaintenanceRate: true,
+  },
+  {
+    id: "conmas_gw",     nameJa: "ConMas Gateway",
+    isOption: true,
+    deliveryTypes: ["onprem", "cloud"] as const,
+    hasMaintenanceRate: false,
+  },
+  {
+    id: "conmas_std",    nameJa: "ConMas IoT standard版",
+    isOption: true,
+    deliveryTypes: ["subscription", "cloud"] as const,
+    hasMaintenanceRate: false,
+  },
+  {
+    id: "conmas_pro",    nameJa: "ConMas IoT professional版",
+    isOption: true,
+    deliveryTypes: ["subscription", "cloud"] as const,
+    hasMaintenanceRate: false,
+  },
+  {
+    id: "conmas_map",    nameJa: "ConMas IoT MappingTOOL",
+    isOption: true,
+    deliveryTypes: ["subscription", "cloud"] as const,
+    hasMaintenanceRate: false,
+  },
+  {
+    id: "irepo_link",    nameJa: "i-Repo Link",
+    isOption: true,
+    deliveryTypes: ["onprem", "subscription", "cloud"] as const,
+    hasMaintenanceRate: true,
+  },
+  {
+    id: "irepo_edgeocr", nameJa: "i-Repo EdgeOCR",
+    isOption: true,
+    deliveryTypes: ["onprem", "subscription", "cloud"] as const,
+    hasMaintenanceRate: true,
+  },
+  {
+    id: "irepo_freedraw",nameJa: "i-Repo FreeDraw",
+    isOption: true,
+    deliveryTypes: ["onprem", "subscription", "cloud"] as const,
+    hasMaintenanceRate: true,
+  },
+  {
+    id: "irepo_workflow",nameJa: "i-Repo WorkFlow",
+    isOption: true,
+    deliveryTypes: ["onprem", "subscription", "cloud"] as const,
+    hasMaintenanceRate: true,
+  },
+  {
+    id: "irepo_scan",    nameJa: "i-Repo Scan",
+    isOption: true,
+    deliveryTypes: ["subscription"] as const,
+    hasMaintenanceRate: false,
+  },
 ] as const;
 
 export type ProductId = (typeof PRODUCTS)[number]["id"];
@@ -89,7 +152,7 @@ export type MarginRate = {
   rate: number; // 0〜1
 };
 
-// 代理店1社あたり全製品×主な提供形態のサンプルデータ
+// 代理店1社あたり全製品×製品ごとの提供形態のサンプルデータ
 function makeMarginRows(
   agencyId: string,
   agencyName: string,
@@ -99,15 +162,8 @@ function makeMarginRows(
   const rows: MarginRate[] = [];
   let seq = 1;
   for (const p of PRODUCTS) {
-    // オプション製品は提供形態によらず固定仕切り率とする（提供形態を持たない）
-    // ただし i-Reporter は提供形態ごとに設定
-    if (!p.isOption) {
-      for (const dt of ["onprem", "subscription", "cloud"] as DeliveryType[]) {
-        rows.push({ id: `${prefix}-${seq++}`, agencyId, agencyName, productId: p.id, deliveryType: dt, rate: baseRate });
-      }
-    } else {
-      // オプションは onprem のみ代表として持つ（将来拡張可）
-      rows.push({ id: `${prefix}-${seq++}`, agencyId, agencyName, productId: p.id, deliveryType: "onprem", rate: Math.max(0.50, baseRate - 0.05) });
+    for (const dt of p.deliveryTypes as readonly DeliveryType[]) {
+      rows.push({ id: `${prefix}-${seq++}`, agencyId, agencyName, productId: p.id, deliveryType: dt, rate: baseRate });
     }
   }
   return rows;

@@ -14,23 +14,31 @@ import { DELIVERY_TYPES, CONTRACT_TYPES } from "@/lib/constants";
 
 type Tab = "margin" | "maintenance" | "unitPrice" | "template";
 
-// 本製品タブの列定義: 製品 × 提供形態
+// 本製品タブの列定義: 製品 × 製品ごとの提供形態
 type ColDef = { productId: string; deliveryType: string; label: string };
 
-const MARGIN_COLS: ColDef[] = (PRODUCTS as readonly { id: string; nameJa: string; isOption: boolean }[]).flatMap((p) => {
-  if (!p.isOption) {
-    return DELIVERY_TYPES.map((d) => ({
-      productId: p.id,
-      deliveryType: d.value,
-      label: `${p.nameJa}\n(${d.labelJa})`,
-    }));
-  }
-  return [{ productId: p.id, deliveryType: "onprem", label: p.nameJa }];
-});
+const DELIVERY_LABEL: Record<string, string> = {
+  onprem: "オンプレ",
+  subscription: "サブスク",
+  cloud: "クラウド",
+};
 
-// 保守タブの列定義: 製品のみ（提供形態なし）
-const MAINTENANCE_COLS: { productId: string; label: string }[] =
-  (PRODUCTS as readonly { id: string; nameJa: string; isOption: boolean }[]).map((p) => ({
+const MARGIN_COLS: ColDef[] = (
+  PRODUCTS as readonly { id: string; nameJa: string; deliveryTypes: readonly string[] }[]
+).flatMap((p) =>
+  p.deliveryTypes.map((dt) => ({
+    productId: p.id,
+    deliveryType: dt,
+    label: `${p.nameJa}\n(${DELIVERY_LABEL[dt] ?? dt})`,
+  }))
+);
+
+// 保守タブの列定義: 保守仕切り率を持つ製品のみ（提供形態なし）
+const MAINTENANCE_COLS: { productId: string; label: string }[] = (
+  PRODUCTS as readonly { id: string; nameJa: string; hasMaintenanceRate: boolean }[]
+)
+  .filter((p) => p.hasMaintenanceRate)
+  .map((p) => ({
     productId: p.id,
     label: p.nameJa,
   }));
