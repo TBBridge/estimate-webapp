@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { useLocale } from "@/lib/locale-context";
 import { t } from "@/lib/translations";
-import { useMarginRates, updateMarginRate } from "@/hooks/use-margin-rates";
-import { useMaintenanceRates, updateMaintenanceRate } from "@/hooks/use-maintenance-rates";
+import { useMarginRates, updateMarginRate, createMarginRate, deleteMarginRate } from "@/hooks/use-margin-rates";
+import { useMaintenanceRates, updateMaintenanceRate, createMaintenanceRate, deleteMaintenanceRate } from "@/hooks/use-maintenance-rates";
 import { useUnitPrices, updateUnitPriceTiers } from "@/hooks/use-unit-prices";
+import { useAgencies } from "@/hooks/use-agencies";
 import { MOCK_TEMPLATES, type TemplateDef, type PriceTier } from "@/lib/mock-data";
 import { PRODUCTS, type MarginRate, type MaintenanceRate, type UnitPrice } from "@/lib/mock-data";
 import { DELIVERY_TYPES, CONTRACT_TYPES } from "@/lib/constants";
@@ -28,35 +29,87 @@ function LoadingRow({ cols }: { cols: number }) {
 // ── 仕切り率（本製品）──────────────────────────────────
 function MarginTab({ locale }: { locale: string }) {
   const l = (k: string) => t(locale as "ja" | "en", k);
-  const { marginRates, isLoading } = useMarginRates();
+  const { marginRates, isLoading: ratesLoading } = useMarginRates();
+  const { agencies, isLoading: agenciesLoading } = useAgencies();
+
+  const [activeAgencyId, setActiveAgencyId] = useState<string>("");
   const [editId, setEditId] = useState<string | null>(null);
   const [editRate, setEditRate] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const agencies = Array.from(new Set(marginRates.map((r) => r.agencyId))).map((id) => ({
-    id, name: marginRates.find((r) => r.agencyId === id)!.agencyName,
-  }));
-  const [openAgency, setOpenAgency] = useState<string>("");
-  const activeAgency = openAgency || agencies[0]?.id || "";
-  const agencyRows = marginRates.filter((r) => r.agencyId === activeAgency);
+  // 新規追加モーダル用
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newProductId, setNewProductId] = useState<string>(PRODUCTS[0].id);
+  const [newDeliveryType, setNewDeliveryType] = useState("onprem");
+  const [newRate, setNewRate] = useState("70");
+
+  const isLoading = ratesLoading || agenciesLoading;
+  const currentAgencyId = activeAgencyId || agencies[0]?.id || "";
+  const currentAgency = agencies.find((a) => a.id === currentAgencyId);
+  const agencyRows = marginRates.filter((r) => r.agencyId === currentAgencyId);
+
   const productOf = (id: string) => PRODUCTS.find((p) => p.id === id);
   const deliveryLabel = (dt: string) => DELIVERY_TYPES.find((d) => d.value === dt)?.labelJa ?? dt;
 
-  const startEdit = (r: MarginRate) => { setEditId(r.id); setEditRate(String(Math.round(r.rate * 1000) / 10)); };
+  const startEdit = (r: MarginRate) => {
+    setEditId(r.id);
+    setEditRate(String(Math.round(r.rate * 1000) / 10));
+  };
+
   const save = async (id: string) => {
     setSaving(true);
     try { await updateMarginRate(id, Number(editRate) / 100); setEditId(null); }
     finally { setSaving(false); }
   };
 
+  const handleDelete = async (id: string) => {
+    if (!confirm(l("admin.masters.confirmDeleteRate"))) return;
+    setSaving(true);
+    try { await deleteMarginRate(id); }
+    finally { setSaving(false); }
+  };
+
+  const handleAddAllProducts = async () => {
+    if (!currentAgency) return;
+    if (!confirm(`${currentAgency.name} の全製品×提供形態の仕切り率を一括追加しますか？（既存は上書きされません）`)) return;
+    setSaving(true);
+    try {
+      for (const p of PRODUCTS) {
+        const deliveryTypes = p.isOption ? ["onprem"] : ["onprem", "subscription", "cloud"];
+        for (const dt of deliveryTypes) {
+          const exists = marginRates.find(
+            (r) => r.agencyId === currentAgencyId && r.productId === p.id && r.deliveryType === dt
+          );
+          if (!exists) {
+            await createMarginRate(currentAgencyId, currentAgency.name, p.id, dt, 0.70);
+          }
+        }
+      }
+    } finally { setSaving(false); }
+  };
+
+  const handleAddSingle = async () => {
+    if (!currentAgency) return;
+    setSaving(true);
+    try {
+      await createMarginRate(currentAgencyId, currentAgency.name, newProductId, newDeliveryType, Number(newRate) / 100);
+      setShowAddModal(false);
+    } finally { setSaving(false); }
+  };
+
   return (
     <div>
-      <div className="flex gap-1 overflow-x-auto border-b border-stone-200/80 px-4 pt-4 dark:border-stone-700/80">
-        {agencies.map((ag) => (
+      {/* 代理店タブ */}
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-stone-200/80 px-4 pt-4 dark:border-stone-700/80">
+        {isLoading ? (
+          <span className="px-4 py-2 font-body text-sm text-[var(--color-ink-muted)]">読み込み中…</span>
+        ) : agencies.length === 0 ? (
+          <span className="px-4 py-2 font-body text-sm text-[var(--color-ink-muted)]">代理店が登録されていません</span>
+        ) : agencies.map((ag) => (
           <button key={ag.id} type="button"
-            onClick={() => { setOpenAgency(ag.id); setEditId(null); }}
+            onClick={() => { setActiveAgencyId(ag.id); setEditId(null); setShowAddModal(false); }}
             className={`shrink-0 rounded-t-lg px-4 py-2 font-body text-sm transition ${
-              activeAgency === ag.id
+              currentAgencyId === ag.id
                 ? "border-b-2 border-[var(--color-brand)] font-medium text-[var(--color-brand)]"
                 : "text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
             }`}>
@@ -64,17 +117,95 @@ function MarginTab({ locale }: { locale: string }) {
           </button>
         ))}
       </div>
+
+      {/* ツールバー */}
+      {currentAgency && (
+        <div className="flex items-center justify-between px-4 py-3">
+          <p className="font-body text-xs text-[var(--color-ink-muted)]">
+            {agencyRows.length} 件設定済み
+          </p>
+          <div className="flex gap-2">
+            <button type="button" onClick={handleAddAllProducts} disabled={saving}
+              className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 font-body text-xs text-[var(--color-ink-muted)] hover:bg-[var(--color-surface-sub)] disabled:opacity-50">
+              {l("admin.masters.addAllProducts")}
+            </button>
+            <button type="button" onClick={() => setShowAddModal(true)} disabled={saving}
+              className="rounded-lg bg-[var(--color-brand)] px-3 py-1.5 font-body text-xs font-medium text-white hover:opacity-90 disabled:opacity-50">
+              + {l("admin.masters.addRate")}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 新規追加モーダル */}
+      {showAddModal && currentAgency && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-6 shadow-xl">
+            <h3 className="mb-4 font-display text-base font-semibold text-[var(--color-ink)]">
+              仕切り率を追加 — {currentAgency.name}
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block font-body text-sm text-[var(--color-ink-muted)]">製品</label>
+                <select value={newProductId} onChange={(e) => setNewProductId(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40">
+                  {PRODUCTS.map((p) => (
+                    <option key={p.id} value={p.id}>{p.nameJa}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block font-body text-sm text-[var(--color-ink-muted)]">提供形態</label>
+                <select value={newDeliveryType} onChange={(e) => setNewDeliveryType(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40">
+                  {DELIVERY_TYPES.map((d) => (
+                    <option key={d.value} value={d.value}>{d.labelJa}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block font-body text-sm text-[var(--color-ink-muted)]">{l("admin.masters.ratePercent")}</label>
+                <div className="mt-1 flex items-center gap-2">
+                  <input type="number" min={0} max={100} step={0.1} value={newRate}
+                    onChange={(e) => setNewRate(e.target.value)}
+                    className="w-24 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40" />
+                  <span className="font-body text-sm text-[var(--color-ink-muted)]">%</span>
+                </div>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <button type="button" onClick={() => setShowAddModal(false)}
+                className="rounded-lg border border-[var(--color-border)] px-4 py-2 font-body text-sm text-[var(--color-ink-muted)] hover:bg-[var(--color-surface-sub)]">
+                {l("admin.masters.cancel")}
+              </button>
+              <button type="button" onClick={handleAddSingle} disabled={saving}
+                className="rounded-lg bg-[var(--color-brand)] px-4 py-2 font-body text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
+                {saving ? "保存中…" : l("admin.masters.save")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* テーブル */}
       <div className="overflow-x-auto">
         <table className="w-full font-body text-sm">
           <thead>
             <tr className="border-b border-stone-200/80 dark:border-stone-700/80">
-              {["admin.masters.product","admin.masters.deliveryType","admin.masters.rate","admin.masters.edit"].map((k) => (
-                <th key={k} className={thCls}>{l(k)}</th>
+              {["admin.masters.product","admin.masters.deliveryType","admin.masters.rate","admin.masters.edit",""].map((k, i) => (
+                <th key={i} className={thCls}>{k ? l(k) : ""}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {isLoading ? <LoadingRow cols={4} /> : agencyRows.map((r) => (
+            {isLoading ? <LoadingRow cols={5} /> :
+             agencyRows.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center font-body text-sm text-[var(--color-ink-muted)]">
+                  仕切り率が設定されていません。「全製品を一括追加」または「＋ 仕切り率を追加」で設定してください。
+                </td>
+              </tr>
+            ) : agencyRows.map((r) => (
               <tr key={r.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-800/40">
                 <td className={tdCls}>
                   <span className={`inline-flex items-center gap-1 font-medium text-[var(--color-ink)] ${productOf(r.productId)?.isOption ? "pl-3" : ""}`}>
@@ -114,6 +245,12 @@ function MarginTab({ locale }: { locale: string }) {
                     </button>
                   )}
                 </td>
+                <td className={tdCls}>
+                  <button type="button" onClick={() => handleDelete(r.id)} disabled={saving}
+                    className="rounded-md border border-red-200 px-3 py-1 text-xs text-red-500 hover:bg-red-50 disabled:opacity-40 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/20">
+                    {l("admin.masters.deleteRate")}
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -126,16 +263,46 @@ function MarginTab({ locale }: { locale: string }) {
 // ── 仕切り率（保守）──────────────────────────────────
 function MaintenanceTab({ locale }: { locale: string }) {
   const l = (k: string) => t(locale as "ja" | "en", k);
-  const { maintenanceRates, isLoading } = useMaintenanceRates();
+  const { maintenanceRates, isLoading: ratesLoading } = useMaintenanceRates();
+  const { agencies, isLoading: agenciesLoading } = useAgencies();
+
   const [editId, setEditId] = useState<string | null>(null);
   const [editRate, setEditRate] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const startEdit = (r: MaintenanceRate) => { setEditId(r.id); setEditRate(String(Math.round(r.rate * 1000) / 10)); };
+  // 新規追加用
+  const [addingAgencyId, setAddingAgencyId] = useState<string | null>(null);
+  const [newRate, setNewRate] = useState("70");
+
+  const isLoading = ratesLoading || agenciesLoading;
+
+  const rateByAgency = new Map(maintenanceRates.map((r) => [r.agencyId, r]));
+
+  const startEdit = (r: MaintenanceRate) => {
+    setEditId(r.id);
+    setEditRate(String(Math.round(r.rate * 1000) / 10));
+  };
+
   const save = async (id: string) => {
     setSaving(true);
     try { await updateMaintenanceRate(id, Number(editRate) / 100); setEditId(null); }
     finally { setSaving(false); }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm(l("admin.masters.confirmDeleteRate"))) return;
+    setSaving(true);
+    try { await deleteMaintenanceRate(id); }
+    finally { setSaving(false); }
+  };
+
+  const handleAdd = async (agencyId: string, agencyName: string) => {
+    setSaving(true);
+    try {
+      await createMaintenanceRate(agencyId, agencyName, Number(newRate) / 100);
+      setAddingAgencyId(null);
+      setNewRate("70");
+    } finally { setSaving(false); }
   };
 
   return (
@@ -143,46 +310,92 @@ function MaintenanceTab({ locale }: { locale: string }) {
       <table className="w-full font-body text-sm">
         <thead>
           <tr className="border-b border-stone-200/80 dark:border-stone-700/80">
-            {["admin.masters.agency","admin.masters.rate","admin.masters.edit"].map((k) => (
-              <th key={k} className={thCls}>{l(k)}</th>
+            {["admin.masters.agency", "admin.masters.rate", "admin.masters.edit", ""].map((k, i) => (
+              <th key={i} className={thCls}>{k ? l(k) : ""}</th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {isLoading ? <LoadingRow cols={3} /> : maintenanceRates.map((r) => (
-            <tr key={r.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-800/40">
-              <td className={`${tdCls} font-medium text-[var(--color-ink)]`}>{r.agencyName}</td>
-              <td className={tdCls}>
-                {editId === r.id ? (
-                  <div className="flex items-center gap-2">
-                    <input type="number" min={0} max={100} step={0.1} value={editRate}
-                      onChange={(e) => setEditRate(e.target.value)}
-                      className="w-20 rounded-lg border border-stone-300 px-2 py-1 font-body text-sm dark:border-stone-600 dark:bg-stone-800" />
-                    <span className="text-[var(--color-ink-muted)]">%</span>
-                  </div>
-                ) : <span className="font-medium">{Math.round(r.rate * 1000) / 10} %</span>}
-              </td>
-              <td className={tdCls}>
-                {editId === r.id ? (
-                  <div className="flex gap-2">
-                    <button type="button" disabled={saving} onClick={() => save(r.id)}
-                      className="rounded-md bg-[var(--color-brand)] px-3 py-1 text-xs text-white hover:opacity-90 disabled:opacity-60">
-                      {l("admin.masters.save")}
+          {isLoading ? <LoadingRow cols={4} /> : agencies.map((ag) => {
+            const existing = rateByAgency.get(ag.id);
+            const isEditing = existing && editId === existing.id;
+            const isAdding = !existing && addingAgencyId === ag.id;
+
+            return (
+              <tr key={ag.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-800/40">
+                <td className={`${tdCls} font-medium text-[var(--color-ink)]`}>{ag.name}</td>
+                <td className={tdCls}>
+                  {existing ? (
+                    isEditing ? (
+                      <div className="flex items-center gap-2">
+                        <input type="number" min={0} max={100} step={0.1} value={editRate}
+                          onChange={(e) => setEditRate(e.target.value)}
+                          className="w-20 rounded-lg border border-stone-300 px-2 py-1 font-body text-sm dark:border-stone-600 dark:bg-stone-800" />
+                        <span className="text-[var(--color-ink-muted)]">%</span>
+                      </div>
+                    ) : (
+                      <span className="font-medium">{Math.round(existing.rate * 1000) / 10} %</span>
+                    )
+                  ) : isAdding ? (
+                    <div className="flex items-center gap-2">
+                      <input type="number" min={0} max={100} step={0.1} value={newRate}
+                        onChange={(e) => setNewRate(e.target.value)}
+                        className="w-20 rounded-lg border border-[var(--color-brand)] px-2 py-1 font-body text-sm dark:bg-stone-800" />
+                      <span className="text-[var(--color-ink-muted)]">%</span>
+                    </div>
+                  ) : (
+                    <span className="font-body text-xs text-[var(--color-ink-muted)]">{l("admin.masters.notSet")}</span>
+                  )}
+                </td>
+                <td className={tdCls}>
+                  {existing ? (
+                    isEditing ? (
+                      <div className="flex gap-2">
+                        <button type="button" disabled={saving} onClick={() => save(existing.id)}
+                          className="rounded-md bg-[var(--color-brand)] px-3 py-1 text-xs text-white hover:opacity-90 disabled:opacity-60">
+                          {l("admin.masters.save")}
+                        </button>
+                        <button type="button" onClick={() => setEditId(null)}
+                          className="rounded-md border border-stone-300 px-3 py-1 text-xs dark:border-stone-600">
+                          {l("admin.masters.cancel")}
+                        </button>
+                      </div>
+                    ) : (
+                      <button type="button" onClick={() => startEdit(existing)}
+                        className="rounded-md border border-stone-300 px-3 py-1 text-xs hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700">
+                        {l("admin.masters.edit")}
+                      </button>
+                    )
+                  ) : isAdding ? (
+                    <div className="flex gap-2">
+                      <button type="button" disabled={saving} onClick={() => handleAdd(ag.id, ag.name)}
+                        className="rounded-md bg-[var(--color-brand)] px-3 py-1 text-xs text-white hover:opacity-90 disabled:opacity-60">
+                        {l("admin.masters.save")}
+                      </button>
+                      <button type="button" onClick={() => setAddingAgencyId(null)}
+                        className="rounded-md border border-stone-300 px-3 py-1 text-xs dark:border-stone-600">
+                        {l("admin.masters.cancel")}
+                      </button>
+                    </div>
+                  ) : (
+                    <button type="button"
+                      onClick={() => { setAddingAgencyId(ag.id); setNewRate("70"); }}
+                      className="rounded-md border border-[var(--color-brand)]/50 px-3 py-1 text-xs text-[var(--color-brand)] hover:bg-[var(--color-brand)]/5">
+                      + {l("admin.masters.addRate")}
                     </button>
-                    <button type="button" onClick={() => setEditId(null)}
-                      className="rounded-md border border-stone-300 px-3 py-1 text-xs dark:border-stone-600">
-                      {l("admin.masters.cancel")}
+                  )}
+                </td>
+                <td className={tdCls}>
+                  {existing && !isEditing && (
+                    <button type="button" onClick={() => handleDelete(existing.id)} disabled={saving}
+                      className="rounded-md border border-red-200 px-3 py-1 text-xs text-red-500 hover:bg-red-50 disabled:opacity-40 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/20">
+                      {l("admin.masters.deleteRate")}
                     </button>
-                  </div>
-                ) : (
-                  <button type="button" onClick={() => startEdit(r)}
-                    className="rounded-md border border-stone-300 px-3 py-1 text-xs hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700">
-                    {l("admin.masters.edit")}
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

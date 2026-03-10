@@ -18,6 +18,27 @@ export async function GET() {
   }
 }
 
+export async function POST(req: Request) {
+  try {
+    const sql = getDb();
+    const { agencyId, agencyName, rate } = await req.json();
+    const rows = await sql`
+      INSERT INTO maintenance_rates (agency_id, agency_name, rate)
+      VALUES (${agencyId}, ${agencyName}, ${rate})
+      ON CONFLICT (agency_id) DO UPDATE
+        SET rate = EXCLUDED.rate, agency_name = EXCLUDED.agency_name
+      RETURNING id, agency_id, agency_name, CAST(rate AS FLOAT) AS rate
+    `;
+    const r = rows[0];
+    return NextResponse.json({
+      id: r.id, agencyId: r.agency_id, agencyName: r.agency_name, rate: Number(r.rate),
+    }, { status: 201 });
+  } catch (e) {
+    console.error(e);
+    return NextResponse.json({ error: "Failed to create maintenance rate" }, { status: 500 });
+  }
+}
+
 export async function PUT(req: Request) {
   try {
     const sql = getDb();
@@ -34,5 +55,17 @@ export async function PUT(req: Request) {
   } catch (e) {
     console.error(e);
     return NextResponse.json({ error: "Failed to update maintenance rate" }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const sql = getDb();
+    const { id } = await req.json();
+    await sql`DELETE FROM maintenance_rates WHERE id = ${id}`;
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    return NextResponse.json({ error: "Failed to delete maintenance rate" }, { status: 500 });
   }
 }

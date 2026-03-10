@@ -22,3 +22,27 @@ export async function updateMaintenanceRate(id: string, rate: number): Promise<v
   if (!res.ok) throw new Error(await res.text());
   await mutate(KEY);
 }
+
+export async function createMaintenanceRate(
+  agencyId: string,
+  agencyName: string,
+  rate: number,
+): Promise<void> {
+  const res = await fetch(KEY, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ agencyId, agencyName, rate }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  await mutate(KEY);
+}
+
+export async function deleteMaintenanceRate(id: string): Promise<void> {
+  const res = await fetch(KEY, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  await mutate(KEY);
+}
