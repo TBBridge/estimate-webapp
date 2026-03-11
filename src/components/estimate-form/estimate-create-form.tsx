@@ -96,8 +96,15 @@ export default function EstimateCreateForm() {
       });
 
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error((err as { error?: string }).error ?? "Unknown error");
+        const text = await res.text();
+        let errMsg = `HTTP ${res.status}`;
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed.error) errMsg = parsed.error;
+        } catch {
+          if (text) errMsg = text.slice(0, 200);
+        }
+        throw new Error(errMsg);
       }
 
       const data = await res.json() as { no: string };

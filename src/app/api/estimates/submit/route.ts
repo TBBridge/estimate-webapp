@@ -184,7 +184,8 @@ export async function POST(req: Request) {
 
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error("[submit] Error:", msg);
+    const stack = e instanceof Error ? e.stack : undefined;
+    console.error("[submit] Error:", msg, stack);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
