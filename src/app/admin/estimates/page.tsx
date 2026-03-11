@@ -45,8 +45,28 @@ type DetailModalProps = {
 function DetailModal({ estimate: e, locale, onClose, onStatusChange }: DetailModalProps) {
   const l = (k: string) => t(locale, k);
   const [loading, setLoading] = useState<"approved" | "rejected" | null>(null);
+  const [pdfState, setPdfState] = useState<{ url?: string; generating: boolean; error?: string }>({
+    url: (e as Estimate & { pdfUrl?: string }).pdfUrl,
+    generating: false,
+  });
 
   const formInputs = (e as Estimate & { formInputs?: Record<string, unknown> }).formInputs ?? {};
+
+  async function handleGeneratePdf() {
+    setPdfState({ generating: true });
+    try {
+      const res = await fetch(`/api/estimates/${e.id}/generate-pdf`, { method: "POST" });
+      const data = await res.json() as { pdfUrl?: string; error?: string };
+      if (!res.ok || !data.pdfUrl) {
+        setPdfState({ generating: false, error: data.error ?? l("admin.estimates.generatePdfError") });
+      } else {
+        setPdfState({ url: data.pdfUrl, generating: false });
+        await mutate(() => true, undefined, { revalidate: true });
+      }
+    } catch (err) {
+      setPdfState({ generating: false, error: String(err) });
+    }
+  }
 
   async function handleAction(status: "approved" | "rejected") {
     const msg = status === "approved" ? l("admin.estimates.confirmApprove") : l("admin.estimates.confirmReject");
@@ -102,26 +122,24 @@ function DetailModal({ estimate: e, locale, onClose, onStatusChange }: DetailMod
           )}
 
           {/* 見積書ダウンロード（管理者: Excel + PDF 両方） */}
-          {((e as Estimate & { excelUrl?: string; pdfUrl?: string }).excelUrl ||
-            (e as Estimate & { excelUrl?: string; pdfUrl?: string }).pdfUrl) && (
+          {(e as Estimate & { excelUrl?: string }).excelUrl && (
             <div className="py-3">
               <p className="mb-2 font-body text-xs font-medium text-[var(--color-ink-muted)]">見積書</p>
               <div className="flex flex-wrap gap-2">
-                {(e as Estimate & { excelUrl?: string }).excelUrl && (
+                <a
+                  href={(e as Estimate & { excelUrl?: string }).excelUrl}
+                  download
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400 px-3 py-1.5 font-body text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:border-emerald-600 dark:text-emerald-400 dark:hover:bg-emerald-950/20"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  {l("admin.estimates.downloadExcel")}
+                </a>
+
+                {pdfState.url ? (
                   <a
-                    href={(e as Estimate & { excelUrl?: string }).excelUrl}
-                    download
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400 px-3 py-1.5 font-body text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:border-emerald-600 dark:text-emerald-400 dark:hover:bg-emerald-950/20"
-                  >
-                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                    {l("admin.estimates.downloadExcel")}
-                  </a>
-                )}
-                {(e as Estimate & { pdfUrl?: string }).pdfUrl && (
-                  <a
-                    href={(e as Estimate & { pdfUrl?: string }).pdfUrl}
+                    href={pdfState.url}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-brand)] px-3 py-1.5 font-body text-xs font-medium text-[var(--color-brand)] hover:bg-[var(--color-brand)]/5"
@@ -131,6 +149,33 @@ function DetailModal({ estimate: e, locale, onClose, onStatusChange }: DetailMod
                     </svg>
                     {l("admin.estimates.downloadPdf")}
                   </a>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleGeneratePdf}
+                    disabled={pdfState.generating}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-brand)] px-3 py-1.5 font-body text-xs font-medium text-[var(--color-brand)] hover:bg-[var(--color-brand)]/5 disabled:opacity-50"
+                  >
+                    {pdfState.generating ? (
+                      <>
+                        <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        {l("admin.estimates.generatingPdf")}
+                      </>
+                    ) : (
+                      <>
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        {l("admin.estimates.generatePdf")}
+                      </>
+                    )}
+                  </button>
+                )}
+                {pdfState.error && (
+                  <p className="w-full font-body text-xs text-red-600">{pdfState.error}</p>
                 )}
               </div>
             </div>

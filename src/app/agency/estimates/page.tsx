@@ -8,6 +8,7 @@ import EstimateCreateForm from "@/components/estimate-form/estimate-create-form"
 import { useEstimates } from "@/hooks/use-estimates";
 import type { Estimate } from "@/lib/mock-data";
 import { DELIVERY_TYPES, CONTRACT_TYPES } from "@/lib/constants";
+import { mutate } from "swr";
 
 const STATUS_BADGE: Record<string, string> = {
   pending:  "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
@@ -29,6 +30,79 @@ function contractLabel(v: string) {
 }
 
 type Tab = "new" | "list";
+
+// PDF生成ボタン（代理店用: 承認済みのみ表示）
+function PdfCell({ estimate }: { estimate: Estimate }) {
+  const est = estimate as Estimate & { pdfUrl?: string; excelUrl?: string };
+  const [pdfState, setPdfState] = useState<{ url?: string; generating: boolean; error?: string }>({
+    url: est.pdfUrl,
+    generating: false,
+  });
+
+  async function handleGenerate() {
+    setPdfState({ generating: true });
+    try {
+      const res = await fetch(`/api/estimates/${estimate.id}/generate-pdf`, { method: "POST" });
+      const data = await res.json() as { pdfUrl?: string; error?: string };
+      if (!res.ok || !data.pdfUrl) {
+        setPdfState({ generating: false, error: data.error ?? "PDF生成に失敗しました" });
+      } else {
+        setPdfState({ url: data.pdfUrl, generating: false });
+        await mutate(() => true, undefined, { revalidate: true });
+      }
+    } catch (err) {
+      setPdfState({ generating: false, error: String(err) });
+    }
+  }
+
+  // 承認済みでない場合は表示しない
+  if (estimate.status !== "approved") {
+    return <span className="text-xs text-stone-400">—</span>;
+  }
+
+  if (pdfState.url) {
+    return (
+      <a
+        href={pdfState.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 rounded-md border border-[var(--color-brand)] px-2.5 py-1 text-xs font-medium text-[var(--color-brand)] hover:bg-[var(--color-brand)]/5"
+      >
+        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg>
+        PDF
+      </a>
+    );
+  }
+
+  // Excel があれば PDF 生成ボタンを表示
+  if (est.excelUrl) {
+    return (
+      <div>
+        <button
+          type="button"
+          onClick={handleGenerate}
+          disabled={pdfState.generating}
+          className="inline-flex items-center gap-1 rounded-md border border-[var(--color-brand)] px-2.5 py-1 text-xs font-medium text-[var(--color-brand)] hover:bg-[var(--color-brand)]/5 disabled:opacity-50"
+        >
+          {pdfState.generating ? (
+            <>
+              <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              生成中...
+            </>
+          ) : "PDF 生成"}
+        </button>
+        {pdfState.error && <p className="mt-1 text-xs text-red-600">{pdfState.error}</p>}
+      </div>
+    );
+  }
+
+  return <span className="text-xs text-stone-400">—</span>;
+}
 
 export default function AgencyEstimatesPage() {
   const { locale } = useLocale();
@@ -118,23 +192,9 @@ export default function AgencyEstimatesPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-[var(--color-ink-muted)]">{e.createdAt}</td>
-                      {/* 代理店は PDF のみダウンロード可 */}
+                      {/* 代理店は PDF のみダウンロード可（承認済みのみ） */}
                       <td className="px-4 py-3">
-                        {(e as Estimate & { pdfUrl?: string }).pdfUrl ? (
-                          <a
-                            href={(e as Estimate & { pdfUrl?: string }).pdfUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 rounded-md border border-[var(--color-brand)] px-2.5 py-1 text-xs font-medium text-[var(--color-brand)] hover:bg-[var(--color-brand)]/5"
-                          >
-                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                            </svg>
-                            PDF
-                          </a>
-                        ) : (
-                          <span className="text-xs text-stone-400">—</span>
-                        )}
+                        <PdfCell estimate={e} />
                       </td>
                     </tr>
                   ))}

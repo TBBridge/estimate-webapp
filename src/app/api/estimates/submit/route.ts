@@ -3,11 +3,11 @@
  *
  * 1. 見積番号を生成
  * 2. DB に estimates レコードを INSERT
- * 3. テンプレート Excel にデータ書き込み → Blob に Excel 保存
- * 4. libreoffice-converter (Wasm) で Excel → PDF 変換 → Blob に PDF 保存
- *    （テンプレートの3シート: 表紙・ライセンス・保守 の印刷範囲が忠実にPDF化される）
- * 5. DB の excel_url / pdf_url を更新
- * 6. 承認通知を送信
+ * 3. テンプレート Excel にデータ書き込み → Blob に Excel 保存 → DB 更新
+ * 4. 承認通知を送信
+ *
+ * ※ PDF 生成は別エンドポイント /api/estimates/[id]/generate-pdf で行う
+ *   （Wasm 初期化に時間がかかるため、申請レスポンスから分離）
  */
 import { NextResponse } from "next/server";
 import { put } from "@vercel/blob";
@@ -17,7 +17,7 @@ import { writeEstimateToTemplate } from "@/lib/excel-writer";
 import { DELIVERY_TYPES, CONTRACT_TYPES } from "@/lib/constants";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 30;
 
 function resolveTemplateId(
   deliveryType: string,
@@ -84,9 +84,8 @@ export async function POST(req: Request) {
     `;
     const record = rows[0];
 
-    // ── Excel & PDF 生成 ──────────────────────────────────
+    // ── Excel 生成 & Blob 保存 ────────────────────────────
     let excelUrl = "";
-    let pdfUrl = "";
 
     if (process.env.BLOB_READ_WRITE_TOKEN) {
       try {
@@ -99,8 +98,6 @@ export async function POST(req: Request) {
             const tplRes = await fetch(blobUrl);
             if (tplRes.ok) {
               const templateBuffer = await tplRes.arrayBuffer();
-
-              // ── Excel 生成（exceljs でテンプレートにデータ書き込み）──
               const excelBuffer = await writeEstimateToTemplate({
                 templateBuffer,
                 agencyName,
@@ -119,39 +116,19 @@ export async function POST(req: Request) {
               );
               excelUrl = exUrl;
 
-              // ── PDF 生成（LibreOffice Wasm で Excel → PDF）──
-              try {
-                const { convertExcelToPdf } = await import("@/lib/pdf-generator");
-                const pdfBuffer = await convertExcelToPdf(excelBuffer);
-
-                const { url: pdUrl } = await put(
-                  `estimates/${record.id}/${estimateNo}.pdf`,
-                  pdfBuffer,
-                  { access: "public", addRandomSuffix: false }
-                );
-                pdfUrl = pdUrl;
-              } catch (pdfErr) {
-                console.error("[submit] PDF generation failed (skipped):", pdfErr);
-              }
-
-              // DB 更新
               await sql`
-                UPDATE estimates
-                SET excel_url = ${excelUrl}, pdf_url = ${pdfUrl}
-                WHERE id = ${record.id}
+                UPDATE estimates SET excel_url = ${excelUrl} WHERE id = ${record.id}
               `;
             } else {
-              console.warn(`[submit] Template fetch failed: ${tplRes.status} ${blobUrl}`);
+              console.warn(`[submit] Template fetch failed: ${tplRes.status}`);
             }
           } else {
             console.warn(`[submit] Template ${templateId} has no blob_url`);
           }
         }
-      } catch (genErr) {
-        console.error("[submit] File generation error:", genErr);
+      } catch (excelErr) {
+        console.error("[submit] Excel generation error (skipped):", excelErr);
       }
-    } else {
-      console.warn("[submit] BLOB_READ_WRITE_TOKEN not set, skipping file generation");
     }
 
     // ── 承認通知（失敗しても申請は成功扱い）──────────────
@@ -179,7 +156,7 @@ export async function POST(req: Request) {
       status: record.status,
       createdAt: record.created_at,
       excelUrl,
-      pdfUrl,
+      pdfUrl: "",
     }, { status: 201 });
 
   } catch (e) {
