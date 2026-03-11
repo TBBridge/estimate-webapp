@@ -1,29 +1,25 @@
 /**
  * POST /api/estimates/submit
  *
- * 代理店が見積フォームを申請する際に呼び出すエンドポイント。
  * 1. 見積番号を生成
  * 2. DB に estimates レコードを INSERT
- * 3. テンプレート Excel を Blob から取得してデータを書き込み → Blob に Excel 保存
- * 4. 書き込み済みデータを HTML 化 → Chromium で PDF 変換 → Blob に PDF 保存
+ * 3. テンプレート Excel にデータ書き込み → Blob に Excel 保存
+ * 4. xlsx で書き込み済み Excel を読み取り → @react-pdf/renderer で PDF 生成 → Blob に保存
  * 5. DB の excel_url / pdf_url を更新
- * 6. 承認通知を送信（Slack / Teams / Gmail）
+ * 6. 承認通知を送信
  */
 import { NextResponse } from "next/server";
 import { put } from "@vercel/blob";
 import { getDb } from "@/lib/db";
 import { sendApprovalNotification } from "@/lib/notify";
 import { writeEstimateToTemplate } from "@/lib/excel-writer";
-import { workbookToHtml } from "@/lib/excel-to-html";
-import { htmlToPdf } from "@/lib/pdf-generator";
+import { readExcelSheet } from "@/lib/excel-reader";
+import { generateEstimatePdf } from "@/lib/pdf-generator";
 import { DELIVERY_TYPES, CONTRACT_TYPES } from "@/lib/constants";
-import ExcelJS from "exceljs";
 
 export const runtime = "nodejs";
-// PDF 生成（Chromium 起動）のため最大実行時間を延長
 export const maxDuration = 60;
 
-/** 提供形態・契約形態・cloudBilling からテンプレート ID を解決 */
 function resolveTemplateId(
   deliveryType: string,
   contractType: string,
@@ -105,7 +101,7 @@ export async function POST(req: Request) {
             if (tplRes.ok) {
               const templateBuffer = await tplRes.arrayBuffer();
 
-              // ── Excel 生成 ──────────────────────────────
+              // ── Excel 生成（exceljs でテンプレートにデータ書き込み）──
               const excelBuffer = await writeEstimateToTemplate({
                 templateBuffer,
                 agencyName,
@@ -124,23 +120,21 @@ export async function POST(req: Request) {
               );
               excelUrl = exUrl;
 
-              // ── PDF 生成 ────────────────────────────────
-              // 書き込み済み Workbook を再ロードして HTML 化
-              const workbook = new ExcelJS.Workbook();
-              await workbook.xlsx.load(excelBuffer.buffer as ArrayBuffer);
+              // ── PDF 生成（xlsx で読み取り → @react-pdf/renderer）──
+              const { cells, maxRow, maxCol } = readExcelSheet(excelBuffer);
 
-              const html = await workbookToHtml(workbook, {
+              const pdfBuffer = await generateEstimatePdf({
+                estimateNo,
+                createdAt,
                 agencyName,
                 customerName,
                 deliveryType,
                 contractType,
                 cloudBilling,
-                formInputs,
-                estimateNo,
-                createdAt,
+                cells,
+                maxRow,
+                maxCol,
               });
-
-              const pdfBuffer = await htmlToPdf(html);
 
               const { url: pdUrl } = await put(
                 `estimates/${record.id}/${estimateNo}.pdf`,
@@ -164,7 +158,6 @@ export async function POST(req: Request) {
         }
       } catch (genErr) {
         console.error("[submit] File generation error:", genErr);
-        // 生成失敗は申請自体を止めない
       }
     } else {
       console.warn("[submit] BLOB_READ_WRITE_TOKEN not set, skipping file generation");
