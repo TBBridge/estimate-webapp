@@ -4,7 +4,8 @@
  * 1. 見積番号を生成
  * 2. DB に estimates レコードを INSERT
  * 3. テンプレート Excel にデータ書き込み → Blob に Excel 保存
- * 4. xlsx で書き込み済み Excel を読み取り → @react-pdf/renderer で PDF 生成 → Blob に保存
+ * 4. libreoffice-converter (Wasm) で Excel → PDF 変換 → Blob に PDF 保存
+ *    （テンプレートの3シート: 表紙・ライセンス・保守 の印刷範囲が忠実にPDF化される）
  * 5. DB の excel_url / pdf_url を更新
  * 6. 承認通知を送信
  */
@@ -13,8 +14,7 @@ import { put } from "@vercel/blob";
 import { getDb } from "@/lib/db";
 import { sendApprovalNotification } from "@/lib/notify";
 import { writeEstimateToTemplate } from "@/lib/excel-writer";
-import { readExcelSheet } from "@/lib/excel-reader";
-import { generateEstimatePdf } from "@/lib/pdf-generator";
+import { convertExcelToPdf } from "@/lib/pdf-generator";
 import { DELIVERY_TYPES, CONTRACT_TYPES } from "@/lib/constants";
 
 export const runtime = "nodejs";
@@ -120,21 +120,9 @@ export async function POST(req: Request) {
               );
               excelUrl = exUrl;
 
-              // ── PDF 生成（xlsx で読み取り → @react-pdf/renderer）──
-              const { cells, maxRow, maxCol } = readExcelSheet(excelBuffer);
-
-              const pdfBuffer = await generateEstimatePdf({
-                estimateNo,
-                createdAt,
-                agencyName,
-                customerName,
-                deliveryType,
-                contractType,
-                cloudBilling,
-                cells,
-                maxRow,
-                maxCol,
-              });
+              // ── PDF 生成（LibreOffice Wasm で Excel → PDF）──
+              // テンプレートの3シート（表紙・ライセンス・保守）の印刷範囲が忠実にPDF化
+              const pdfBuffer = await convertExcelToPdf(excelBuffer);
 
               const { url: pdUrl } = await put(
                 `estimates/${record.id}/${estimateNo}.pdf`,
