@@ -31,9 +31,14 @@ export async function convertExcelToPdf(excelBuffer: Buffer): Promise<Buffer> {
   formData.append("File", blob, "estimate.xlsx");
   formData.append("StoreFile", "true");
 
+  // ConvertAPI v2: Token 認証（Bearer）または Secret クエリパラメータの両方に対応
   const res = await fetch(
-    `https://v2.convertapi.com/convert/xlsx/to/pdf?Secret=${secret}`,
-    { method: "POST", body: formData }
+    `https://v2.convertapi.com/convert/xlsx/to/pdf`,
+    {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${secret}` },
+      body: formData,
+    }
   );
 
   if (!res.ok) {
