@@ -4,24 +4,30 @@
  * ConvertAPI (https://www.convertapi.com/) を使用して
  * Excel ファイルを PDF に変換する。
  *
- * 環境変数:
+ * 必須環境変数:
  *   CONVERTAPI_SECRET  ConvertAPI のシークレットキー
  *
- * ConvertAPI が未設定の場合は fallback として
- * @matbee/libreoffice-converter (Wasm) を試みる。
+ * 取得方法:
+ *   1. https://www.convertapi.com/ でアカウント登録（無料枠あり）
+ *   2. ダッシュボードから Secret key を取得
+ *   3. Vercel: Settings → Environment Variables → CONVERTAPI_SECRET に設定
  */
 
-async function convertViaConvertApi(excelBuffer: Buffer): Promise<Buffer> {
+export async function convertExcelToPdf(excelBuffer: Buffer): Promise<Buffer> {
   const secret = process.env.CONVERTAPI_SECRET;
-  if (!secret) throw new Error("CONVERTAPI_SECRET が設定されていません");
+  if (!secret) {
+    throw new Error(
+      "PDF生成には CONVERTAPI_SECRET 環境変数の設定が必要です。" +
+      "Vercel ダッシュボード → Settings → Environment Variables に CONVERTAPI_SECRET を追加してください。"
+    );
+  }
 
-  const formData = new FormData();
-  const arrayBuffer: ArrayBuffer = excelBuffer.buffer instanceof ArrayBuffer
-    ? excelBuffer.buffer.slice(excelBuffer.byteOffset, excelBuffer.byteOffset + excelBuffer.byteLength) as ArrayBuffer
-    : new Uint8Array(excelBuffer).buffer;
+  const arrayBuffer: ArrayBuffer = new Uint8Array(excelBuffer).buffer;
   const blob = new Blob([arrayBuffer], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
+
+  const formData = new FormData();
   formData.append("File", blob, "estimate.xlsx");
   formData.append("StoreFile", "true");
 
@@ -32,7 +38,7 @@ async function convertViaConvertApi(excelBuffer: Buffer): Promise<Buffer> {
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`ConvertAPI error ${res.status}: ${text.slice(0, 300)}`);
+    throw new Error(`ConvertAPI エラー ${res.status}: ${text.slice(0, 300)}`);
   }
 
   const json = await res.json() as {
@@ -42,34 +48,15 @@ async function convertViaConvertApi(excelBuffer: Buffer): Promise<Buffer> {
   const file = json.Files?.[0];
   if (!file) throw new Error("ConvertAPI: レスポンスにファイルが含まれていません");
 
-  // FileData (base64) が返ってきた場合
   if (file.FileData) {
     return Buffer.from(file.FileData, "base64");
   }
 
-  // Url が返ってきた場合はダウンロード
   if (file.Url) {
     const dlRes = await fetch(file.Url);
-    if (!dlRes.ok) throw new Error(`ConvertAPI download error: ${dlRes.status}`);
+    if (!dlRes.ok) throw new Error(`ConvertAPI ダウンロードエラー: ${dlRes.status}`);
     return Buffer.from(await dlRes.arrayBuffer());
   }
 
   throw new Error("ConvertAPI: PDF データを取得できませんでした");
-}
-
-async function convertViaLibreOfficeWasm(excelBuffer: Buffer): Promise<Buffer> {
-  const { convertDocument } = await import("@matbee/libreoffice-converter");
-  const result = await convertDocument(excelBuffer, { outputFormat: "pdf" });
-  return Buffer.from(result.data);
-}
-
-export async function convertExcelToPdf(excelBuffer: Buffer): Promise<Buffer> {
-  // ConvertAPI が設定されている場合は優先使用
-  if (process.env.CONVERTAPI_SECRET) {
-    return convertViaConvertApi(excelBuffer);
-  }
-
-  // フォールバック: LibreOffice Wasm（Vercel では動作しない可能性あり）
-  console.warn("[pdf-generator] CONVERTAPI_SECRET 未設定。LibreOffice Wasm を試みます。");
-  return convertViaLibreOfficeWasm(excelBuffer);
 }
