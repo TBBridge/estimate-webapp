@@ -56,7 +56,14 @@ function DetailModal({ estimate: e, locale, onClose, onStatusChange }: DetailMod
     setPdfState({ generating: true });
     try {
       const res = await fetch(`/api/estimates/${e.id}/generate-pdf`, { method: "POST" });
-      const data = await res.json() as { pdfUrl?: string; error?: string };
+      const text = await res.text();
+      let data: { pdfUrl?: string; error?: string } = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        setPdfState({ generating: false, error: `HTTP ${res.status}: ${text.slice(0, 300)}` });
+        return;
+      }
       if (!res.ok || !data.pdfUrl) {
         setPdfState({ generating: false, error: data.error ?? l("admin.estimates.generatePdfError") });
       } else {
