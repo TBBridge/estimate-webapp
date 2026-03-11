@@ -38,17 +38,18 @@ export async function POST(req: Request, { params }: Params) {
     }
     const oldBlobUrl = existing[0].blob_url as string;
 
-    // Vercel Blob にアップロード
+    // 旧ファイルを先に削除（同名ファイルの上書きエラーを防ぐ）
+    if (oldBlobUrl) {
+      try { await del(oldBlobUrl); } catch { /* 旧ファイルが存在しない場合は無視 */ }
+    }
+
+    // Vercel Blob にアップロード（allowOverwrite: true で同名ファイルを上書き可能に）
     const blobPath = `templates/${id}/${file.name}`;
     const { url } = await put(blobPath, file, {
       access: "public",
       addRandomSuffix: false,
+      allowOverwrite: true,
     });
-
-    // 旧ファイルを削除（URL が存在する場合）
-    if (oldBlobUrl) {
-      try { await del(oldBlobUrl); } catch { /* 旧ファイルが存在しない場合は無視 */ }
-    }
 
     // DB 更新
     const today = new Date().toISOString().slice(0, 10);
