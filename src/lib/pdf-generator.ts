@@ -5,16 +5,11 @@
  * Excelファイルの印刷範囲（全シート: 表紙・ライセンス・保守）を
  * そのまま PDF に変換する。
  *
- * LibreOffice のネイティブバイナリは不要（Wasm で動作）。
+ * 動的インポートで読み込み、Wasm の初期化失敗を安全にハンドルする。
  */
 
-import { convertDocument } from "@matbee/libreoffice-converter";
-
-/**
- * Excel Buffer を PDF Buffer に変換する
- * テンプレートの全シート（表紙、ライセンス、保守）の印刷範囲がPDFに反映される
- */
 export async function convertExcelToPdf(excelBuffer: Buffer): Promise<Buffer> {
+  const { convertDocument } = await import("@matbee/libreoffice-converter");
   const result = await convertDocument(excelBuffer, { outputFormat: "pdf" });
   return Buffer.from(result.data);
 }

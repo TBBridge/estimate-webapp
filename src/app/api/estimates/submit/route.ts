@@ -14,7 +14,6 @@ import { put } from "@vercel/blob";
 import { getDb } from "@/lib/db";
 import { sendApprovalNotification } from "@/lib/notify";
 import { writeEstimateToTemplate } from "@/lib/excel-writer";
-import { convertExcelToPdf } from "@/lib/pdf-generator";
 import { DELIVERY_TYPES, CONTRACT_TYPES } from "@/lib/constants";
 
 export const runtime = "nodejs";
@@ -121,15 +120,19 @@ export async function POST(req: Request) {
               excelUrl = exUrl;
 
               // ── PDF 生成（LibreOffice Wasm で Excel → PDF）──
-              // テンプレートの3シート（表紙・ライセンス・保守）の印刷範囲が忠実にPDF化
-              const pdfBuffer = await convertExcelToPdf(excelBuffer);
+              try {
+                const { convertExcelToPdf } = await import("@/lib/pdf-generator");
+                const pdfBuffer = await convertExcelToPdf(excelBuffer);
 
-              const { url: pdUrl } = await put(
-                `estimates/${record.id}/${estimateNo}.pdf`,
-                pdfBuffer,
-                { access: "public", addRandomSuffix: false }
-              );
-              pdfUrl = pdUrl;
+                const { url: pdUrl } = await put(
+                  `estimates/${record.id}/${estimateNo}.pdf`,
+                  pdfBuffer,
+                  { access: "public", addRandomSuffix: false }
+                );
+                pdfUrl = pdUrl;
+              } catch (pdfErr) {
+                console.error("[submit] PDF generation failed (skipped):", pdfErr);
+              }
 
               // DB 更新
               await sql`
@@ -151,20 +154,24 @@ export async function POST(req: Request) {
       console.warn("[submit] BLOB_READ_WRITE_TOKEN not set, skipping file generation");
     }
 
-    // ── 承認通知 ─────────────────────────────────────────
-    const deliveryLabel = DELIVERY_TYPES.find((d) => d.value === deliveryType)?.labelJa ?? deliveryType;
-    const contractLabel = CONTRACT_TYPES.find((c) => c.value === contractType)?.labelJa ?? contractType;
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "https://estimate-webapp.vercel.app";
+    // ── 承認通知（失敗しても申請は成功扱い）──────────────
+    try {
+      const deliveryLabel = DELIVERY_TYPES.find((d) => d.value === deliveryType)?.labelJa ?? deliveryType;
+      const contractLabel = CONTRACT_TYPES.find((c) => c.value === contractType)?.labelJa ?? contractType;
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "https://estimate-webapp.vercel.app";
 
-    await sendApprovalNotification({
-      estimateNo,
-      customerName,
-      deliveryType: deliveryLabel,
-      contractType: contractLabel,
-      requestedAt: record.created_at,
-      agencyName,
-      approvalUrl: `${baseUrl}/approver?no=${estimateNo}`,
-    });
+      await sendApprovalNotification({
+        estimateNo,
+        customerName,
+        deliveryType: deliveryLabel,
+        contractType: contractLabel,
+        requestedAt: record.created_at,
+        agencyName,
+        approvalUrl: `${baseUrl}/approver?no=${estimateNo}`,
+      });
+    } catch (notifyErr) {
+      console.error("[submit] Notification failed (skipped):", notifyErr);
+    }
 
     return NextResponse.json({
       id: record.id,
