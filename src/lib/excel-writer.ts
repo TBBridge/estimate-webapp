@@ -1,31 +1,34 @@
 /**
- * Excel テンプレートにフォーム入力値を書き込むユーティリティ
+ * Excel テンプレートの「設定情報」シートにフォーム入力値を書き込むユーティリティ
  *
- * セルマッピング仕様（要件定義より）:
- *   全パターン共通:
- *     代理店名: C4 / 顧客名: C5 / 見積作成日: C3
+ * 全テンプレート共通セルマッピング（設定情報シート）:
+ *   C3: 見積作成日
+ *   C4: 代理店名（"To: {代理店名}" 形式）
+ *   C5: エンドユーザ名① / 顧客名（"For: {顧客名}" 形式）
+ *   C7: 代理店種別（仕切り率 VLOOKUP のキー = 代理店名）
  *
- *   オンプレ 新規:
- *     ライセンス数: C18 / オプション1: C21 / オプション2: C24
+ * オンプレ 新規（tpl-1）:
+ *   C18: ライセンス数 / C21: オプション① / C24: オプション②
  *
- *   オンプレ ライセンス追加:
- *     既存ライセンス数: C18 / 追加後ライセンス数: C21
- *     既存保守開始年: C26 / 月: C27 / 終了年: C28 / 月: C29
- *     発注予定年: C30 / 月: C31
+ * オンプレ ライセンス追加（tpl-2）:
+ *   C18: 既存ライセンス数 / C21: 追加ライセンス数
+ *   C26: 既存保守開始年 / C27: 月 / C28: 終了年 / C29: 月
+ *   C30: 発注予定年 / C31: 月
  *
- *   オンプレ オプション追加:
- *     オプション: C18 / ライセンス数: C19
+ * オンプレ オプション追加（tpl-3）:
+ *   C18: オプション① / C19: オプション費用（ライセンス数はC24）
+ *   C21: オプション② / C23: オプション③
+ *   C36: 既存保守開始年 / C37: 月 / C40: 発注予定年 / C41: 月
  *
- *   サブスクリプション 新規:
- *     ライセンス数: C18 / オプション1: C21 / オプション2: C24
+ * サブスクリプション 新規（tpl-4）:
+ *   C18: ライセンス数 / C20: 契約月数 / C21: オプション①
  *
- *   クラウド 新規:
- *     ライセンス数: C18 / オプション1: C21 / オプション2: C24
+ * クラウド 新規 年額（tpl-5）/ 区切り（tpl-6）:
+ *   C18: ライセンス数 / C20: 契約月数 / C21: オプション①
  *
- *   クラウド 追加:
- *     既存ライセンス数: C18 / 追加後ライセンス数: C21
- *     既存保守開始年: C26 / 月: C27 / 終了年: C28 / 月: C29
- *     発注予定年: C30 / 月: C31
+ * クラウド ライセンス追加（tpl-7）:
+ *   C18: 既存ライセンス数 / C21: 追加ライセンス数
+ *   C26: 既存年額契約開始年 / C27: 月 / C30: 発注予定年 / C31: 月
  */
 
 import ExcelJS from "exceljs";
@@ -38,146 +41,149 @@ export interface WriteEstimateParams {
   deliveryType: string;
   contractType: string;
   cloudBilling?: string;
-  /** フォーム入力値（estimate-schema.ts の FormFieldDef.id をキーとする） */
   formInputs: Record<string, unknown>;
   /** 見積作成日 (YYYY-MM-DD) */
   createdAt: string;
 }
 
-/** セルに値をセット（文字列 or 数値） */
+/** セルに値をセット（数式セルは result を上書き） */
 function setCell(sheet: ExcelJS.Worksheet, cellAddr: string, value: unknown) {
-  const cell = sheet.getCell(cellAddr);
   if (value === null || value === undefined || value === "") return;
-  if (typeof value === "number") {
-    cell.value = value;
+  const cell = sheet.getCell(cellAddr);
+  // 数式セルの場合は result のみ更新（数式は保持）
+  if (cell.formula) {
+    cell.value = { formula: cell.formula, result: typeof value === "number" ? value : String(value) };
   } else {
-    cell.value = String(value);
+    cell.value = typeof value === "number" ? value : String(value);
   }
 }
 
-/** オプション配列を文字列化（チェックされたオプション名をカンマ区切り） */
-function formatOptions(options: unknown): string {
-  if (!options || !Array.isArray(options)) return "";
-  return (options as string[]).join(", ");
-}
-
-/** year_month 値 { year, month } を "YYYY年MM月" 形式に */
-function formatYearMonth(ym: unknown): { year: string; month: string } {
+/** year_month 値 { year, month } を分解 */
+function parseYearMonth(ym: unknown): { year: string; month: string } {
   if (ym && typeof ym === "object") {
     const o = ym as Record<string, unknown>;
-    return {
-      year: String(o.year ?? ""),
-      month: String(o.month ?? ""),
-    };
+    return { year: String(o.year ?? ""), month: String(o.month ?? "") };
   }
   return { year: "", month: "" };
+}
+
+/** オプション配列の先頭を返す（ラベル名をそのまま渡す） */
+function firstOption(options: unknown): string {
+  if (!options || !Array.isArray(options)) return "オプションなし";
+  return (options as string[])[0] ?? "オプションなし";
+}
+
+/** オプション配列の2番目以降を返す */
+function secondOption(options: unknown): string {
+  if (!options || !Array.isArray(options)) return "オプションなし";
+  const arr = options as string[];
+  return arr[1] ?? "オプションなし";
 }
 
 export async function writeEstimateToTemplate(
   params: WriteEstimateParams
 ): Promise<Buffer> {
-  const {
-    templateBuffer,
-    agencyName,
-    customerName,
-    deliveryType,
-    contractType,
-    formInputs,
-    createdAt,
-  } = params;
+  const { templateBuffer, agencyName, customerName, deliveryType, contractType, cloudBilling, formInputs, createdAt } = params;
 
   const workbook = new ExcelJS.Workbook();
-  // Node.js Buffer を直接 load（submit/route.ts 側で Buffer.from() 変換済み）
   // @ts-ignore ExcelJS 型定義の Buffer バージョン不一致を回避
   await workbook.xlsx.load(templateBuffer);
 
-  // シート一覧をログ出力（デバッグ用）
-  const sheetNames = workbook.worksheets.map((ws) => `"${ws.name}"(${ws.state})`).join(", ");
-  console.log(`[excel-writer] シート一覧: [${sheetNames}]`);
+  const sheetNames = workbook.worksheets.map((ws) => ws.name).join(", ");
+  console.log(`[excel-writer] シート一覧: ${sheetNames}`);
 
-  // データ書き込みは「表紙」シートに対して行う（全シートは表示のまま保存）
-  const sheet = workbook.getWorksheet("表紙") ?? workbook.worksheets[0];
-  if (!sheet) throw new Error("テンプレートにシートが見つかりません");
-  console.log(`[excel-writer] 書き込みシート: "${sheet.name}" / deliveryType=${deliveryType} contractType=${contractType}`);
+  // 書き込み対象は「設定情報」シート
+  const sheet = workbook.getWorksheet("設定情報");
+  if (!sheet) {
+    console.error(`[excel-writer] 「設定情報」シートが見つかりません。シート: ${sheetNames}`);
+    throw new Error(`「設定情報」シートが見つかりません（テンプレートのシート: ${sheetNames}）`);
+  }
+  console.log(`[excel-writer] 書き込み先: 設定情報 / deliveryType=${deliveryType} contractType=${contractType}`);
 
-  // ── 共通フィールド ──────────────────────────────────
+  // ── 全パターン共通 ──────────────────────────────────
   setCell(sheet, "C3", createdAt);
-  setCell(sheet, "C4", agencyName);
-  setCell(sheet, "C5", customerName);
-  console.log(`[excel-writer] C3=${createdAt} C4=${agencyName} C5=${customerName}`);
+  setCell(sheet, "C4", `To: ${agencyName}`);
+  setCell(sheet, "C5", `For: ${customerName}`);
+  setCell(sheet, "C7", agencyName);  // VLOOKUP キー（代理店種別）
+  console.log(`[excel-writer] 共通: C3=${createdAt} C4=To:${agencyName} C5=For:${customerName} C7=${agencyName}`);
+  console.log(`[excel-writer] formInputs: ${JSON.stringify(formInputs)}`);
 
   // ── パターン別フィールド ────────────────────────────
-  console.log(`[excel-writer] formInputs:`, JSON.stringify(formInputs));
+
   if (deliveryType === "onprem" && contractType === "new") {
-    setCell(sheet, "C18", formInputs.licenseCount);
-    console.log(`[excel-writer] C18(licenseCount)=${formInputs.licenseCount}`);
-    const opts = formInputs.options as string[] | undefined;
-    if (opts && opts.length > 0) {
-      setCell(sheet, "C21", opts[0]);
-      if (opts.length > 1) setCell(sheet, "C24", opts.slice(1).join(", "));
-    }
+    // tpl-1: ライセンス数・オプション①②
+    setCell(sheet, "C18", Number(formInputs.licenseCount) || formInputs.licenseCount);
+    const opt1 = firstOption(formInputs.options);
+    const opt2 = secondOption(formInputs.options);
+    setCell(sheet, "C21", opt1);
+    setCell(sheet, "C24", opt2);
+    console.log(`[excel-writer] onprem/new: C18=${formInputs.licenseCount} C21=${opt1} C24=${opt2}`);
+
   } else if (deliveryType === "onprem" && contractType === "license_add") {
-    setCell(sheet, "C18", formInputs.existingLicenseCount);
-    setCell(sheet, "C21", formInputs.addedLicenseCount);
-    const start = formatYearMonth(formInputs.existingMaintenanceStart);
-    const end = formatYearMonth(formInputs.existingMaintenanceEnd);
-    const order = formatYearMonth(formInputs.orderPlanned);
-    setCell(sheet, "C26", start.year);
-    setCell(sheet, "C27", start.month);
-    setCell(sheet, "C28", end.year);
-    setCell(sheet, "C29", end.month);
-    setCell(sheet, "C30", order.year);
-    setCell(sheet, "C31", order.month);
+    // tpl-2: 既存/追加ライセンス数・保守期間・発注予定
+    setCell(sheet, "C18", Number(formInputs.existingLicenseCount) || formInputs.existingLicenseCount);
+    setCell(sheet, "C21", Number(formInputs.addedLicenseCount) || formInputs.addedLicenseCount);
+    const start = parseYearMonth(formInputs.existingMaintenanceStart);
+    const end   = parseYearMonth(formInputs.existingMaintenanceEnd);
+    const order = parseYearMonth(formInputs.orderPlanned);
+    setCell(sheet, "C26", Number(start.year) || start.year);
+    setCell(sheet, "C27", Number(start.month) || start.month);
+    // C28/C29 は数式で自動計算されるため書き込まない
+    setCell(sheet, "C30", Number(order.year) || order.year);
+    setCell(sheet, "C31", Number(order.month) || order.month);
+    console.log(`[excel-writer] onprem/license_add: C18=${formInputs.existingLicenseCount} C21=${formInputs.addedLicenseCount}`);
+
   } else if (deliveryType === "onprem" && contractType === "option_add") {
-    const opts = formInputs.options as string[] | undefined;
-    if (opts && opts.length > 0) {
-      setCell(sheet, "C18", formatOptions(opts));
+    // tpl-3: オプション①②③
+    const opts = Array.isArray(formInputs.options) ? (formInputs.options as string[]) : [];
+    setCell(sheet, "C18", opts[0] ?? "オプションなし");
+    setCell(sheet, "C21", opts[1] ?? "オプションなし");
+    setCell(sheet, "C23", opts[2] ?? "オプションなし");
+    // ライセンス数（オプション追加の場合）
+    const lc = formInputs.optionLicenseCounts as Record<string, number> | undefined;
+    if (lc) {
+      const vals = Object.values(lc).filter(v => v);
+      if (vals[0]) setCell(sheet, "C24", Number(vals[0]));
+      if (vals[1]) setCell(sheet, "C28", Number(vals[1]));
     }
-    const licenseCounts = formInputs.optionLicenseCounts as Record<string, number> | undefined;
-    if (licenseCounts) {
-      const entries = Object.entries(licenseCounts)
-        .filter(([, v]) => v)
-        .map(([k, v]) => `${k}: ${v}`)
-        .join(", ");
-      if (entries) setCell(sheet, "C19", entries);
-    }
-    const start = formatYearMonth(formInputs.existingMaintenanceStart);
-    const end = formatYearMonth(formInputs.existingMaintenanceEnd);
-    const order = formatYearMonth(formInputs.orderPlanned);
-    setCell(sheet, "C26", start.year);
-    setCell(sheet, "C27", start.month);
-    setCell(sheet, "C28", end.year);
-    setCell(sheet, "C29", end.month);
-    setCell(sheet, "C30", order.year);
-    setCell(sheet, "C31", order.month);
+    const start = parseYearMonth(formInputs.existingMaintenanceStart);
+    const order = parseYearMonth(formInputs.orderPlanned);
+    setCell(sheet, "C36", Number(start.year) || start.year);
+    setCell(sheet, "C37", Number(start.month) || start.month);
+    setCell(sheet, "C40", Number(order.year) || order.year);
+    setCell(sheet, "C41", Number(order.month) || order.month);
+    console.log(`[excel-writer] onprem/option_add: opts=${JSON.stringify(opts)}`);
+
   } else if (deliveryType === "subscription" && contractType === "new") {
-    setCell(sheet, "C18", formInputs.licenseCount);
-    const opts = formInputs.options as string[] | undefined;
-    if (opts && opts.length > 0) {
-      setCell(sheet, "C21", opts[0]);
-      if (opts.length > 1) setCell(sheet, "C24", opts.slice(1).join(", "));
-    }
+    // tpl-4: ライセンス数・契約月数・オプション①
+    setCell(sheet, "C18", Number(formInputs.licenseCount) || formInputs.licenseCount);
+    setCell(sheet, "C20", Number(formInputs.contractMonths) || formInputs.contractMonths);
+    setCell(sheet, "C21", firstOption(formInputs.options));
+    console.log(`[excel-writer] subscription/new: C18=${formInputs.licenseCount} C20=${formInputs.contractMonths}`);
+
   } else if (deliveryType === "cloud" && contractType === "new") {
-    setCell(sheet, "C18", formInputs.licenseCount);
-    const opts = formInputs.options as string[] | undefined;
-    if (opts && opts.length > 0) {
-      setCell(sheet, "C21", opts[0]);
-      if (opts.length > 1) setCell(sheet, "C24", opts.slice(1).join(", "));
+    // tpl-5(年額) / tpl-6(区切り): ライセンス数・契約月数・オプション①
+    setCell(sheet, "C18", Number(formInputs.licenseCount) || formInputs.licenseCount);
+    if (cloudBilling === "period") {
+      setCell(sheet, "C20", Number(formInputs.contractMonths) || formInputs.contractMonths);
     }
+    setCell(sheet, "C21", firstOption(formInputs.options));
+    console.log(`[excel-writer] cloud/new(${cloudBilling}): C18=${formInputs.licenseCount} C20=${formInputs.contractMonths}`);
+
   } else if (deliveryType === "cloud" && contractType === "license_add") {
-    setCell(sheet, "C18", formInputs.existingLicenseCount);
-    setCell(sheet, "C21", formInputs.addedLicenseCount);
-    const start = formatYearMonth(formInputs.existingMaintenanceStart);
-    const end = formatYearMonth(formInputs.existingMaintenanceEnd);
-    const order = formatYearMonth(formInputs.orderPlanned);
-    setCell(sheet, "C26", start.year);
-    setCell(sheet, "C27", start.month);
-    setCell(sheet, "C28", end.year);
-    setCell(sheet, "C29", end.month);
-    setCell(sheet, "C30", order.year);
-    setCell(sheet, "C31", order.month);
+    // tpl-7: 既存/追加ライセンス数・保守期間・発注予定
+    setCell(sheet, "C18", Number(formInputs.existingLicenseCount) || formInputs.existingLicenseCount);
+    setCell(sheet, "C21", Number(formInputs.addedLicenseCount) || formInputs.addedLicenseCount);
+    const start = parseYearMonth(formInputs.existingMaintenanceStart);
+    const order = parseYearMonth(formInputs.orderPlanned);
+    setCell(sheet, "C26", Number(start.year) || start.year);
+    setCell(sheet, "C27", Number(start.month) || start.month);
+    setCell(sheet, "C30", Number(order.year) || order.year);
+    setCell(sheet, "C31", Number(order.month) || order.month);
+    console.log(`[excel-writer] cloud/license_add: C18=${formInputs.existingLicenseCount} C21=${formInputs.addedLicenseCount}`);
   }
 
   const buf = await workbook.xlsx.writeBuffer();
+  console.log(`[excel-writer] 書き込み完了`);
   return Buffer.from(buf);
 }
