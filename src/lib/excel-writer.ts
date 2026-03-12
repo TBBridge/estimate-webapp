@@ -31,8 +31,8 @@
 import ExcelJS from "exceljs";
 
 export interface WriteEstimateParams {
-  /** テンプレート Excel のバッファ */
-  templateBuffer: ArrayBuffer;
+  /** テンプレート Excel のバッファ（Node.js Buffer） */
+  templateBuffer: Buffer;
   agencyName: string;
   customerName: string;
   deliveryType: string;
@@ -87,10 +87,9 @@ export async function writeEstimateToTemplate(
   } = params;
 
   const workbook = new ExcelJS.Workbook();
-  // ArrayBuffer を Uint8Array に変換して load（型定義エラーは無視）
-  const uint8 = new Uint8Array(templateBuffer);
-  // @ts-ignore ExcelJS の型定義は Buffer を要求するが実行時は Uint8Array も動作する
-  await workbook.xlsx.load(uint8);
+  // Node.js Buffer を直接 load（submit/route.ts 側で Buffer.from() 変換済み）
+  // @ts-ignore ExcelJS 型定義の Buffer バージョン不一致を回避
+  await workbook.xlsx.load(templateBuffer);
 
   // シート一覧をログ出力（デバッグ用）
   const sheetNames = workbook.worksheets.map((ws) => `"${ws.name}"(${ws.state})`).join(", ");

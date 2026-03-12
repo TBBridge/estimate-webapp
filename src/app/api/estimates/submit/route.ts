@@ -97,7 +97,9 @@ export async function POST(req: Request) {
           if (blobUrl) {
             const tplRes = await fetch(blobUrl);
             if (tplRes.ok) {
-              const templateBuffer = await tplRes.arrayBuffer();
+              const templateArrayBuffer = await tplRes.arrayBuffer();
+              // ArrayBuffer → Buffer に変換して ExcelJS に渡す
+              const templateBuffer = Buffer.from(new Uint8Array(templateArrayBuffer));
               const excelBuffer = await writeEstimateToTemplate({
                 templateBuffer,
                 agencyName,
