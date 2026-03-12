@@ -145,9 +145,6 @@ function Sidebar({ navItems, pathname, locale, userName, userEmail, onLogout, on
 
       {/* フッター */}
       <div className="border-t border-[var(--color-border)] p-3 space-y-1">
-        <div className="flex items-center px-2 pb-1">
-          <LanguageSwitcher />
-        </div>
         <div className="flex items-center gap-2.5 rounded-xl px-2 py-2">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-brand-muted)] font-display text-sm font-semibold text-[var(--color-brand)]">
             {(userName || "U").charAt(0)}
