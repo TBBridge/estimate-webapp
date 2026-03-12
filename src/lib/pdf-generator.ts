@@ -24,11 +24,8 @@ const PRINT_SHEETS = ["表紙", "ライセンス", "保守料"];
  */
 async function prepareExcelForPdf(excelBuffer: Buffer): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  // stream 経由で読み込む（型定義の Buffer 不一致を回避）
-  const stream = require("stream") as typeof import("stream");
-  const readable = new stream.PassThrough();
-  readable.end(excelBuffer);
-  await workbook.xlsx.read(readable);
+  // @ts-ignore ExcelJS の型定義は Buffer を要求するが実行時は Uint8Array も動作する
+  await workbook.xlsx.load(new Uint8Array(excelBuffer));
 
   for (const ws of workbook.worksheets) {
     if (!PRINT_SHEETS.includes(ws.name)) {

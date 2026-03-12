@@ -87,11 +87,10 @@ export async function writeEstimateToTemplate(
   } = params;
 
   const workbook = new ExcelJS.Workbook();
-  // stream 経由で読み込む（型定義の Buffer 不一致を回避）
-  const stream = require("stream") as typeof import("stream");
-  const readable = new stream.PassThrough();
-  readable.end(Buffer.from(new Uint8Array(templateBuffer)));
-  await workbook.xlsx.read(readable);
+  // ArrayBuffer を Uint8Array に変換して load（型定義エラーは無視）
+  const uint8 = new Uint8Array(templateBuffer);
+  // @ts-ignore ExcelJS の型定義は Buffer を要求するが実行時は Uint8Array も動作する
+  await workbook.xlsx.load(uint8);
 
   // シート一覧をログ出力（デバッグ用）
   const sheetNames = workbook.worksheets.map((ws) => `"${ws.name}"(${ws.state})`).join(", ");

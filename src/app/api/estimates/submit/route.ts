@@ -127,7 +127,14 @@ export async function POST(req: Request) {
           }
         }
       } catch (excelErr) {
-        console.error("[submit] Excel generation error (skipped):", excelErr);
+        const errMsg = excelErr instanceof Error ? `${excelErr.message}\n${excelErr.stack}` : String(excelErr);
+        console.error("[submit] Excel generation error:", errMsg);
+        // excelError をレスポンスに含めてデバッグを容易にする（申請自体は成功）
+        return NextResponse.json({
+          id: record.id, no: record.no, status: record.status,
+          createdAt: record.created_at, excelUrl: "", pdfUrl: "",
+          excelError: errMsg,
+        }, { status: 201 });
       }
     }
 
