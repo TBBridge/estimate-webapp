@@ -89,18 +89,26 @@ export async function writeEstimateToTemplate(
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(templateBuffer);
 
+  // シート一覧をログ出力（デバッグ用）
+  const sheetNames = workbook.worksheets.map((ws) => `"${ws.name}"(${ws.state})`).join(", ");
+  console.log(`[excel-writer] シート一覧: [${sheetNames}]`);
+
   // データ書き込みは「表紙」シートに対して行う（全シートは表示のまま保存）
   const sheet = workbook.getWorksheet("表紙") ?? workbook.worksheets[0];
   if (!sheet) throw new Error("テンプレートにシートが見つかりません");
+  console.log(`[excel-writer] 書き込みシート: "${sheet.name}" / deliveryType=${deliveryType} contractType=${contractType}`);
 
   // ── 共通フィールド ──────────────────────────────────
   setCell(sheet, "C3", createdAt);
   setCell(sheet, "C4", agencyName);
   setCell(sheet, "C5", customerName);
+  console.log(`[excel-writer] C3=${createdAt} C4=${agencyName} C5=${customerName}`);
 
   // ── パターン別フィールド ────────────────────────────
+  console.log(`[excel-writer] formInputs:`, JSON.stringify(formInputs));
   if (deliveryType === "onprem" && contractType === "new") {
     setCell(sheet, "C18", formInputs.licenseCount);
+    console.log(`[excel-writer] C18(licenseCount)=${formInputs.licenseCount}`);
     const opts = formInputs.options as string[] | undefined;
     if (opts && opts.length > 0) {
       setCell(sheet, "C21", opts[0]);
