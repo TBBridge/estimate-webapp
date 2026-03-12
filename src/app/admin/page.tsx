@@ -1,8 +1,8 @@
 "use client";
 
+import useSWR from "swr";
 import { useLocale } from "@/lib/locale-context";
 import { t } from "@/lib/translations";
-import { getDashboardStats } from "@/lib/mock-data";
 import {
   BarChart, Bar, LineChart, Line,
   PieChart, Pie, Cell, Tooltip, Legend,
@@ -11,6 +11,19 @@ import {
 
 const BRAND = "#0d6b5c";
 const COLORS = ["#0d6b5c", "#34a88a", "#71c9b3", "#a8dfd3", "#d4f0ea"];
+
+type DashboardStats = {
+  total: number;
+  approved: number;
+  pending: number;
+  totalAmount: number;
+  byAgency: { name: string; count: number }[];
+  monthly: { month: string; count: number; amount: number }[];
+  byDelivery: { name: string; count: number }[];
+  byContract: { name: string; count: number }[];
+};
+
+const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 function KpiCard({ label, value }: { label: string; value: string }) {
   return (
@@ -25,9 +38,56 @@ function fmt(n: number) {
   return n.toLocaleString("ja-JP");
 }
 
+function SkeletonCard() {
+  return (
+    <div className="rounded-xl border border-stone-200/80 bg-[var(--color-surface-elevated)] p-5 shadow-sm dark:border-stone-700/80 animate-pulse">
+      <div className="h-3 w-16 rounded bg-stone-200 dark:bg-stone-700" />
+      <div className="mt-2 h-7 w-24 rounded bg-stone-200 dark:bg-stone-700" />
+    </div>
+  );
+}
+
+function SkeletonChart({ height = 220 }: { height?: number }) {
+  return (
+    <div className="rounded-xl border border-stone-200/80 bg-[var(--color-surface-elevated)] p-5 shadow-sm dark:border-stone-700/80 animate-pulse">
+      <div className="mb-4 h-4 w-32 rounded bg-stone-200 dark:bg-stone-700" />
+      <div className={`w-full rounded bg-stone-100 dark:bg-stone-800`} style={{ height }} />
+    </div>
+  );
+}
+
 export default function AdminDashboardPage() {
   const { locale } = useLocale();
-  const stats = getDashboardStats();
+  const { data: stats, isLoading, error } = useSWR<DashboardStats>("/api/dashboard/stats", fetcher);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-8">
+        <div>
+          <h1 className="font-display text-xl font-semibold text-[var(--color-ink)]">{t(locale, "admin.dashboardTitle")}</h1>
+          <p className="mt-1 font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.dashboardDescription")}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          {[...Array(4)].map((_, i) => <SkeletonCard key={i} />)}
+        </div>
+        <SkeletonChart height={220} />
+        <SkeletonChart height={220} />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <SkeletonChart height={180} />
+          <SkeletonChart height={180} />
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !stats) {
+    return (
+      <div className="space-y-4">
+        <h1 className="font-display text-xl font-semibold text-[var(--color-ink)]">{t(locale, "admin.dashboardTitle")}</h1>
+        <p className="font-body text-sm text-red-500">データの取得に失敗しました。</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -42,9 +102,9 @@ export default function AdminDashboardPage() {
 
       {/* KPI */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <KpiCard label={t(locale, "admin.kpi.total")} value={`${stats.total} 件`} />
-        <KpiCard label={t(locale, "admin.kpi.approved")} value={`${stats.approved} 件`} />
-        <KpiCard label={t(locale, "admin.kpi.pending")} value={`${stats.pending} 件`} />
+        <KpiCard label={t(locale, "admin.kpi.total")}       value={`${stats.total} 件`} />
+        <KpiCard label={t(locale, "admin.kpi.approved")}    value={`${stats.approved} 件`} />
+        <KpiCard label={t(locale, "admin.kpi.pending")}     value={`${stats.pending} 件`} />
         <KpiCard label={t(locale, "admin.kpi.totalAmount")} value={`¥${fmt(stats.totalAmount)}`} />
       </div>
 
@@ -53,15 +113,19 @@ export default function AdminDashboardPage() {
         <h2 className="mb-4 font-body text-sm font-medium text-[var(--color-ink)]">
           {t(locale, "admin.chart.byAgency")}
         </h2>
-        <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={stats.byAgency} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-            <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
-            <Tooltip formatter={(v) => [`${v} 件`, t(locale, "admin.chart.count")]} />
-            <Bar dataKey="count" fill={BRAND} radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+        {stats.byAgency.length === 0 ? (
+          <p className="py-8 text-center font-body text-sm text-[var(--color-ink-muted)]">データがありません</p>
+        ) : (
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={stats.byAgency} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+              <Tooltip formatter={(v) => [`${v} 件`, t(locale, "admin.chart.count")]} />
+              <Bar dataKey="count" fill={BRAND} radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
       </div>
 
       {/* 月次推移折れ線 */}
@@ -69,22 +133,26 @@ export default function AdminDashboardPage() {
         <h2 className="mb-4 font-body text-sm font-medium text-[var(--color-ink)]">
           {t(locale, "admin.chart.monthly")}
         </h2>
-        <ResponsiveContainer width="100%" height={220}>
-          <LineChart data={stats.monthly} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-            <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-            <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
-            <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} tickFormatter={(v) => `¥${(v / 10000).toFixed(0)}万`} />
-            <Tooltip
-              formatter={(v, name) =>
-                name === t(locale, "admin.chart.count") ? [`${v} 件`, name] : [`¥${fmt(Number(v))}`, name]
-              }
-            />
-            <Legend />
-            <Line yAxisId="left" type="monotone" dataKey="count" name={t(locale, "admin.chart.count")} stroke={BRAND} strokeWidth={2} dot={{ r: 4 }} />
-            <Line yAxisId="right" type="monotone" dataKey="amount" name={t(locale, "admin.chart.amount")} stroke="#f59e0b" strokeWidth={2} dot={{ r: 4 }} />
-          </LineChart>
-        </ResponsiveContainer>
+        {stats.monthly.length === 0 ? (
+          <p className="py-8 text-center font-body text-sm text-[var(--color-ink-muted)]">データがありません</p>
+        ) : (
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={stats.monthly} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+              <YAxis yAxisId="left" tick={{ fontSize: 11 }} allowDecimals={false} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} tickFormatter={(v) => `¥${(v / 10000).toFixed(0)}万`} />
+              <Tooltip
+                formatter={(v, name) =>
+                  name === t(locale, "admin.chart.count") ? [`${v} 件`, name] : [`¥${fmt(Number(v))}`, name]
+                }
+              />
+              <Legend />
+              <Line yAxisId="left"  type="monotone" dataKey="count"  name={t(locale, "admin.chart.count")}  stroke={BRAND}    strokeWidth={2} dot={{ r: 4 }} />
+              <Line yAxisId="right" type="monotone" dataKey="amount" name={t(locale, "admin.chart.amount")} stroke="#f59e0b" strokeWidth={2} dot={{ r: 4 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
       </div>
 
       {/* 提供形態 & 契約形態 ドーナツ */}
@@ -93,29 +161,37 @@ export default function AdminDashboardPage() {
           <h2 className="mb-4 font-body text-sm font-medium text-[var(--color-ink)]">
             {t(locale, "admin.chart.byDelivery")}
           </h2>
-          <ResponsiveContainer width="100%" height={180}>
-            <PieChart>
-              <Pie data={stats.byDelivery} dataKey="count" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={3}>
-                {stats.byDelivery.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-              </Pie>
-              <Tooltip formatter={(v) => [`${v} 件`]} />
-              <Legend iconType="circle" iconSize={10} />
-            </PieChart>
-          </ResponsiveContainer>
+          {stats.byDelivery.length === 0 ? (
+            <p className="py-8 text-center font-body text-sm text-[var(--color-ink-muted)]">データがありません</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={180}>
+              <PieChart>
+                <Pie data={stats.byDelivery} dataKey="count" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={3}>
+                  {stats.byDelivery.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                </Pie>
+                <Tooltip formatter={(v) => [`${v} 件`]} />
+                <Legend iconType="circle" iconSize={10} />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
         </div>
         <div className="rounded-xl border border-stone-200/80 bg-[var(--color-surface-elevated)] p-5 shadow-sm dark:border-stone-700/80">
           <h2 className="mb-4 font-body text-sm font-medium text-[var(--color-ink)]">
             {t(locale, "admin.chart.byContract")}
           </h2>
-          <ResponsiveContainer width="100%" height={180}>
-            <PieChart>
-              <Pie data={stats.byContract} dataKey="count" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={3}>
-                {stats.byContract.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-              </Pie>
-              <Tooltip formatter={(v) => [`${v} 件`]} />
-              <Legend iconType="circle" iconSize={10} />
-            </PieChart>
-          </ResponsiveContainer>
+          {stats.byContract.length === 0 ? (
+            <p className="py-8 text-center font-body text-sm text-[var(--color-ink-muted)]">データがありません</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={180}>
+              <PieChart>
+                <Pie data={stats.byContract} dataKey="count" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={3}>
+                  {stats.byContract.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                </Pie>
+                <Tooltip formatter={(v) => [`${v} 件`]} />
+                <Legend iconType="circle" iconSize={10} />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
     </div>
