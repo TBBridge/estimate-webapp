@@ -127,7 +127,6 @@ export default function AdminAgentsPage() {
               <div>
                 <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.agencyType")}</label>
                 <input type="text" value={form.agencyType ?? ""} onChange={(e) => setForm((p) => ({ ...p, agencyType: e.target.value }))} className={inputCls} />
-                <p className="mt-1 font-body text-xs text-[var(--color-ink-muted)]">{t(locale, "admin.agents.agencyTypeHint")}</p>
               </div>
               {/* 承認者名 */}
               <div>
