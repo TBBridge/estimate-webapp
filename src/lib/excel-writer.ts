@@ -89,15 +89,7 @@ export async function writeEstimateToTemplate(
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(templateBuffer);
 
-  // 印刷対象シート以外を非表示にする（PDF変換時に除外される）
-  const PRINT_SHEETS = ["表紙", "ライセンス", "保守料"];
-  for (const ws of workbook.worksheets) {
-    if (!PRINT_SHEETS.includes(ws.name)) {
-      ws.state = "hidden";
-    }
-  }
-
-  // データ書き込みは「表紙」シート（最初の印刷対象シート）に対して行う
+  // データ書き込みは「表紙」シートに対して行う（全シートは表示のまま保存）
   const sheet = workbook.getWorksheet("表紙") ?? workbook.worksheets[0];
   if (!sheet) throw new Error("テンプレートにシートが見つかりません");
 

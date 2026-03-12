@@ -4,14 +4,42 @@
  * ConvertAPI (https://www.convertapi.com/) を使用して
  * Excel ファイルを PDF に変換する。
  *
- * 必須環境変数:
- *   CONVERTAPI_SECRET  ConvertAPI のシークレットキー
+ * 変換前処理:
+ *   印刷対象シート（表紙・ライセンス・保守料）以外を非表示にしてから送信する。
+ *   これにより PDF には3シートのみ含まれ、
+ *   Blob に保存される Excel は全シート表示のまま維持される。
  *
- * 取得方法:
- *   1. https://www.convertapi.com/ でアカウント登録（無料枠あり）
- *   2. ダッシュボードから Secret key を取得
- *   3. Vercel: Settings → Environment Variables → CONVERTAPI_SECRET に設定
+ * 必須環境変数:
+ *   CONVERTAPI_SECRET  ConvertAPI の Token（Integration > Authentication で取得）
  */
+
+import ExcelJS from "exceljs";
+
+/** PDF に含める印刷対象シート名 */
+const PRINT_SHEETS = ["表紙", "ライセンス", "保守料"];
+
+/**
+ * Excel バッファの印刷対象外シートを非表示にして返す。
+ * 元のバッファは変更しない（PDF 変換専用の一時バッファを生成）。
+ */
+async function prepareExcelForPdf(excelBuffer: Buffer): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  // ExcelJS は ArrayBuffer を受け付けるため変換する
+  const ab = excelBuffer.buffer.slice(
+    excelBuffer.byteOffset,
+    excelBuffer.byteOffset + excelBuffer.byteLength
+  ) as ArrayBuffer;
+  await workbook.xlsx.load(ab);
+
+  for (const ws of workbook.worksheets) {
+    if (!PRINT_SHEETS.includes(ws.name)) {
+      ws.state = "hidden";
+    }
+  }
+
+  const buf = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buf);
+}
 
 export async function convertExcelToPdf(excelBuffer: Buffer): Promise<Buffer> {
   const secret = process.env.CONVERTAPI_SECRET;
@@ -22,7 +50,10 @@ export async function convertExcelToPdf(excelBuffer: Buffer): Promise<Buffer> {
     );
   }
 
-  const arrayBuffer: ArrayBuffer = new Uint8Array(excelBuffer).buffer;
+  // PDF 変換用: 印刷対象外シートを非表示にした一時バッファを生成
+  const pdfReadyBuffer = await prepareExcelForPdf(excelBuffer);
+
+  const arrayBuffer: ArrayBuffer = new Uint8Array(pdfReadyBuffer).buffer;
   const blob = new Blob([arrayBuffer], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
@@ -31,7 +62,6 @@ export async function convertExcelToPdf(excelBuffer: Buffer): Promise<Buffer> {
   formData.append("File", blob, "estimate.xlsx");
   formData.append("StoreFile", "true");
 
-  // ConvertAPI v2: Token 認証（Bearer）または Secret クエリパラメータの両方に対応
   const res = await fetch(
     `https://v2.convertapi.com/convert/xlsx/to/pdf`,
     {
