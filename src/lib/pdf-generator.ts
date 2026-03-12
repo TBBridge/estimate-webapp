@@ -24,12 +24,11 @@ const PRINT_SHEETS = ["表紙", "ライセンス", "保守料"];
  */
 async function prepareExcelForPdf(excelBuffer: Buffer): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  // ExcelJS は ArrayBuffer を受け付けるため変換する
-  const ab = excelBuffer.buffer.slice(
-    excelBuffer.byteOffset,
-    excelBuffer.byteOffset + excelBuffer.byteLength
-  ) as ArrayBuffer;
-  await workbook.xlsx.load(ab);
+  // stream 経由で読み込む（型定義の Buffer 不一致を回避）
+  const stream = require("stream") as typeof import("stream");
+  const readable = new stream.PassThrough();
+  readable.end(excelBuffer);
+  await workbook.xlsx.read(readable);
 
   for (const ws of workbook.worksheets) {
     if (!PRINT_SHEETS.includes(ws.name)) {

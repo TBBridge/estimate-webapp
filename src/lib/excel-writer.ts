@@ -31,7 +31,7 @@
 import ExcelJS from "exceljs";
 
 export interface WriteEstimateParams {
-  /** テンプレート Excel の ArrayBuffer */
+  /** テンプレート Excel のバッファ */
   templateBuffer: ArrayBuffer;
   agencyName: string;
   customerName: string;
@@ -87,7 +87,11 @@ export async function writeEstimateToTemplate(
   } = params;
 
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(templateBuffer);
+  // stream 経由で読み込む（型定義の Buffer 不一致を回避）
+  const stream = require("stream") as typeof import("stream");
+  const readable = new stream.PassThrough();
+  readable.end(Buffer.from(new Uint8Array(templateBuffer)));
+  await workbook.xlsx.read(readable);
 
   // シート一覧をログ出力（デバッグ用）
   const sheetNames = workbook.worksheets.map((ws) => `"${ws.name}"(${ws.state})`).join(", ");
