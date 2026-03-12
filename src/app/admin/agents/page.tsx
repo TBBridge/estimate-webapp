@@ -7,7 +7,7 @@ import { useAgencies, createAgency, updateAgency, deleteAgency } from "@/hooks/u
 import type { Agency } from "@/lib/mock-data";
 
 const emptyForm = (): Omit<Agency, "id" | "createdAt"> => ({
-  name: "", email: "", loginPassword: "", approverName: "", approverEmail: "",
+  name: "", email: "", loginPassword: "", agencyType: "", approverName: "", approverEmail: "",
 });
 
 export default function AdminAgentsPage() {
@@ -21,7 +21,7 @@ export default function AdminAgentsPage() {
   const openAdd = () => { setEditId(null); setForm(emptyForm()); setShowModal(true); };
   const openEdit = (ag: Agency) => {
     setEditId(ag.id);
-    setForm({ name: ag.name, email: ag.email, loginPassword: ag.loginPassword ?? "", approverName: ag.approverName, approverEmail: ag.approverEmail });
+    setForm({ name: ag.name, email: ag.email, loginPassword: ag.loginPassword ?? "", agencyType: ag.agencyType ?? "", approverName: ag.approverName, approverEmail: ag.approverEmail });
     setShowModal(true);
   };
 
@@ -67,7 +67,7 @@ export default function AdminAgentsPage() {
           <table className="w-full font-body text-sm">
             <thead>
               <tr className="border-b border-stone-200/80 dark:border-stone-700/80">
-                {["admin.agents.name","admin.agents.email","admin.agents.approver","admin.agents.approverEmail","admin.agents.createdAt","admin.agents.actions"].map((k) => (
+                {["admin.agents.name","admin.agents.agencyType","admin.agents.email","admin.agents.approver","admin.agents.approverEmail","admin.agents.createdAt","admin.agents.actions"].map((k) => (
                   <th key={k} className="px-4 py-3 text-left font-medium text-[var(--color-ink-muted)]">{t(locale, k)}</th>
                 ))}
               </tr>
@@ -76,6 +76,7 @@ export default function AdminAgentsPage() {
               {agencies.map((ag) => (
                 <tr key={ag.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-800/40">
                   <td className="px-4 py-3 font-medium text-[var(--color-ink)]">{ag.name}</td>
+                  <td className="px-4 py-3 text-[var(--color-ink-muted)]">{ag.agencyType ?? ""}</td>
                   <td className="px-4 py-3 text-[var(--color-ink-muted)]">{ag.email}</td>
                   <td className="px-4 py-3 text-[var(--color-ink)]">{ag.approverName}</td>
                   <td className="px-4 py-3 text-[var(--color-ink-muted)]">{ag.approverEmail}</td>
@@ -121,6 +122,12 @@ export default function AdminAgentsPage() {
                 <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.loginPassword")}</label>
                 <input type="password" value={form.loginPassword ?? ""} onChange={(e) => setForm((p) => ({ ...p, loginPassword: e.target.value }))} className={inputCls} placeholder="••••••••" />
                 <p className="mt-1 font-body text-xs text-[var(--color-ink-muted)]">{t(locale, "admin.agents.loginPasswordHint")}</p>
+              </div>
+              {/* 代理店種別 */}
+              <div>
+                <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.agencyType")}</label>
+                <input type="text" value={form.agencyType ?? ""} onChange={(e) => setForm((p) => ({ ...p, agencyType: e.target.value }))} className={inputCls} />
+                <p className="mt-1 font-body text-xs text-[var(--color-ink-muted)]">{t(locale, "admin.agents.agencyTypeHint")}</p>
               </div>
               {/* 承認者名 */}
               <div>

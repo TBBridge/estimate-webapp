@@ -5,14 +5,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   try {
     const sql = getDb();
     const { id } = await params;
-    const { name, email, loginPassword, approverName, approverEmail } = await req.json();
+    const { name, email, loginPassword, agencyType, approverName, approverEmail } = await req.json();
     const rows = await sql`
       UPDATE agencies
       SET name = ${name}, email = ${email},
           login_password = ${loginPassword ?? ""},
+          agency_type = ${agencyType ?? ""},
           approver_name = ${approverName}, approver_email = ${approverEmail}
       WHERE id = ${id}
-      RETURNING id, name, email, login_password, approver_name, approver_email,
+      RETURNING id, name, email, login_password, agency_type, approver_name, approver_email,
                 TO_CHAR(created_at, 'YYYY-MM-DD') AS created_at
     `;
     if (rows.length === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -20,6 +21,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({
       id: r.id, name: r.name, email: r.email,
       loginPassword: r.login_password,
+      agencyType: r.agency_type ?? "",
       approverName: r.approver_name, approverEmail: r.approver_email, createdAt: r.created_at,
     });
   } catch (e) {

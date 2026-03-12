@@ -37,6 +37,8 @@ export interface WriteEstimateParams {
   /** テンプレート Excel のバッファ（Node.js Buffer） */
   templateBuffer: Buffer;
   agencyName: string;
+  /** 代理店種別（設定情報 C7 セルへの VLOOKUP キー） */
+  agencyType: string;
   customerName: string;
   deliveryType: string;
   contractType: string;
@@ -83,7 +85,7 @@ function secondOption(options: unknown): string {
 export async function writeEstimateToTemplate(
   params: WriteEstimateParams
 ): Promise<Buffer> {
-  const { templateBuffer, agencyName, customerName, deliveryType, contractType, cloudBilling, formInputs, createdAt } = params;
+  const { templateBuffer, agencyName, agencyType, customerName, deliveryType, contractType, cloudBilling, formInputs, createdAt } = params;
 
   const workbook = new ExcelJS.Workbook();
   // @ts-ignore ExcelJS 型定義の Buffer バージョン不一致を回避
@@ -104,8 +106,8 @@ export async function writeEstimateToTemplate(
   setCell(sheet, "C3", createdAt);
   setCell(sheet, "C4", `To: ${agencyName}`);
   setCell(sheet, "C5", `For: ${customerName}`);
-  setCell(sheet, "C7", agencyName);  // VLOOKUP キー（代理店種別）
-  console.log(`[excel-writer] 共通: C3=${createdAt} C4=To:${agencyName} C5=For:${customerName} C7=${agencyName}`);
+  setCell(sheet, "C7", agencyType);  // VLOOKUP キー（代理店種別）
+  console.log(`[excel-writer] 共通: C3=${createdAt} C4=To:${agencyName} C5=For:${customerName} C7=${agencyType}`);
   console.log(`[excel-writer] formInputs: ${JSON.stringify(formInputs)}`);
 
   // ── パターン別フィールド ────────────────────────────

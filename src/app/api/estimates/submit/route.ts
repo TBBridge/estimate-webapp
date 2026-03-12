@@ -60,6 +60,10 @@ export async function POST(req: Request) {
       formInputs: Record<string, unknown>;
     };
 
+    // ── 代理店種別を取得（Excel C7 セルへの VLOOKUP キー）────
+    const agencyRows = await sql`SELECT agency_type FROM agencies WHERE id = ${agencyId}`;
+    const agencyType = (agencyRows[0]?.agency_type as string | undefined) ?? agencyName;
+
     // ── 見積番号生成 ─────────────────────────────────────
     const now = new Date();
     const ym = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -103,6 +107,7 @@ export async function POST(req: Request) {
               const excelBuffer = await writeEstimateToTemplate({
                 templateBuffer,
                 agencyName,
+                agencyType,
                 customerName,
                 deliveryType,
                 contractType,
