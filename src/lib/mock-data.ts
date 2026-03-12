@@ -80,7 +80,7 @@ export const PRODUCTS = [
     hasMaintenanceRate: true,
   },
   {
-    id: "webapi",        nameJa: "Web API（外部連携API）",
+    id: "webapi",        nameJa: "Web API Module Set (for external system coordination)",
     isOption: true,
     deliveryTypes: ["onprem", "subscription", "cloud"] as const,
     hasMaintenanceRate: true,

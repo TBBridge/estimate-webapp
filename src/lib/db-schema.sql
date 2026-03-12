@@ -135,7 +135,7 @@ INSERT INTO unit_prices (id, product_id, product_name, delivery_type, tiers) VAL
   ('up-1','ireporter','i-Reporter','onprem','[{"min_licenses":5,"price":35000},{"min_licenses":10,"price":33000},{"min_licenses":20,"price":31000},{"min_licenses":30,"price":30000},{"min_licenses":50,"price":29000},{"min_licenses":100,"price":28000},{"min_licenses":200,"price":27000},{"min_licenses":300,"price":26000},{"min_licenses":500,"price":25000}]'),
   ('up-2','ireporter','i-Reporter','subscription','[{"min_licenses":5,"price":6000},{"min_licenses":10,"price":5500},{"min_licenses":20,"price":5200},{"min_licenses":50,"price":5000},{"min_licenses":100,"price":4800},{"min_licenses":200,"price":4500},{"min_licenses":500,"price":4200}]'),
   ('up-3','ireporter','i-Reporter','cloud','[{"min_licenses":5,"price":30000},{"min_licenses":10,"price":28000},{"min_licenses":20,"price":26000},{"min_licenses":50,"price":25000},{"min_licenses":100,"price":24000},{"min_licenses":200,"price":23000},{"min_licenses":500,"price":22000}]'),
-  ('up-4','webapi','Web API','onprem','[{"min_licenses":1,"price":50000}]'),
+  ('up-4','webapi','Web API Module Set (for external system coordination)','onprem','[{"min_licenses":1,"price":50000}]'),
   ('up-5','conmas_std','ConMas IoT standard版','onprem','[{"min_licenses":1,"price":80000}]'),
   ('up-6','conmas_pro','ConMas IoT professional版','onprem','[{"min_licenses":1,"price":120000}]'),
   ('up-7','conmas_map','ConMas IoT MappingTOOL','onprem','[{"min_licenses":1,"price":60000}]'),

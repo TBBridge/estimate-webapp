@@ -14,7 +14,7 @@ export const ALLOWED_I_REPORTER_LICENSE_COUNTS = [
 
 /** オプション有無で選べる項目（オンプレ・サブスク・クラウドで一部異なる） */
 export const OPTION_ITEMS = {
-  webApi: { id: "web_api", labelJa: "Web API", labelEn: "Web API" },
+  webApi: { id: "web_api", labelJa: "Web API Module Set (for external system coordination)", labelEn: "Web API Module Set (for external system coordination)" },
   conmasIoTStandard: { id: "conmas_iot_standard", labelJa: "ConMas IoT standard版", labelEn: "ConMas IoT standard" },
   conmasIoTProfessional: { id: "conmas_iot_professional", labelJa: "ConMas IoT professional版", labelEn: "ConMas IoT professional" },
   conmasIoTMappingTool: { id: "conmas_iot_mapping_tool", labelJa: "ConMas IoT MappingTOOL", labelEn: "ConMas IoT MappingTOOL" },
