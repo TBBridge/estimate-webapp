@@ -121,9 +121,6 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="mt-5 text-center font-body text-xs text-[var(--color-ink-muted)]">
-          {t(locale, "login.devHint")}
-        </p>
       </div>
     </div>
   );

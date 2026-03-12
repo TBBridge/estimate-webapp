@@ -102,6 +102,26 @@ CREATE TABLE IF NOT EXISTS templates (
   uploaded_at   DATE NOT NULL DEFAULT CURRENT_DATE
 );
 
+-- 自社ユーザー（管理者・承認者）
+CREATE TABLE IF NOT EXISTS system_users (
+  id         TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+  name       TEXT NOT NULL,
+  email      TEXT NOT NULL UNIQUE,
+  password   TEXT NOT NULL DEFAULT '',
+  role       TEXT NOT NULL CHECK (role IN ('admin','approver')),
+  created_at DATE NOT NULL DEFAULT CURRENT_DATE
+);
+
+-- スキーマ追加（既存テーブルへの ALTER）
+-- ※ 初回実行時は CREATE TABLE が走るため ALTER は不要だが、既存 DB 向けに記載
+-- ALTER TABLE system_users ... （カラム追加が必要な場合に追記）
+
+-- 初期データ（初回のみ）
+INSERT INTO system_users (id, name, email, password, role) VALUES
+  ('sys-admin',    '自社管理者', 'admin@example.com',    'admin',    'admin'),
+  ('sys-approver', '承認者',     'approver@example.com', 'approver', 'approver')
+ON CONFLICT (id) DO NOTHING;
+
 -- 通知設定
 CREATE TABLE IF NOT EXISTS app_settings (
   key   TEXT PRIMARY KEY,

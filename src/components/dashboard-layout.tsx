@@ -43,6 +43,13 @@ const SettingsIcon = () => (
     <circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/>
   </svg>
 );
+const AccountIcon = () => (
+  <svg className={iconCls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+    <circle cx="12" cy="7" r="4"/>
+    <path d="M18 8l2 2-4 4"/>
+  </svg>
+);
 const HomeIcon = () => (
   <svg className={iconCls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
@@ -70,11 +77,12 @@ const CloseIcon = () => (
 );
 
 const ADMIN_NAV: NavItem[] = [
-  { href: "/admin",           labelKey: "nav.dashboard",    icon: <DashboardIcon /> },
-  { href: "/admin/agents",    labelKey: "nav.agencies",     icon: <AgencyIcon /> },
-  { href: "/admin/masters",   labelKey: "nav.masters",      icon: <MasterIcon /> },
-  { href: "/admin/estimates", labelKey: "nav.estimates",    icon: <EstimateIcon /> },
-  { href: "/admin/settings",  labelKey: "nav.settings",     icon: <SettingsIcon /> },
+  { href: "/admin",            labelKey: "nav.dashboard",    icon: <DashboardIcon /> },
+  { href: "/admin/agents",     labelKey: "nav.agencies",     icon: <AgencyIcon /> },
+  { href: "/admin/accounts",   labelKey: "nav.accounts",     icon: <AccountIcon /> },
+  { href: "/admin/masters",    labelKey: "nav.masters",      icon: <MasterIcon /> },
+  { href: "/admin/estimates",  labelKey: "nav.estimates",    icon: <EstimateIcon /> },
+  { href: "/admin/settings",   labelKey: "nav.settings",     icon: <SettingsIcon /> },
 ];
 const AGENCY_NAV: NavItem[] = [
   { href: "/agency",           labelKey: "nav.home",      icon: <HomeIcon /> },
