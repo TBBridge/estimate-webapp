@@ -32,6 +32,7 @@
  */
 
 import ExcelJS from "exceljs";
+import { PassThrough } from "stream";
 
 export interface WriteEstimateParams {
   /** テンプレート Excel のバッファ（Node.js Buffer） */
@@ -87,9 +88,12 @@ export async function writeEstimateToTemplate(
 ): Promise<Buffer> {
   const { templateBuffer, agencyName, agencyType, customerName, deliveryType, contractType, cloudBilling, formInputs, createdAt } = params;
 
+  // stream.PassThrough 経由で読み込む（Vercel 環境で xlsx.load(Buffer) が不安定なため）
   const workbook = new ExcelJS.Workbook();
-  // @ts-ignore ExcelJS 型定義の Buffer バージョン不一致を回避
-  await workbook.xlsx.load(templateBuffer);
+  const pass = new PassThrough();
+  const readPromise = workbook.xlsx.read(pass);
+  pass.end(templateBuffer);
+  await readPromise;
 
   const sheetNames = workbook.worksheets.map((ws) => ws.name).join(", ");
   console.log(`[excel-writer] シート一覧: ${sheetNames}`);

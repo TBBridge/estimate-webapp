@@ -1,37 +1,71 @@
 /**
  * Excel → PDF 変換ユーティリティ
  *
- * ConvertAPI (https://www.convertapi.com/) を使用して
- * Excel ファイルを PDF に変換する。
+ * 流れ:
+ * 1. 自動入力済み Excel をコピーして PDF 用の一時ワークブックとする
+ * 2. 一時ワークブックを開き、編集ロックがあれば解除する
+ * 3. 「表紙」「ライセンス」「保守料」を visible、その他（設定情報など）を veryHidden に設定
+ *    ※ 設定情報シートは数式参照元のため削除不可。非表示にすることで ConvertAPI の変換対象から除外する
+ * 4. 表紙・ライセンス・保守料の3シートのみが PDF 化される
  *
- * 変換前処理:
- *   印刷対象シート（表紙・ライセンス・保守料）以外を非表示にしてから送信する。
- *   これにより PDF には3シートのみ含まれ、
- *   Blob に保存される Excel は全シート表示のまま維持される。
- *
- * 必須環境変数:
- *   CONVERTAPI_SECRET  ConvertAPI の Token（Integration > Authentication で取得）
+ * 必須環境変数: CONVERTAPI_SECRET
  */
 
 import ExcelJS from "exceljs";
+import { PassThrough } from "stream";
 
-/** PDF に含める印刷対象シート名 */
+/** PDF に含める印刷対象シート名（この3シートのみ残し、他は削除） */
 const PRINT_SHEETS = ["表紙", "ライセンス", "保守料"];
 
 /**
- * Excel バッファの印刷対象外シートを非表示にして返す。
- * 元のバッファは変更しない（PDF 変換専用の一時バッファを生成）。
+ * stream.PassThrough 経由で ExcelJS にバッファを読み込む
+ * Vercel 環境では xlsx.load(Buffer) が信頼できないため、
+ * ストリームとして渡すことで確実に全シートを読み込む。
+ */
+async function loadWorkbook(buf: Buffer): Promise<ExcelJS.Workbook> {
+  const workbook = new ExcelJS.Workbook();
+  const pass = new PassThrough();
+  const readPromise = workbook.xlsx.read(pass);
+  pass.end(buf);
+  await readPromise;
+  return workbook;
+}
+
+/**
+ * 自動入力済み Excel をコピーし、PDF 用に以下を行う:
+ * - ワークブック・シートの編集ロックを解除
+ * - 印刷対象シート（表紙・ライセンス・保守料）を visible に設定
+ * - 印刷対象外シート（設定情報など）を veryHidden に設定
+ *   ※ 設定情報シートは数式参照元のため削除不可。非表示にすることで
+ *     ConvertAPI の変換対象から除外しつつ、数式参照を維持する。
+ * 返すバッファは ConvertAPI で PDF 化する用（設定情報は非表示として保持）
  */
 async function prepareExcelForPdf(excelBuffer: Buffer): Promise<Buffer> {
-  const workbook = new ExcelJS.Workbook();
-  // @ts-ignore ExcelJS 型定義の Buffer バージョン不一致を回避
-  await workbook.xlsx.load(excelBuffer);
+  const workbook = await loadWorkbook(excelBuffer);
+
+  const sheetNames = workbook.worksheets.map((ws) => `"${ws.name}"(${ws.state})`);
+  console.log(`[pdf-generator] 読み込みシート: ${sheetNames.join(", ")}`);
 
   for (const ws of workbook.worksheets) {
-    if (!PRINT_SHEETS.includes(ws.name)) {
-      ws.state = "hidden";
+    const sheet = ws as ExcelJS.Worksheet & { sheetProtection?: unknown; unprotect?: () => void };
+
+    // 編集ロック解除（PDF 用一時ファイルを処理可能にする）
+    if (sheet.sheetProtection) {
+      if (typeof sheet.unprotect === "function") sheet.unprotect();
+      else sheet.sheetProtection = null;
+    }
+
+    if (PRINT_SHEETS.includes(ws.name)) {
+      // 印刷対象シートは必ず visible に
+      ws.state = "visible";
+    } else {
+      // 印刷対象外シートは veryHidden に（ConvertAPI が変換対象から除外）
+      ws.state = "veryHidden";
     }
   }
+
+  const afterStates = workbook.worksheets.map((ws) => `"${ws.name}"(${ws.state})`);
+  console.log(`[pdf-generator] 変換後シート状態: ${afterStates.join(", ")}`);
 
   const buf = await workbook.xlsx.writeBuffer();
   return Buffer.from(buf);
@@ -46,7 +80,7 @@ export async function convertExcelToPdf(excelBuffer: Buffer): Promise<Buffer> {
     );
   }
 
-  // PDF 変換用: 印刷対象外シートを非表示にした一時バッファを生成
+  // 自動入力済み Excel のコピー → 一時 PDF 用 Excel（3シートのみ）を生成
   const pdfReadyBuffer = await prepareExcelForPdf(excelBuffer);
 
   const arrayBuffer: ArrayBuffer = new Uint8Array(pdfReadyBuffer).buffer;
