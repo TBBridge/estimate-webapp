@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import useSWR, { mutate } from "swr";
 import { useLocale } from "@/lib/locale-context";
 import { t } from "@/lib/translations";
@@ -32,6 +32,35 @@ export default function AdminAccountsPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<FormData>(emptyForm());
   const [saving, setSaving] = useState(false);
+
+  type UserSortKey = "name" | "email" | "role" | "createdAt";
+  const [sortKey, setSortKey] = useState<UserSortKey>("createdAt");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const sortedUsers = useMemo(() => {
+    const list = [...users];
+    list.sort((a, b) => {
+      const va = String((a as Record<string, unknown>)[sortKey] ?? "");
+      const vb = String((b as Record<string, unknown>)[sortKey] ?? "");
+      const cmp = va.localeCompare(vb, undefined, { numeric: sortKey === "createdAt" });
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return list;
+  }, [users, sortKey, sortDir]);
+
+  const toggleSort = (key: UserSortKey) => {
+    setSortKey(key);
+    setSortDir((d) => (sortKey === key ? (d === "asc" ? "desc" : "asc") : "desc"));
+  };
+
+  const SortTh = ({ colKey, labelKey }: { colKey: UserSortKey; labelKey: string }) => (
+    <th className="px-4 py-3 text-left font-medium text-[var(--color-ink-muted)]">
+      <button type="button" onClick={() => toggleSort(colKey)} className="inline-flex items-center gap-1 hover:text-[var(--color-ink)]">
+        {t(locale, labelKey)}
+        {sortKey === colKey && (sortDir === "asc" ? " ↑" : " ↓")}
+      </button>
+    </th>
+  );
 
   const inputCls = "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40 dark:border-stone-600 dark:bg-stone-800";
 
@@ -108,21 +137,15 @@ export default function AdminAccountsPage() {
           <table className="w-full font-body text-sm">
             <thead>
               <tr className="border-b border-stone-200/80 dark:border-stone-700/80">
-                {[
-                  "admin.accounts.name",
-                  "admin.accounts.email",
-                  "admin.accounts.role",
-                  "admin.accounts.createdAt",
-                  "admin.accounts.actions",
-                ].map((k) => (
-                  <th key={k} className="px-4 py-3 text-left font-medium text-[var(--color-ink-muted)]">
-                    {t(locale, k)}
-                  </th>
-                ))}
+                <SortTh colKey="name" labelKey="admin.accounts.name" />
+                <SortTh colKey="email" labelKey="admin.accounts.email" />
+                <SortTh colKey="role" labelKey="admin.accounts.role" />
+                <SortTh colKey="createdAt" labelKey="admin.accounts.createdAt" />
+                <th className="px-4 py-3 text-left font-medium text-[var(--color-ink-muted)]">{t(locale, "admin.accounts.actions")}</th>
               </tr>
             </thead>
             <tbody>
-              {users.map((u) => (
+              {sortedUsers.map((u) => (
                 <tr key={u.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-800/40">
                   <td className="px-4 py-3 font-medium text-[var(--color-ink)]">{u.name}</td>
                   <td className="px-4 py-3 text-[var(--color-ink-muted)]">{u.email}</td>
@@ -144,7 +167,7 @@ export default function AdminAccountsPage() {
                   </td>
                 </tr>
               ))}
-              {users.length === 0 && (
+              {sortedUsers.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-[var(--color-ink-muted)]">
                     アカウントがありません

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useLocale } from "@/lib/locale-context";
 import { useAuth } from "@/lib/auth-context";
 import { t } from "@/lib/translations";
@@ -122,6 +122,26 @@ export default function AgencyEstimatesPage() {
     user?.agencyId ? { agencyId: user.agencyId } : {},
   );
 
+  type EstimateSortKey = "no" | "customerName" | "deliveryType" | "contractType" | "status" | "createdAt";
+  const [sortKey, setSortKey] = useState<EstimateSortKey>("createdAt");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const sortedEstimates = useMemo(() => {
+    const list = [...estimates];
+    list.sort((a, b) => {
+      const va = (a as Record<string, unknown>)[sortKey];
+      const vb = (b as Record<string, unknown>)[sortKey];
+      const cmp = String(va ?? "").localeCompare(String(vb ?? ""), undefined, { numeric: sortKey === "no" || sortKey === "createdAt" });
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return list;
+  }, [estimates, sortKey, sortDir]);
+
+  const toggleSort = (key: EstimateSortKey) => {
+    setSortKey(key);
+    setSortDir((d) => (sortKey === key ? (d === "asc" ? "desc" : "asc") : "desc"));
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -181,13 +201,24 @@ export default function AgencyEstimatesPage() {
               <table className="w-full font-body text-sm">
                 <thead>
                   <tr className="border-b border-[var(--color-border)]">
-                    {["見積番号", "顧客名", "提供形態", "契約形態", "ステータス", "申請日", "見積書"].map((h) => (
-                      <th key={h} className="px-4 py-3 text-left font-medium text-[var(--color-ink-muted)]">{h}</th>
+                    {(["no", "customerName", "deliveryType", "contractType", "status", "createdAt"] as EstimateSortKey[]).map((colKey) => (
+                      <th key={colKey} className="px-4 py-3 text-left font-medium text-[var(--color-ink-muted)]">
+                        <button type="button" onClick={() => toggleSort(colKey)} className="inline-flex items-center gap-1 hover:text-[var(--color-ink)]">
+                          {colKey === "no" && l("admin.estimates.no")}
+                          {colKey === "customerName" && l("admin.estimates.customer")}
+                          {colKey === "deliveryType" && l("estimate.deliveryType")}
+                          {colKey === "contractType" && l("estimate.contractType")}
+                          {colKey === "status" && l("admin.estimates.status")}
+                          {colKey === "createdAt" && l("admin.estimates.createdAt")}
+                          {sortKey === colKey && (sortDir === "asc" ? " ↑" : " ↓")}
+                        </button>
+                      </th>
                     ))}
+                    <th className="px-4 py-3 text-left font-medium text-[var(--color-ink-muted)]">見積書</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {estimates.map((e: Estimate) => (
+                  {sortedEstimates.map((e: Estimate) => (
                     <tr key={e.id} className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-surface-sub)]">
                       <td className="px-4 py-3 font-mono text-xs text-[var(--color-ink)]">{e.no}</td>
                       <td className="px-4 py-3 font-medium text-[var(--color-ink)]">{e.customerName}</td>

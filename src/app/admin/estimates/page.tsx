@@ -240,6 +240,40 @@ export default function AdminEstimatesPage() {
   const { estimates, isLoading, error: estimatesError } = useEstimates(activeFilters);
   const [selectedEstimate, setSelectedEstimate] = useState<Estimate | null>(null);
 
+  type EstimateSortKey = "no" | "agencyName" | "customerName" | "deliveryType" | "contractType" | "status" | "createdAt";
+  const [sortKey, setSortKey] = useState<EstimateSortKey>("createdAt");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const sortedEstimates = useMemo(() => {
+    const list = [...estimates];
+    list.sort((a, b) => {
+      let va: string | number = (a as Record<string, unknown>)[sortKey] as string | number;
+      let vb: string | number = (b as Record<string, unknown>)[sortKey] as string | number;
+      if (sortKey === "createdAt" || sortKey === "no") {
+        const cmp = String(va).localeCompare(String(vb), undefined, { numeric: true });
+        return sortDir === "asc" ? cmp : -cmp;
+      }
+      va = String(va ?? ""); vb = String(vb ?? "");
+      const cmp = va.localeCompare(vb);
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return list;
+  }, [estimates, sortKey, sortDir]);
+
+  const toggleSort = (key: EstimateSortKey) => {
+    setSortKey(key);
+    setSortDir((d) => (sortKey === key ? (d === "asc" ? "desc" : "asc") : "desc"));
+  };
+
+  const SortTh = ({ colKey, labelKey }: { colKey: EstimateSortKey; labelKey: string }) => (
+    <th className="px-4 py-3 text-left font-medium text-[var(--color-ink-muted)]">
+      <button type="button" onClick={() => toggleSort(colKey)} className="inline-flex items-center gap-1 hover:text-[var(--color-ink)]">
+        {l(labelKey)}
+        {sortKey === colKey && (sortDir === "asc" ? " ↑" : " ↓")}
+      </button>
+    </th>
+  );
+
   async function handleStatusChange(id: string, status: "approved" | "rejected") {
     const res = await fetch(`/api/estimates/${id}`, {
       method: "PUT",
@@ -312,23 +346,22 @@ export default function AdminEstimatesPage() {
         <table className="w-full font-body text-sm">
           <thead>
             <tr className="border-b border-[var(--color-border)]">
-              {[
-                "admin.estimates.no", "admin.estimates.agency", "admin.estimates.customer",
-                "admin.estimates.delivery", "admin.estimates.contract",
-                "admin.estimates.status", "admin.estimates.createdAt", "",
-              ].map((k, i) => (
-                <th key={i} className="px-4 py-3 text-left font-medium text-[var(--color-ink-muted)]">
-                  {k ? l(k) : ""}
-                </th>
-              ))}
+              <SortTh colKey="no" labelKey="admin.estimates.no" />
+              <SortTh colKey="agencyName" labelKey="admin.estimates.agency" />
+              <SortTh colKey="customerName" labelKey="admin.estimates.customer" />
+              <SortTh colKey="deliveryType" labelKey="admin.estimates.delivery" />
+              <SortTh colKey="contractType" labelKey="admin.estimates.contract" />
+              <SortTh colKey="status" labelKey="admin.estimates.status" />
+              <SortTh colKey="createdAt" labelKey="admin.estimates.createdAt" />
+              <th className="px-4 py-3 text-left font-medium text-[var(--color-ink-muted)]" />
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr><td colSpan={8} className="px-4 py-8 text-center text-[var(--color-ink-muted)]">{l("common.loading")}</td></tr>
-            ) : estimates.length === 0 ? (
+            ) : sortedEstimates.length === 0 ? (
               <tr><td colSpan={8} className="px-4 py-8 text-center text-[var(--color-ink-muted)]">該当する見積がありません</td></tr>
-            ) : estimates.map((e: Estimate) => (
+            ) : sortedEstimates.map((e: Estimate) => (
               <tr key={e.id}
                 className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-surface-sub)] cursor-pointer"
                 onClick={() => setSelectedEstimate(e)}>

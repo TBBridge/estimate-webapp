@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useLocale } from "@/lib/locale-context";
 import { t } from "@/lib/translations";
 import { useAgencies, createAgency, updateAgency, deleteAgency } from "@/hooks/use-agencies";
@@ -17,6 +17,35 @@ export default function AdminAgentsPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm());
   const [saving, setSaving] = useState(false);
+
+  type AgentSortKey = "name" | "agencyType" | "email" | "approverName" | "approverEmail" | "createdAt";
+  const [sortKey, setSortKey] = useState<AgentSortKey>("createdAt");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const sortedAgencies = useMemo(() => {
+    const list = [...agencies];
+    list.sort((a, b) => {
+      const va = String((a as Record<string, unknown>)[sortKey] ?? "");
+      const vb = String((b as Record<string, unknown>)[sortKey] ?? "");
+      const cmp = va.localeCompare(vb, undefined, { numeric: sortKey === "createdAt" });
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return list;
+  }, [agencies, sortKey, sortDir]);
+
+  const toggleSort = (key: AgentSortKey) => {
+    setSortKey(key);
+    setSortDir((d) => (sortKey === key ? (d === "asc" ? "desc" : "asc") : "asc"));
+  };
+
+  const SortTh = ({ colKey, labelKey }: { colKey: AgentSortKey; labelKey: string }) => (
+    <th className="px-4 py-3 text-left font-medium text-[var(--color-ink-muted)]">
+      <button type="button" onClick={() => toggleSort(colKey)} className="inline-flex items-center gap-1 hover:text-[var(--color-ink)]">
+        {t(locale, labelKey)}
+        {sortKey === colKey && (sortDir === "asc" ? " ↑" : " ↓")}
+      </button>
+    </th>
+  );
 
   const openAdd = () => { setEditId(null); setForm(emptyForm()); setShowModal(true); };
   const openEdit = (ag: Agency) => {
@@ -67,13 +96,17 @@ export default function AdminAgentsPage() {
           <table className="w-full font-body text-sm">
             <thead>
               <tr className="border-b border-stone-200/80 dark:border-stone-700/80">
-                {["admin.agents.name","admin.agents.agencyType","admin.agents.email","admin.agents.approver","admin.agents.approverEmail","admin.agents.createdAt","admin.agents.actions"].map((k) => (
-                  <th key={k} className="px-4 py-3 text-left font-medium text-[var(--color-ink-muted)]">{t(locale, k)}</th>
-                ))}
+                <SortTh colKey="name" labelKey="admin.agents.name" />
+                <SortTh colKey="agencyType" labelKey="admin.agents.agencyType" />
+                <SortTh colKey="email" labelKey="admin.agents.email" />
+                <SortTh colKey="approverName" labelKey="admin.agents.approver" />
+                <SortTh colKey="approverEmail" labelKey="admin.agents.approverEmail" />
+                <SortTh colKey="createdAt" labelKey="admin.agents.createdAt" />
+                <th className="px-4 py-3 text-left font-medium text-[var(--color-ink-muted)]">{t(locale, "admin.agents.actions")}</th>
               </tr>
             </thead>
             <tbody>
-              {agencies.map((ag) => (
+              {sortedAgencies.map((ag) => (
                 <tr key={ag.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-800/40">
                   <td className="px-4 py-3 font-medium text-[var(--color-ink)]">{ag.name}</td>
                   <td className="px-4 py-3 text-[var(--color-ink-muted)]">{ag.agencyType ?? ""}</td>
