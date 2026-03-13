@@ -33,6 +33,7 @@
 
 import ExcelJS from "exceljs";
 import { PassThrough } from "stream";
+import { OPTION_ITEMS } from "@/lib/estimate-schema";
 
 export interface WriteEstimateParams {
   /** テンプレート Excel のバッファ（Node.js Buffer） */
@@ -70,17 +71,30 @@ function parseYearMonth(ym: unknown): { year: string; month: string } {
   return { year: "", month: "" };
 }
 
-/** オプション配列の先頭を返す（ラベル名をそのまま渡す） */
-function firstOption(options: unknown): string {
-  if (!options || !Array.isArray(options)) return "オプションなし";
-  return (options as string[])[0] ?? "オプションなし";
+/**
+ * options フィールドは { hasOptions: boolean, webApi: boolean, ... } 形式で送られてくる。
+ * チェックされた（true の）オプションのラベル名を順番に返す。
+ */
+function getCheckedOptionLabels(options: unknown): string[] {
+  if (!options || typeof options !== "object" || Array.isArray(options)) return [];
+  const obj = options as Record<string, unknown>;
+  const labels: string[] = [];
+  for (const [key, val] of Object.entries(OPTION_ITEMS)) {
+    if (obj[key] === true) {
+      labels.push(val.labelJa);
+    }
+  }
+  return labels;
 }
 
-/** オプション配列の2番目以降を返す */
+function firstOption(options: unknown): string {
+  const labels = getCheckedOptionLabels(options);
+  return labels[0] ?? "オプションなし";
+}
+
 function secondOption(options: unknown): string {
-  if (!options || !Array.isArray(options)) return "オプションなし";
-  const arr = options as string[];
-  return arr[1] ?? "オプションなし";
+  const labels = getCheckedOptionLabels(options);
+  return labels[1] ?? "オプションなし";
 }
 
 export async function writeEstimateToTemplate(
@@ -141,7 +155,7 @@ export async function writeEstimateToTemplate(
 
   } else if (deliveryType === "onprem" && contractType === "option_add") {
     // tpl-3: オプション①②③
-    const opts = Array.isArray(formInputs.options) ? (formInputs.options as string[]) : [];
+    const opts = getCheckedOptionLabels(formInputs.options);
     setCell(sheet, "C18", opts[0] ?? "オプションなし");
     setCell(sheet, "C21", opts[1] ?? "オプションなし");
     setCell(sheet, "C23", opts[2] ?? "オプションなし");
