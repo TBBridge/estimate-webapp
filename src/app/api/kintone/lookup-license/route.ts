@@ -151,6 +151,19 @@ export async function POST(req: Request) {
         { status: 502 }
       );
     }
+    /** ドロップダウン等で、入力値が選択肢にない（クエリの = 比較で失敗） */
+    const isChoiceMismatch =
+      /GAIA_IQ10|does not exist in the/i.test(msg) || /選択肢/i.test(msg);
+    if (isChoiceMismatch) {
+      return NextResponse.json(
+        {
+          error:
+            "入力した会社名が kintone の該当フィールド（例: ドロップダウンの選択肢）に一致しません。kintone 側の値と同じ表記で入力するか、フィールド種別・環境変数 KINTONE_FIELD_* をご確認ください。",
+          detail: msg.slice(0, 400),
+        },
+        { status: 502 }
+      );
+    }
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

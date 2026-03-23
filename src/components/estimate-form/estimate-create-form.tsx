@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { DELIVERY_TYPES } from "@/lib/constants";
 import { useLocale } from "@/lib/locale-context";
 import { useAuth } from "@/lib/auth-context";
@@ -26,6 +26,8 @@ type FormValues = Record<string, unknown>;
 type SubmitState = "idle" | "submitting" | "done" | "error";
 type KintoneLookupState = "idle" | "loading";
 
+const KINTONE_LOOKUP_DEBOUNCE_MS = 600;
+
 export default function EstimateCreateForm() {
   const { locale } = useLocale();
   const { user } = useAuth();
@@ -39,6 +41,8 @@ export default function EstimateCreateForm() {
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [kintoneLookupState, setKintoneLookupState] = useState<KintoneLookupState>("idle");
   const [kintoneMsg, setKintoneMsg] = useState<string>("");
+  const [kintoneMsgIsError, setKintoneMsgIsError] = useState(false);
+  const kintoneSeqRef = useRef(0);
 
   const contractOptions = deliveryType ? getContractTypesForDelivery(deliveryType as DeliveryType) : [];
   const showCloudBilling = deliveryType === "cloud" && contractType === "new";
@@ -96,6 +100,152 @@ export default function EstimateCreateForm() {
     };
   }, [showMainForm, user?.agencyId, user?.role]);
 
+  /** 会社名入力に連動して kintone を検索（ライセンス追加・オプション追加時） */
+  useEffect(() => {
+    if (!showKintoneLookup || user?.role !== "agency" || !user?.agencyId) {
+      setKintoneMsg("");
+      setKintoneMsgIsError(false);
+      setKintoneLookupState("idle");
+      return;
+    }
+
+    const nameJa = String(values.userCompanyNameJa ?? "").trim();
+    const nameZh = String(values.userCompanyNameZh ?? "").trim();
+    const customerSearch = nameJa || nameZh;
+
+    if (!customerSearch) {
+      setKintoneMsg("");
+      setKintoneMsgIsError(false);
+      setKintoneLookupState("idle");
+      setValues((prev) => {
+        const next = { ...prev };
+        delete next.existingLicenseCount;
+        delete next.existingMaintenanceStart;
+        delete next.existingMaintenanceEnd;
+        return next;
+      });
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      const seq = ++kintoneSeqRef.current;
+      setKintoneLookupState("loading");
+      setKintoneMsg("");
+      setKintoneMsgIsError(false);
+
+      void (async () => {
+        try {
+          const res = await fetch("/api/kintone/lookup-license", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              agencyId: user.agencyId,
+              userCompanyNameJa: values.userCompanyNameJa,
+              userCompanyNameZh: values.userCompanyNameZh,
+              contractType,
+              deliveryType,
+            }),
+          });
+          const data = (await res.json()) as {
+            found?: boolean;
+            message?: string;
+            error?: string;
+            detail?: string;
+            configured?: boolean;
+            existingLicenseCount?: number;
+            existingMaintenanceStart?: { year: number; month: number };
+            existingMaintenanceEnd?: { year: number; month: number };
+          };
+
+          if (seq !== kintoneSeqRef.current) return;
+
+          if (res.status === 503 && data.configured === false) {
+            setKintoneMsg(t(locale, "estimate.kintoneNotConfigured"));
+            setKintoneMsgIsError(true);
+            setKintoneLookupState("idle");
+            return;
+          }
+
+          if (!res.ok) {
+            setKintoneMsg(data.error ?? `HTTP ${res.status}`);
+            setKintoneMsgIsError(true);
+            setValues((prev) => {
+              const next = { ...prev };
+              delete next.existingLicenseCount;
+              delete next.existingMaintenanceStart;
+              delete next.existingMaintenanceEnd;
+              return next;
+            });
+            setKintoneLookupState("idle");
+            return;
+          }
+
+          if (!data.found) {
+            setKintoneMsg(t(locale, "estimate.kintoneNotFound"));
+            setKintoneMsgIsError(false);
+            setValues((prev) => {
+              const next = { ...prev };
+              delete next.existingLicenseCount;
+              delete next.existingMaintenanceStart;
+              delete next.existingMaintenanceEnd;
+              return next;
+            });
+            setKintoneLookupState("idle");
+            return;
+          }
+
+          setValues((prev) => {
+            const next = { ...prev };
+            if (data.existingLicenseCount != null && !Number.isNaN(Number(data.existingLicenseCount))) {
+              next.existingLicenseCount = data.existingLicenseCount;
+            }
+            if (data.existingMaintenanceStart?.year != null && data.existingMaintenanceStart?.month != null) {
+              next.existingMaintenanceStart = {
+                year: data.existingMaintenanceStart.year,
+                month: data.existingMaintenanceStart.month,
+              };
+            }
+            if (data.existingMaintenanceEnd?.year != null && data.existingMaintenanceEnd?.month != null) {
+              next.existingMaintenanceEnd = {
+                year: data.existingMaintenanceEnd.year,
+                month: data.existingMaintenanceEnd.month,
+              };
+            }
+            return next;
+          });
+          setKintoneMsg(t(locale, "estimate.kintoneLookupSuccess"));
+        } catch (err) {
+          if (seq !== kintoneSeqRef.current) return;
+          console.error("[kintone lookup]", err);
+          setKintoneMsg(isEn ? "Search failed. Please try again." : "検索に失敗しました。しばらくしてから再度お試しください。");
+          setValues((prev) => {
+            const next = { ...prev };
+            delete next.existingLicenseCount;
+            delete next.existingMaintenanceStart;
+            delete next.existingMaintenanceEnd;
+            return next;
+          });
+        } finally {
+          if (seq === kintoneSeqRef.current) {
+            setKintoneLookupState("idle");
+          }
+        }
+      })();
+    }, KINTONE_LOOKUP_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    showKintoneLookup,
+    user?.agencyId,
+    user?.role,
+    values.userCompanyNameJa,
+    values.userCompanyNameZh,
+    contractType,
+    deliveryType,
+    locale,
+    isEn,
+  ]);
+
   const handleDeliveryChange = (v: string) => {
     setDeliveryType(v ? (v as DeliveryType) : "");
     setContractType("");
@@ -140,78 +290,7 @@ export default function EstimateCreateForm() {
     setErrorMsg("");
     setKintoneLookupState("idle");
     setKintoneMsg("");
-  };
-
-  const handleKintoneLookup = async () => {
-    if (!user?.agencyId || !deliveryType || !contractType) {
-      setKintoneMsg(t(locale, "estimate.kintoneLookupNoAgency"));
-      return;
-    }
-    setKintoneLookupState("loading");
-    setKintoneMsg("");
-    try {
-      const res = await fetch("/api/kintone/lookup-license", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          agencyId: user.agencyId,
-          userCompanyNameJa: values.userCompanyNameJa,
-          userCompanyNameZh: values.userCompanyNameZh,
-          contractType,
-          deliveryType,
-        }),
-      });
-      const data = (await res.json()) as {
-        found?: boolean;
-        message?: string;
-        error?: string;
-        detail?: string;
-        configured?: boolean;
-        existingLicenseCount?: number;
-        existingMaintenanceStart?: { year: number; month: number };
-        existingMaintenanceEnd?: { year: number; month: number };
-      };
-
-      if (res.status === 503 && data.configured === false) {
-        setKintoneMsg(t(locale, "estimate.kintoneNotConfigured"));
-        return;
-      }
-      if (!res.ok) {
-        const base = data.error || `HTTP ${res.status}`;
-        const extra = data.detail?.trim() ? `\n${data.detail.trim()}` : "";
-        throw new Error(base + extra);
-      }
-      if (!data.found) {
-        setKintoneMsg(data.message || (isEn ? "No matching record." : "該当するレコードがありません"));
-        return;
-      }
-
-      setValues((prev) => {
-        const next = { ...prev };
-        if (data.existingLicenseCount != null && !Number.isNaN(Number(data.existingLicenseCount))) {
-          next.existingLicenseCount = data.existingLicenseCount;
-        }
-        if (data.existingMaintenanceStart?.year != null && data.existingMaintenanceStart?.month != null) {
-          next.existingMaintenanceStart = {
-            year: data.existingMaintenanceStart.year,
-            month: data.existingMaintenanceStart.month,
-          };
-        }
-        if (data.existingMaintenanceEnd?.year != null && data.existingMaintenanceEnd?.month != null) {
-          next.existingMaintenanceEnd = {
-            year: data.existingMaintenanceEnd.year,
-            month: data.existingMaintenanceEnd.month,
-          };
-        }
-        return next;
-      });
-      setKintoneMsg(t(locale, "estimate.kintoneLookupSuccess"));
-    } catch (err) {
-      console.error("[kintone lookup]", err);
-      setKintoneMsg(err instanceof Error ? err.message : String(err));
-    } finally {
-      setKintoneLookupState("idle");
-    }
+    setKintoneMsgIsError(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -414,27 +493,24 @@ export default function EstimateCreateForm() {
               {showKintoneLookup && (
                 <div className="rounded-lg border border-stone-200 bg-stone-50/80 p-3 dark:border-stone-600 dark:bg-stone-900/40">
                   <p className="font-body text-xs text-[var(--color-ink-muted)]">
-                    {t(locale, "estimate.kintoneLookupHint")}
+                    {t(locale, "estimate.kintoneAutoHint")}
                   </p>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => void handleKintoneLookup()}
-                      disabled={kintoneLookupState === "loading" || !user?.agencyId}
-                      className="rounded-lg border border-[var(--color-brand)] bg-white px-3 py-1.5 font-body text-sm text-[var(--color-brand)] hover:bg-[var(--color-brand)]/5 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-stone-800"
+                  {!user?.agencyId && (
+                    <p className="mt-2 font-body text-xs text-amber-700 dark:text-amber-300">
+                      {t(locale, "estimate.kintoneLookupNoAgency")}
+                    </p>
+                  )}
+                  {user?.agencyId && kintoneLookupState === "loading" && (
+                    <p className="mt-2 font-body text-xs text-[var(--color-ink-muted)]" role="status" aria-live="polite">
+                      {t(locale, "estimate.kintoneLookupLoading")}
+                    </p>
+                  )}
+                  {user?.agencyId && kintoneLookupState !== "loading" && kintoneMsg && (
+                    <p
+                      className={`mt-2 font-body text-xs ${kintoneMsgIsError ? "text-red-700 dark:text-red-300" : "text-[var(--color-ink)]"}`}
+                      role="status"
+                      aria-live="polite"
                     >
-                      {kintoneLookupState === "loading"
-                        ? t(locale, "estimate.kintoneLookupLoading")
-                        : t(locale, "estimate.kintoneLookup")}
-                    </button>
-                    {!user?.agencyId && (
-                      <span className="font-body text-xs text-amber-700 dark:text-amber-300">
-                        {t(locale, "estimate.kintoneLookupNoAgency")}
-                      </span>
-                    )}
-                  </div>
-                  {kintoneMsg && (
-                    <p className="mt-2 font-body text-xs text-[var(--color-ink)]" role="status">
                       {kintoneMsg}
                     </p>
                   )}
