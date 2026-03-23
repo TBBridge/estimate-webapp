@@ -13,6 +13,13 @@ export type Agency = {
   email: string;
   loginPassword?: string;
   agencyType?: string;
+  /** 代理店側担当者名（見積フォーム初期値用） */
+  contactName?: string;
+  department?: string;
+  phoneCountryCode?: string;
+  phoneLocal?: string;
+  faxCountryCode?: string;
+  faxLocal?: string;
   approverName: string;
   approverEmail: string;
   createdAt: string;

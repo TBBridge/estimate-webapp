@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DELIVERY_TYPES } from "@/lib/constants";
 import { useLocale } from "@/lib/locale-context";
 import { useAuth } from "@/lib/auth-context";
@@ -9,12 +9,17 @@ import {
   getContractTypesForDelivery,
   getFormFields,
   CLOUD_NEW_BILLING,
-  CUSTOMER_FIELDS,
+  END_USER_COMPANY_FIELDS,
+  SALES_AGENCY_CONTACT_FIELDS,
+  APPLICATION_DETAIL_EXTRA_FIELDS,
   OPTION_ITEMS,
   ALLOWED_I_REPORTER_LICENSE_COUNTS,
+  resolveCustomerDisplayName,
   type DeliveryType,
   type ContractType,
 } from "@/lib/estimate-schema";
+import { COUNTRY_DIAL_CODES, DEFAULT_DIAL_CODE } from "@/lib/phone-codes";
+import { isValidEmail } from "@/lib/validation";
 
 type FormValues = Record<string, unknown>;
 type SubmitState = "idle" | "submitting" | "done" | "error";
@@ -36,6 +41,51 @@ export default function EstimateCreateForm() {
   const formFields = deliveryType && contractType
     ? getFormFields(deliveryType as DeliveryType, contractType as ContractType)
     : [];
+
+  const showMainForm = Boolean(
+    deliveryType &&
+    contractType &&
+    (!showCloudBilling || cloudBilling)
+  );
+
+  /** 代理店ログイン時：マスタから販売代理店欄を初期入力（編集可能） */
+  useEffect(() => {
+    if (!showMainForm || user?.role !== "agency" || !user?.agencyId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/agencies/${user.agencyId}`);
+        if (!res.ok || cancelled) return;
+        const ag = (await res.json()) as {
+          name?: string;
+          contactName?: string;
+          department?: string;
+          email?: string;
+          phoneCountryCode?: string;
+          phoneLocal?: string;
+          faxCountryCode?: string;
+          faxLocal?: string;
+        };
+        setValues((prev) => {
+          const next = { ...prev };
+          if (prev.salesAgencyName === undefined) next.salesAgencyName = ag.name ?? "";
+          if (prev.salesAgencyContactName === undefined) next.salesAgencyContactName = ag.contactName ?? "";
+          if (prev.salesAgencyDepartment === undefined) next.salesAgencyDepartment = ag.department ?? "";
+          if (prev.salesAgencyEmail === undefined) next.salesAgencyEmail = ag.email ?? "";
+          if (prev.salesAgencyPhoneDial === undefined) next.salesAgencyPhoneDial = ag.phoneCountryCode ?? DEFAULT_DIAL_CODE;
+          if (prev.salesAgencyPhoneLocal === undefined) next.salesAgencyPhoneLocal = ag.phoneLocal ?? "";
+          if (prev.salesAgencyFaxDial === undefined) next.salesAgencyFaxDial = ag.faxCountryCode ?? DEFAULT_DIAL_CODE;
+          if (prev.salesAgencyFaxLocal === undefined) next.salesAgencyFaxLocal = ag.faxLocal ?? "";
+          return next;
+        });
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showMainForm, user?.agencyId, user?.role]);
 
   const handleDeliveryChange = (v: string) => {
     setDeliveryType(v ? (v as DeliveryType) : "");
@@ -77,6 +127,17 @@ export default function EstimateCreateForm() {
       return;
     }
 
+    const emailsToCheck = [
+      String(values.userEmail ?? "").trim(),
+      String(values.salesAgencyEmail ?? "").trim(),
+    ].filter(Boolean);
+    for (const em of emailsToCheck) {
+      if (!isValidEmail(em)) {
+        setErrorMsg(t(locale, "estimate.emailInvalid"));
+        return;
+      }
+    }
+
     setSubmitState("submitting");
     setErrorMsg("");
 
@@ -87,7 +148,7 @@ export default function EstimateCreateForm() {
         body: JSON.stringify({
           agencyId:    user?.agencyId ?? "unknown",
           agencyName:  user?.name ?? "不明",
-          customerName: (values.customerName as string) ?? "",
+          customerName: resolveCustomerDisplayName(values as Record<string, unknown>),
           deliveryType,
           contractType,
           cloudBilling: cloudBilling || undefined,
@@ -118,7 +179,7 @@ export default function EstimateCreateForm() {
   };
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-3xl">
       <h2 className="font-display text-lg font-semibold text-[var(--color-ink)]">
         {t(locale, "estimate.title")}
       </h2>
@@ -206,26 +267,43 @@ export default function EstimateCreateForm() {
         )}
 
         {/* 顧客情報 + 動的項目 */}
-        {deliveryType && contractType && (!showCloudBilling || cloudBilling) && (
+        {showMainForm && (
           <>
             <div className="space-y-4 rounded-lg border border-stone-200/80 bg-[var(--color-surface-elevated)] p-4 dark:border-stone-700/80">
               <h3 className="font-body text-sm font-medium text-[var(--color-ink)]">
-                {t(locale, "estimate.customerSection")}
+                {t(locale, "estimate.sectionEndUserCompany")}
               </h3>
-              {CUSTOMER_FIELDS.map((f) => (
-                <div key={f.id}>
-                  <label className="block font-body text-sm text-[var(--color-ink-muted)]">
-                    {isEn ? f.labelEn : f.labelJa}
-                    {f.required && " *"}
-                  </label>
-                  <input
-                    type="text"
-                    value={(values[f.id] as string) ?? ""}
-                    onChange={(e) => update(f.id, e.target.value)}
-                    required={f.required}
-                    className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40 dark:border-stone-600 dark:bg-stone-800"
-                  />
-                </div>
+              <p className="font-body text-xs text-[var(--color-ink-muted)]">
+                {t(locale, "estimate.sectionEndUserCompanyHint")}
+              </p>
+              {END_USER_COMPANY_FIELDS.map((f) => (
+                <FieldRenderer
+                  key={f.id}
+                  field={f}
+                  value={values[f.id]}
+                  formValues={values}
+                  onChange={(id, v) => update(id, v)}
+                  locale={locale}
+                />
+              ))}
+            </div>
+
+            <div className="space-y-4 rounded-lg border border-stone-200/80 bg-[var(--color-surface-elevated)] p-4 dark:border-stone-700/80">
+              <h3 className="font-body text-sm font-medium text-[var(--color-ink)]">
+                {t(locale, "estimate.sectionSalesAgency")}
+              </h3>
+              <p className="font-body text-xs text-[var(--color-ink-muted)]">
+                {t(locale, "estimate.sectionSalesAgencyHint")}
+              </p>
+              {SALES_AGENCY_CONTACT_FIELDS.map((f) => (
+                <FieldRenderer
+                  key={f.id}
+                  field={f}
+                  value={values[f.id]}
+                  formValues={values}
+                  onChange={(id, v) => update(id, v)}
+                  locale={locale}
+                />
               ))}
             </div>
 
@@ -238,7 +316,24 @@ export default function EstimateCreateForm() {
                   key={f.id}
                   field={f}
                   value={values[f.id]}
-                  onChange={(v) => update(f.id, v)}
+                  formValues={values}
+                  onChange={(id, v) => update(id, v)}
+                  locale={locale}
+                />
+              ))}
+            </div>
+
+            <div className="space-y-4 rounded-lg border border-stone-200/80 bg-[var(--color-surface-elevated)] p-4 dark:border-stone-700/80">
+              <h3 className="font-body text-sm font-medium text-[var(--color-ink)]">
+                {t(locale, "estimate.sectionApplicationExtra")}
+              </h3>
+              {APPLICATION_DETAIL_EXTRA_FIELDS.map((f) => (
+                <FieldRenderer
+                  key={f.id}
+                  field={f}
+                  value={values[f.id]}
+                  formValues={values}
+                  onChange={(id, v) => update(id, v)}
                   locale={locale}
                 />
               ))}
@@ -297,12 +392,14 @@ type Locale = "ja" | "en";
 function FieldRenderer({
   field,
   value,
+  formValues,
   onChange,
   locale,
 }: {
   field: import("@/lib/estimate-schema").FormFieldDef;
   value: unknown;
-  onChange: (v: unknown) => void;
+  formValues: FormValues;
+  onChange: (fieldId: string, v: unknown) => void;
   locale: Locale;
 }) {
   const { id, labelJa, labelEn, kind, optionIds, required } = field;
@@ -318,10 +415,74 @@ function FieldRenderer({
         <input
           type="text"
           value={(value as string) ?? ""}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => onChange(id, e.target.value)}
           required={required}
-          className="mt-1 w-full max-w-xs rounded-lg border border-stone-300 bg-white px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40 dark:border-stone-600 dark:bg-stone-800"
+          className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40 dark:border-stone-600 dark:bg-stone-800"
         />
+      </div>
+    );
+  }
+
+  if (kind === "email") {
+    const str = (value as string) ?? "";
+    const showErr = str.trim() !== "" && !isValidEmail(str);
+    return (
+      <div>
+        <label className="block font-body text-sm text-[var(--color-ink-muted)]">
+          {label}
+          {required && " *"}
+        </label>
+        <input
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          value={str}
+          onChange={(e) => onChange(id, e.target.value)}
+          required={required}
+          className={`mt-1 w-full rounded-lg border px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 dark:bg-stone-800 ${
+            showErr
+              ? "border-red-500 bg-red-50 focus:ring-red-500/40 dark:bg-red-950/20"
+              : "border-stone-300 bg-white focus:ring-[var(--color-brand)]/40 dark:border-stone-600"
+          }`}
+        />
+        {showErr && (
+          <p className="mt-1 font-body text-xs text-red-600 dark:text-red-400">{t(locale, "estimate.emailInvalid")}</p>
+        )}
+      </div>
+    );
+  }
+
+  if (kind === "phone_country" && field.dialField && field.localField) {
+    const dial = (formValues[field.dialField] as string) || DEFAULT_DIAL_CODE;
+    const local = (formValues[field.localField] as string) ?? "";
+    return (
+      <div>
+        <label className="block font-body text-sm text-[var(--color-ink-muted)]">
+          {label}
+          {required && " *"}
+        </label>
+        <div className="mt-1 flex flex-wrap gap-2">
+          <select
+            value={dial}
+            onChange={(e) => onChange(field.dialField!, e.target.value)}
+            className="w-full max-w-[200px] shrink-0 rounded-lg border border-stone-300 bg-white px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40 dark:border-stone-600 dark:bg-stone-800"
+            aria-label={label}
+          >
+            {COUNTRY_DIAL_CODES.map((o) => (
+              <option key={o.value} value={o.value}>
+                {locale === "en" ? o.labelEn : o.labelJa}
+              </option>
+            ))}
+          </select>
+          <input
+            type="text"
+            value={local}
+            onChange={(e) => onChange(field.localField!, e.target.value)}
+            required={required}
+            placeholder={t(locale, "estimate.phoneLocalHint")}
+            className="min-w-[12rem] flex-1 rounded-lg border border-stone-300 bg-white px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40 dark:border-stone-600 dark:bg-stone-800"
+          />
+        </div>
       </div>
     );
   }
@@ -344,7 +505,7 @@ function FieldRenderer({
           type="number"
           min={isLicenseCount ? Math.min(...ALLOWED_I_REPORTER_LICENSE_COUNTS) : 0}
           value={(value as number) ?? ""}
-          onChange={(e) => onChange(e.target.value === "" ? undefined : Number(e.target.value))}
+          onChange={(e) => onChange(id, e.target.value === "" ? undefined : Number(e.target.value))}
           required={required}
           className={`mt-1 w-full max-w-[160px] rounded-lg border px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 dark:bg-stone-800 ${
             showLicenseCountError
@@ -376,7 +537,7 @@ function FieldRenderer({
           placeholder={t(locale, "estimate.year")}
           value={ym.year ?? ""}
           onChange={(e) =>
-            onChange({
+            onChange(id, {
               ...ym,
               year: e.target.value === "" ? undefined : Number(e.target.value),
             })
@@ -390,7 +551,7 @@ function FieldRenderer({
           placeholder={t(locale, "estimate.month")}
           value={ym.month ?? ""}
           onChange={(e) =>
-            onChange({
+            onChange(id, {
               ...ym,
               month: e.target.value === "" ? undefined : Number(e.target.value),
             })
@@ -419,6 +580,7 @@ function FieldRenderer({
                 checked={!hasOptions}
                 onChange={() =>
                   onChange(
+                    id,
                     Object.fromEntries([
                       ["hasOptions", false],
                       ...optionIds.map((k) => [k, false]),
@@ -433,7 +595,7 @@ function FieldRenderer({
                   name={`${id}_hasOptions`}
                   checked={hasOptions}
                   onChange={() =>
-                    onChange({
+                    onChange(id, {
                       ...Object.fromEntries(optionIds.map((k) => [k, checked[k] ?? false])),
                       hasOptions: true,
                     })
@@ -453,7 +615,7 @@ function FieldRenderer({
                   <input
                     type="checkbox"
                     checked={!!checked[key]}
-                    onChange={(e) => onChange({ ...checked, [key]: e.target.checked })}
+                    onChange={(e) => onChange(id, { ...checked, [key]: e.target.checked })}
                   />
                   {locale === "en" ? opt.labelEn : opt.labelJa}
                 </label>
@@ -461,6 +623,52 @@ function FieldRenderer({
             })}
           </div>
         )}
+      </div>
+    );
+  }
+
+  if (kind === "textarea") {
+    const rows = field.rows ?? 3;
+    return (
+      <div>
+        <label className="block font-body text-sm text-[var(--color-ink-muted)]">
+          {label}
+          {required && " *"}
+        </label>
+        <textarea
+          rows={rows}
+          value={(value as string) ?? ""}
+          onChange={(e) => onChange(id, e.target.value)}
+          required={required}
+          className="mt-1 w-full min-h-[4rem] rounded-lg border border-stone-300 bg-white px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40 dark:border-stone-600 dark:bg-stone-800"
+        />
+      </div>
+    );
+  }
+
+  if (kind === "radio" && field.radioOptions) {
+    const opts = field.radioOptions;
+    return (
+      <div>
+        <span className="block font-body text-sm text-[var(--color-ink-muted)] mb-2">
+          {label}
+          {required && " *"}
+        </span>
+        <div className="flex flex-wrap gap-4">
+          {opts.map((opt, idx) => (
+            <label key={opt.value} className="flex items-center gap-2 font-body text-sm">
+              <input
+                type="radio"
+                name={id}
+                value={opt.value}
+                checked={value === opt.value}
+                onChange={() => onChange(id, opt.value)}
+                required={required && idx === 0}
+              />
+              {locale === "en" ? opt.labelEn : opt.labelJa}
+            </label>
+          ))}
+        </div>
       </div>
     );
   }
@@ -485,7 +693,7 @@ function FieldRenderer({
                 min={0}
                 value={counts[key] ?? ""}
                 onChange={(e) =>
-                  onChange({
+                  onChange(id, {
                     ...counts,
                     [key]: e.target.value === "" ? undefined : Number(e.target.value),
                   })

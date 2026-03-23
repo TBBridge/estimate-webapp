@@ -5,13 +5,26 @@ import { useLocale } from "@/lib/locale-context";
 import { t } from "@/lib/translations";
 import { useAgencies, createAgency, updateAgency, deleteAgency } from "@/hooks/use-agencies";
 import type { Agency } from "@/lib/mock-data";
+import { COUNTRY_DIAL_CODES, DEFAULT_DIAL_CODE } from "@/lib/phone-codes";
 
 const emptyForm = (): Omit<Agency, "id" | "createdAt"> => ({
-  name: "", email: "", loginPassword: "", agencyType: "", approverName: "", approverEmail: "",
+  name: "",
+  email: "",
+  loginPassword: "",
+  agencyType: "",
+  contactName: "",
+  department: "",
+  phoneCountryCode: DEFAULT_DIAL_CODE,
+  phoneLocal: "",
+  faxCountryCode: DEFAULT_DIAL_CODE,
+  faxLocal: "",
+  approverName: "",
+  approverEmail: "",
 });
 
 export default function AdminAgentsPage() {
   const { locale } = useLocale();
+  const isEn = locale === "en";
   const { agencies, isLoading } = useAgencies();
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -50,7 +63,20 @@ export default function AdminAgentsPage() {
   const openAdd = () => { setEditId(null); setForm(emptyForm()); setShowModal(true); };
   const openEdit = (ag: Agency) => {
     setEditId(ag.id);
-    setForm({ name: ag.name, email: ag.email, loginPassword: ag.loginPassword ?? "", agencyType: ag.agencyType ?? "", approverName: ag.approverName, approverEmail: ag.approverEmail });
+    setForm({
+      name: ag.name,
+      email: ag.email,
+      loginPassword: ag.loginPassword ?? "",
+      agencyType: ag.agencyType ?? "",
+      contactName: ag.contactName ?? "",
+      department: ag.department ?? "",
+      phoneCountryCode: ag.phoneCountryCode ?? DEFAULT_DIAL_CODE,
+      phoneLocal: ag.phoneLocal ?? "",
+      faxCountryCode: ag.faxCountryCode ?? DEFAULT_DIAL_CODE,
+      faxLocal: ag.faxLocal ?? "",
+      approverName: ag.approverName,
+      approverEmail: ag.approverEmail,
+    });
     setShowModal(true);
   };
 
@@ -135,7 +161,7 @@ export default function AdminAgentsPage() {
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-md rounded-2xl border border-stone-200/80 bg-[var(--color-surface-elevated)] p-6 shadow-xl dark:border-stone-700/80">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-stone-200/80 bg-[var(--color-surface-elevated)] p-6 shadow-xl dark:border-stone-700/80">
             <h2 className="mb-4 font-display text-lg font-semibold text-[var(--color-ink)]">
               {editId ? t(locale, "admin.agents.edit") : t(locale, "admin.agents.add")}
             </h2>
@@ -160,6 +186,44 @@ export default function AdminAgentsPage() {
               <div>
                 <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.agencyType")}</label>
                 <input type="text" value={form.agencyType ?? ""} onChange={(e) => setForm((p) => ({ ...p, agencyType: e.target.value }))} className={inputCls} />
+              </div>
+              <div>
+                <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.contactName")}</label>
+                <input type="text" value={form.contactName ?? ""} onChange={(e) => setForm((p) => ({ ...p, contactName: e.target.value }))} className={inputCls} />
+              </div>
+              <div>
+                <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.department")}</label>
+                <input type="text" value={form.department ?? ""} onChange={(e) => setForm((p) => ({ ...p, department: e.target.value }))} className={inputCls} />
+              </div>
+              <div>
+                <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.phone")}</label>
+                <div className="flex gap-2">
+                  <select
+                    value={form.phoneCountryCode ?? DEFAULT_DIAL_CODE}
+                    onChange={(e) => setForm((p) => ({ ...p, phoneCountryCode: e.target.value }))}
+                    className={`${inputCls} w-[44%] shrink-0`}
+                  >
+                    {COUNTRY_DIAL_CODES.map((o) => (
+                      <option key={o.value} value={o.value}>{isEn ? o.labelEn : o.labelJa}</option>
+                    ))}
+                  </select>
+                  <input type="text" value={form.phoneLocal ?? ""} onChange={(e) => setForm((p) => ({ ...p, phoneLocal: e.target.value }))} className={inputCls} placeholder="3-1234-5678" />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.fax")}</label>
+                <div className="flex gap-2">
+                  <select
+                    value={form.faxCountryCode ?? DEFAULT_DIAL_CODE}
+                    onChange={(e) => setForm((p) => ({ ...p, faxCountryCode: e.target.value }))}
+                    className={`${inputCls} w-[44%] shrink-0`}
+                  >
+                    {COUNTRY_DIAL_CODES.map((o) => (
+                      <option key={o.value} value={o.value}>{isEn ? o.labelEn : o.labelJa}</option>
+                    ))}
+                  </select>
+                  <input type="text" value={form.faxLocal ?? ""} onChange={(e) => setForm((p) => ({ ...p, faxLocal: e.target.value }))} className={inputCls} />
+                </div>
               </div>
               {/* 承認者名 */}
               <div>

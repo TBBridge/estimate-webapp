@@ -87,13 +87,27 @@ function getCheckedOptionLabels(options: unknown): string[] {
   return labels;
 }
 
-function firstOption(options: unknown): string {
-  const labels = getCheckedOptionLabels(options);
+const WEB_API_LABEL_JA = OPTION_ITEMS.webApi.labelJa;
+
+/** 「外部システム連携API：あり」とオプションチェックを整合（C21 等に反映） */
+function getOptionLabelsForTemplate(
+  formInputs: Record<string, unknown>,
+  optionsField: unknown
+): string[] {
+  const labels = getCheckedOptionLabels(optionsField);
+  if (formInputs.externalSystemApi === "yes" && !labels.includes(WEB_API_LABEL_JA)) {
+    return [WEB_API_LABEL_JA, ...labels];
+  }
+  return labels;
+}
+
+function firstOptionFromForm(formInputs: Record<string, unknown>): string {
+  const labels = getOptionLabelsForTemplate(formInputs, formInputs.options);
   return labels[0] ?? "オプションなし";
 }
 
-function secondOption(options: unknown): string {
-  const labels = getCheckedOptionLabels(options);
+function secondOptionFromForm(formInputs: Record<string, unknown>): string {
+  const labels = getOptionLabelsForTemplate(formInputs, formInputs.options);
   return labels[1] ?? "オプションなし";
 }
 
@@ -133,8 +147,8 @@ export async function writeEstimateToTemplate(
   if (deliveryType === "onprem" && contractType === "new") {
     // tpl-1: ライセンス数・オプション①②
     setCell(sheet, "C18", Number(formInputs.licenseCount) || formInputs.licenseCount);
-    const opt1 = firstOption(formInputs.options);
-    const opt2 = secondOption(formInputs.options);
+    const opt1 = firstOptionFromForm(formInputs);
+    const opt2 = secondOptionFromForm(formInputs);
     setCell(sheet, "C21", opt1);
     setCell(sheet, "C24", opt2);
     console.log(`[excel-writer] onprem/new: C18=${formInputs.licenseCount} C21=${opt1} C24=${opt2}`);
@@ -155,7 +169,7 @@ export async function writeEstimateToTemplate(
 
   } else if (deliveryType === "onprem" && contractType === "option_add") {
     // tpl-3: オプション①②③
-    const opts = getCheckedOptionLabels(formInputs.options);
+    const opts = getOptionLabelsForTemplate(formInputs, formInputs.options);
     setCell(sheet, "C18", opts[0] ?? "オプションなし");
     setCell(sheet, "C21", opts[1] ?? "オプションなし");
     setCell(sheet, "C23", opts[2] ?? "オプションなし");
@@ -178,7 +192,7 @@ export async function writeEstimateToTemplate(
     // tpl-4: ライセンス数・契約月数・オプション①
     setCell(sheet, "C18", Number(formInputs.licenseCount) || formInputs.licenseCount);
     setCell(sheet, "C20", Number(formInputs.contractMonths) || formInputs.contractMonths);
-    setCell(sheet, "C21", firstOption(formInputs.options));
+    setCell(sheet, "C21", firstOptionFromForm(formInputs));
     console.log(`[excel-writer] subscription/new: C18=${formInputs.licenseCount} C20=${formInputs.contractMonths}`);
 
   } else if (deliveryType === "cloud" && contractType === "new") {
@@ -187,7 +201,7 @@ export async function writeEstimateToTemplate(
     if (cloudBilling === "period") {
       setCell(sheet, "C20", Number(formInputs.contractMonths) || formInputs.contractMonths);
     }
-    setCell(sheet, "C21", firstOption(formInputs.options));
+    setCell(sheet, "C21", firstOptionFromForm(formInputs));
     console.log(`[excel-writer] cloud/new(${cloudBilling}): C18=${formInputs.licenseCount} C20=${formInputs.contractMonths}`);
 
   } else if (deliveryType === "cloud" && contractType === "license_add") {

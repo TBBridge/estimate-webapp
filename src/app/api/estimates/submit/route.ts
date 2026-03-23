@@ -15,6 +15,7 @@ import { getDb } from "@/lib/db";
 import { sendApprovalNotification } from "@/lib/notify";
 import { writeEstimateToTemplate } from "@/lib/excel-writer";
 import { DELIVERY_TYPES, CONTRACT_TYPES } from "@/lib/constants";
+import { resolveCustomerDisplayName } from "@/lib/estimate-schema";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -64,6 +65,11 @@ export async function POST(req: Request) {
     const agencyRows = await sql`SELECT agency_type FROM agencies WHERE id = ${agencyId}`;
     const agencyType = (agencyRows[0]?.agency_type as string | undefined) ?? agencyName;
 
+    const resolvedCustomerName =
+      String(customerName ?? "").trim() ||
+      resolveCustomerDisplayName((formInputs ?? {}) as Record<string, unknown>) ||
+      "（未入力）";
+
     // ── 見積番号生成 ─────────────────────────────────────
     const now = new Date();
     const ym = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -80,7 +86,7 @@ export async function POST(req: Request) {
         (no, agency_id, agency_name, customer_name,
          delivery_type, contract_type, cloud_billing, form_inputs)
       VALUES
-        (${estimateNo}, ${agencyId}, ${agencyName}, ${customerName},
+        (${estimateNo}, ${agencyId}, ${agencyName}, ${resolvedCustomerName},
          ${deliveryType}, ${contractType}, ${cloudBilling ?? null},
          ${JSON.stringify(formInputs)}::JSONB)
       RETURNING id, no, status,
@@ -108,7 +114,7 @@ export async function POST(req: Request) {
                 templateBuffer,
                 agencyName,
                 agencyType,
-                customerName,
+                customerName: resolvedCustomerName,
                 deliveryType,
                 contractType,
                 cloudBilling,

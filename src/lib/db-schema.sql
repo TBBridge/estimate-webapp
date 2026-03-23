@@ -19,6 +19,12 @@ CREATE TABLE IF NOT EXISTS agencies (
 -- スキーマ追加（既存テーブルへの ALTER）
 ALTER TABLE agencies ADD COLUMN IF NOT EXISTS login_password TEXT NOT NULL DEFAULT '';
 ALTER TABLE agencies ADD COLUMN IF NOT EXISTS agency_type    TEXT NOT NULL DEFAULT '';
+ALTER TABLE agencies ADD COLUMN IF NOT EXISTS contact_name         TEXT NOT NULL DEFAULT '';
+ALTER TABLE agencies ADD COLUMN IF NOT EXISTS department           TEXT NOT NULL DEFAULT '';
+ALTER TABLE agencies ADD COLUMN IF NOT EXISTS phone_country_code   TEXT NOT NULL DEFAULT '+81';
+ALTER TABLE agencies ADD COLUMN IF NOT EXISTS phone_local          TEXT NOT NULL DEFAULT '';
+ALTER TABLE agencies ADD COLUMN IF NOT EXISTS fax_country_code    TEXT NOT NULL DEFAULT '+81';
+ALTER TABLE agencies ADD COLUMN IF NOT EXISTS fax_local            TEXT NOT NULL DEFAULT '';
 
 -- 仕切り率（本製品: 代理店 × 製品 × 提供形態）
 CREATE TABLE IF NOT EXISTS margin_rates (

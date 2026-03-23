@@ -49,7 +49,17 @@ export type FormFieldKind =
   | "year_month"
   | "year_month_pair"
   | "options_check"
-  | "option_license_counts";
+  | "option_license_counts"
+  | "textarea"
+  | "radio"
+  | "email"
+  | "phone_country";
+
+export interface RadioOptionDef {
+  value: string;
+  labelJa: string;
+  labelEn: string;
+}
 
 export interface FormFieldDef {
   id: string;
@@ -59,13 +69,154 @@ export interface FormFieldDef {
   /** オプション系の場合、OPTION_ITEMS のキーまたはキー配列 */
   optionIds?: (keyof typeof OPTION_ITEMS)[];
   required?: boolean;
+  /** textarea の行数 */
+  rows?: number;
+  /** kind === "radio" のとき */
+  radioOptions?: RadioOptionDef[];
+  /** kind === "phone_country" のとき（values のキー） */
+  dialField?: string;
+  localField?: string;
 }
 
-/** 共通：顧客情報（全パターンで先に入力） */
-export const CUSTOMER_FIELDS: FormFieldDef[] = [
-  { id: "customerName", labelJa: "顧客名", labelEn: "Customer name", kind: "text", required: true },
-  { id: "customerAddress", labelJa: "住所", labelEn: "Address", kind: "text", required: false },
+/** ユーザー会社名・提供先（エンドユーザー）情報 */
+export const END_USER_COMPANY_FIELDS: FormFieldDef[] = [
+  { id: "userCompanyNameZh", labelJa: "会社名（中国語名）", labelEn: "Company name (Chinese)", kind: "text", required: false },
+  { id: "userCompanyNameJa", labelJa: "会社名（日本語名）", labelEn: "Company name (Japanese)", kind: "text", required: true },
+  { id: "userCompanyNameReading", labelJa: "会社名（略称のよみがな）", labelEn: "Company name (abbreviation reading)", kind: "text", required: false },
+  { id: "userContactLastName", labelJa: "担当者氏名（姓）", labelEn: "Contact last name", kind: "text", required: false },
+  { id: "userContactFirstName", labelJa: "担当者氏名（名）", labelEn: "Contact first name", kind: "text", required: false },
+  { id: "userDepartment", labelJa: "部署名", labelEn: "Department", kind: "text", required: false },
+  { id: "userAddress", labelJa: "住所", labelEn: "Address", kind: "text", required: false },
+  { id: "userEmail", labelJa: "メールアドレス", labelEn: "Email address", kind: "email", required: false },
+  {
+    id: "userPhone",
+    labelJa: "電話番号",
+    labelEn: "Phone number",
+    kind: "phone_country",
+    dialField: "userPhoneDial",
+    localField: "userPhoneLocal",
+    required: false,
+  },
+  {
+    id: "userFax",
+    labelJa: "FAX番号",
+    labelEn: "FAX number",
+    kind: "phone_country",
+    dialField: "userFaxDial",
+    localField: "userFaxLocal",
+    required: false,
+  },
+  {
+    id: "userReleaseSubscription",
+    labelJa: "リリース配信登録（ユーザー）",
+    labelEn: "Release notification registration (end user)",
+    kind: "radio",
+    required: true,
+    radioOptions: [
+      { value: "yes", labelJa: "する", labelEn: "Yes" },
+      { value: "no", labelJa: "しない", labelEn: "No" },
+    ],
+  },
+  {
+    id: "userReleaseLanguage",
+    labelJa: "リリース案内言語（ユーザー）",
+    labelEn: "Release notice language (end user)",
+    kind: "radio",
+    required: true,
+    radioOptions: [
+      { value: "zh", labelJa: "中国語", labelEn: "Chinese" },
+      { value: "ja", labelJa: "日本語", labelEn: "Japanese" },
+      { value: "en", labelJa: "英語", labelEn: "English" },
+    ],
+  },
 ];
+
+/** 販売代理店情報（申請書面上の連絡先） */
+export const SALES_AGENCY_CONTACT_FIELDS: FormFieldDef[] = [
+  { id: "salesAgencyName", labelJa: "代理店名", labelEn: "Agency name", kind: "text", required: false },
+  { id: "salesAgencyContactName", labelJa: "担当者氏名", labelEn: "Contact person name", kind: "text", required: false },
+  { id: "salesAgencyDepartment", labelJa: "部署名", labelEn: "Department", kind: "text", required: false },
+  { id: "salesAgencyEmail", labelJa: "メールアドレス", labelEn: "Email address", kind: "email", required: false },
+  {
+    id: "salesAgencyPhone",
+    labelJa: "電話番号",
+    labelEn: "Phone number",
+    kind: "phone_country",
+    dialField: "salesAgencyPhoneDial",
+    localField: "salesAgencyPhoneLocal",
+    required: false,
+  },
+  {
+    id: "salesAgencyFax",
+    labelJa: "FAX番号",
+    labelEn: "FAX number",
+    kind: "phone_country",
+    dialField: "salesAgencyFaxDial",
+    localField: "salesAgencyFaxLocal",
+    required: false,
+  },
+  {
+    id: "salesReleaseSubscription",
+    labelJa: "リリース配信登録（代理店）",
+    labelEn: "Release notification registration (agency)",
+    kind: "radio",
+    required: true,
+    radioOptions: [
+      { value: "yes", labelJa: "する", labelEn: "Yes" },
+      { value: "no", labelJa: "しない", labelEn: "No" },
+    ],
+  },
+  {
+    id: "salesReleaseLanguage",
+    labelJa: "リリース案内言語（代理店）",
+    labelEn: "Release notice language (agency)",
+    kind: "radio",
+    required: true,
+    radioOptions: [
+      { value: "zh", labelJa: "中国語", labelEn: "Chinese" },
+      { value: "ja", labelJa: "日本語", labelEn: "Japanese" },
+      { value: "en", labelJa: "英語", labelEn: "English" },
+    ],
+  },
+];
+
+/** お申込内容の追加項目（用途・備考など） */
+export const APPLICATION_DETAIL_EXTRA_FIELDS: FormFieldDef[] = [
+  {
+    id: "osType",
+    labelJa: "OS",
+    labelEn: "OS",
+    kind: "radio",
+    required: false,
+    radioOptions: [
+      { value: "ios", labelJa: "iOS", labelEn: "iOS" },
+      { value: "windows", labelJa: "Windows", labelEn: "Windows" },
+      { value: "both", labelJa: "両方", labelEn: "Both" },
+    ],
+  },
+  {
+    id: "externalSystemApi",
+    labelJa: "外部システム連携API",
+    labelEn: "External system integration API",
+    kind: "radio",
+    required: false,
+    radioOptions: [
+      { value: "yes", labelJa: "あり", labelEn: "Yes" },
+      { value: "no", labelJa: "なし", labelEn: "No" },
+    ],
+  },
+  { id: "applicationPurpose", labelJa: "用途", labelEn: "Purpose of use", kind: "textarea", rows: 3, required: false },
+  { id: "applicationIndustry", labelJa: "業種", labelEn: "Industry", kind: "text", required: false },
+  { id: "applicationRemarks", labelJa: "備考", labelEn: "Remarks", kind: "textarea", rows: 3, required: false },
+];
+
+/** 一覧・Excel「For:」用の顧客表示名（日本語名 → 中国語名 → 旧フィールド） */
+export function resolveCustomerDisplayName(formInputs: Record<string, unknown>): string {
+  const ja = String(formInputs.userCompanyNameJa ?? "").trim();
+  const zh = String(formInputs.userCompanyNameZh ?? "").trim();
+  const legacy = String(formInputs.customerName ?? "").trim();
+  return ja || zh || legacy;
+}
 
 /** オンプレ 新規 */
 export const ONPREM_NEW_FIELDS: FormFieldDef[] = [

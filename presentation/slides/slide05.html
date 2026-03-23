@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+html { background: #ffffff; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #ffffff; font-family: Arial, sans-serif;
+  display: flex; padding: 24pt;
+}
+.left { flex: 1; }
+.right { width: 220pt; flex-shrink: 0; display: flex; align-items: center; }
+.right img { max-width: 100%; height: auto; }
+h2 { color: #2d3748; font-size: 24pt; margin: 0 0 16pt 0; border-bottom: 3pt solid #3182ce; padding-bottom: 8pt; }
+ol { margin: 0; padding-left: 22pt; color: #4a5568; font-size: 12pt; line-height: 1.8; }
+</style>
+</head>
+<body>
+<div class="left">
+<h2>業務フロー（見積作成〜承認）</h2>
+<ol>
+<li><b>見積入力</b>：提供形態・契約形態を選択し、必要項目を入力</li>
+<li><b>自動計算＆ファイル生成</b>：仕切り率を参照し、Excelテンプレートの「設定情報」シートへ書き込み</li>
+<li><b>申請＆通知</b>：DB保存後、承認者へSlack/Teams/Gmailで通知</li>
+<li><b>承認＆PDF化</b>：承認者が承認し、表紙・ライセンス・保守料の3シートでPDF生成</li>
+<li><b>ダウンロード</b>：代理店が完成PDFをダウンロード</li>
+</ol>
+</div>
+<div class="right"><img src="../images/slide05-flow.png" alt=""></div>
+</body>
+</html>

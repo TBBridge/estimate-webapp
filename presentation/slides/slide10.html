@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+html { background: #f7fafc; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #f7fafc; font-family: Arial, sans-serif;
+  display: flex; padding: 24pt;
+}
+.left { flex: 1; }
+.right { width: 200pt; flex-shrink: 0; display: flex; align-items: center; }
+.right img { max-width: 100%; height: auto; }
+h2 { color: #2d3748; font-size: 24pt; margin: 0 0 16pt 0; border-bottom: 3pt solid #3182ce; padding-bottom: 8pt; }
+.div { margin-bottom: 14pt; }
+.div h3 { color: #2b6cb0; font-size: 13pt; margin: 0 0 4pt 0; }
+.div p { color: #4a5568; font-size: 11pt; margin: 0; line-height: 1.4; }
+</style>
+</head>
+<body>
+<div class="left">
+<h2>技術的な課題と解決策</h2>
+<div class="div">
+<h3>1. Vercel環境でのExcel処理の不安定さ</h3>
+<p>課題：サーバーレスで巨大バッファ読み込みが失敗。解決：PassThrough ストリーム経由で ExcelJS に読み込ませ安定化。</p>
+</div>
+<div class="div">
+<h3>2. PDF変換時のシート制御</h3>
+<p>課題：設定情報シートを削除すると数式が壊れる。解決：シートを veryHidden にし、変換対象から除外しつつ参照を維持。</p>
+</div>
+<div class="div">
+<h3>3. オプション選択のデータ構造の不一致</h3>
+<p>課題：フロントのオブジェクト形式とバックの配列想定の食い違い。解決：getCheckedOptionLabels でチェック済みオプション名を正しく抽出。</p>
+</div>
+</div>
+<div class="right"><img src="../images/slide10-challenges.png" alt=""></div>
+</body>
+</html>

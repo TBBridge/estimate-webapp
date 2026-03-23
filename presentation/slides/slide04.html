@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+html { background: #f7fafc; }
+body {
+  width: 720pt; height: 405pt; margin: 0; padding: 0;
+  background: #f7fafc; font-family: Arial, sans-serif;
+  display: flex; padding: 24pt;
+}
+.left { flex: 1; }
+.right { width: 200pt; flex-shrink: 0; display: flex; align-items: center; }
+.right img { max-width: 100%; height: auto; }
+h2 { color: #2d3748; font-size: 24pt; margin: 0 0 16pt 0; border-bottom: 3pt solid #3182ce; padding-bottom: 8pt; }
+.div { background: #edf2f7; border-radius: 8pt; padding: 12pt 16pt; margin-bottom: 12pt; }
+.div h3 { color: #2b6cb0; font-size: 14pt; margin: 0 0 6pt 0; }
+.div p { color: #4a5568; font-size: 11pt; margin: 0; line-height: 1.4; }
+</style>
+</head>
+<body>
+<div class="left">
+<h2>ユーザーロールと権限</h2>
+<div class="div">
+<h3>1. 代理店</h3>
+<p>見積の新規作成・申請／自分の案件一覧／承認済みPDFのダウンロード</p>
+</div>
+<div class="div">
+<h3>2. 承認者</h3>
+<p>申請内容の確認と承認・却下／見積書（Excel・PDF）のダウンロード</p>
+</div>
+<div class="div">
+<h3>3. 自社管理者</h3>
+<p>ダッシュボード分析／全案件一覧／マスタ管理（代理店・仕切り率・単価・テンプレート）／アカウント管理</p>
+</div>
+</div>
+<div class="right"><img src="../images/slide04-roles.png" alt=""></div>
+</body>
+</html>
