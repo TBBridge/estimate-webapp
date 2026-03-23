@@ -23,6 +23,7 @@ import { isValidEmail } from "@/lib/validation";
 
 type FormValues = Record<string, unknown>;
 type SubmitState = "idle" | "submitting" | "done" | "error";
+type KintoneLookupState = "idle" | "loading";
 
 export default function EstimateCreateForm() {
   const { locale } = useLocale();
@@ -35,6 +36,8 @@ export default function EstimateCreateForm() {
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
   const [resultNo, setResultNo] = useState<string>("");
   const [errorMsg, setErrorMsg] = useState<string>("");
+  const [kintoneLookupState, setKintoneLookupState] = useState<KintoneLookupState>("idle");
+  const [kintoneMsg, setKintoneMsg] = useState<string>("");
 
   const contractOptions = deliveryType ? getContractTypesForDelivery(deliveryType as DeliveryType) : [];
   const showCloudBilling = deliveryType === "cloud" && contractType === "new";
@@ -47,6 +50,11 @@ export default function EstimateCreateForm() {
     contractType &&
     (!showCloudBilling || cloudBilling)
   );
+
+  const showKintoneLookup =
+    showMainForm &&
+    (contractType === "license_add" || contractType === "option_add") &&
+    (deliveryType === "onprem" || deliveryType === "cloud");
 
   /** 代理店ログイン時：マスタから販売代理店欄を初期入力（編集可能） */
   useEffect(() => {
@@ -112,6 +120,77 @@ export default function EstimateCreateForm() {
     setSubmitState("idle");
     setResultNo("");
     setErrorMsg("");
+    setKintoneLookupState("idle");
+    setKintoneMsg("");
+  };
+
+  const handleKintoneLookup = async () => {
+    if (!user?.agencyId || !deliveryType || !contractType) {
+      setKintoneMsg(t(locale, "estimate.kintoneLookupNoAgency"));
+      return;
+    }
+    setKintoneLookupState("loading");
+    setKintoneMsg("");
+    try {
+      const res = await fetch("/api/kintone/lookup-license", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agencyId: user.agencyId,
+          userCompanyNameJa: values.userCompanyNameJa,
+          userCompanyNameZh: values.userCompanyNameZh,
+          contractType,
+          deliveryType,
+        }),
+      });
+      const data = (await res.json()) as {
+        found?: boolean;
+        message?: string;
+        error?: string;
+        configured?: boolean;
+        existingLicenseCount?: number;
+        existingMaintenanceStart?: { year: number; month: number };
+        existingMaintenanceEnd?: { year: number; month: number };
+      };
+
+      if (res.status === 503 && data.configured === false) {
+        setKintoneMsg(t(locale, "estimate.kintoneNotConfigured"));
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      if (!data.found) {
+        setKintoneMsg(data.message || (isEn ? "No matching record." : "該当するレコードがありません"));
+        return;
+      }
+
+      setValues((prev) => {
+        const next = { ...prev };
+        if (data.existingLicenseCount != null && !Number.isNaN(Number(data.existingLicenseCount))) {
+          next.existingLicenseCount = data.existingLicenseCount;
+        }
+        if (data.existingMaintenanceStart?.year != null && data.existingMaintenanceStart?.month != null) {
+          next.existingMaintenanceStart = {
+            year: data.existingMaintenanceStart.year,
+            month: data.existingMaintenanceStart.month,
+          };
+        }
+        if (data.existingMaintenanceEnd?.year != null && data.existingMaintenanceEnd?.month != null) {
+          next.existingMaintenanceEnd = {
+            year: data.existingMaintenanceEnd.year,
+            month: data.existingMaintenanceEnd.month,
+          };
+        }
+        return next;
+      });
+      setKintoneMsg(t(locale, "estimate.kintoneLookupSuccess"));
+    } catch (err) {
+      console.error("[kintone lookup]", err);
+      setKintoneMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setKintoneLookupState("idle");
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -311,6 +390,35 @@ export default function EstimateCreateForm() {
               <h3 className="font-body text-sm font-medium text-[var(--color-ink)]">
                 {t(locale, "estimate.contentSection")}
               </h3>
+              {showKintoneLookup && (
+                <div className="rounded-lg border border-stone-200 bg-stone-50/80 p-3 dark:border-stone-600 dark:bg-stone-900/40">
+                  <p className="font-body text-xs text-[var(--color-ink-muted)]">
+                    {t(locale, "estimate.kintoneLookupHint")}
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleKintoneLookup()}
+                      disabled={kintoneLookupState === "loading" || !user?.agencyId}
+                      className="rounded-lg border border-[var(--color-brand)] bg-white px-3 py-1.5 font-body text-sm text-[var(--color-brand)] hover:bg-[var(--color-brand)]/5 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-stone-800"
+                    >
+                      {kintoneLookupState === "loading"
+                        ? t(locale, "estimate.kintoneLookupLoading")
+                        : t(locale, "estimate.kintoneLookup")}
+                    </button>
+                    {!user?.agencyId && (
+                      <span className="font-body text-xs text-amber-700 dark:text-amber-300">
+                        {t(locale, "estimate.kintoneLookupNoAgency")}
+                      </span>
+                    )}
+                  </div>
+                  {kintoneMsg && (
+                    <p className="mt-2 font-body text-xs text-[var(--color-ink)]" role="status">
+                      {kintoneMsg}
+                    </p>
+                  )}
+                </div>
+              )}
               {formFields.map((f) => (
                 <FieldRenderer
                   key={f.id}

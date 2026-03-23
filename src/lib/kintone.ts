@@ -1,0 +1,90 @@
+/**
+ * kintone REST API ヘルパー（サーバー専用）
+ * @see https://cybozu.dev/ja/kintone/docs/rest-api/
+ */
+
+/** kintone クエリ文字列内のエスケープ */
+export function escapeKintoneQueryString(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+export type KintoneRecord = {
+  $id?: { value: string };
+  [fieldCode: string]: { value: unknown } | undefined;
+};
+
+export type KintoneRecordsResponse = {
+  records?: KintoneRecord[];
+  totalCount?: string | null;
+};
+
+/**
+ * ドメイン末尾のスラッシュを除去
+ */
+export function normalizeKintoneDomain(domain: string): string {
+  return domain.replace(/\/+$/, "");
+}
+
+/**
+ * レコード一覧取得 GET /k/v1/records.json
+ */
+export async function fetchKintoneRecords(params: {
+  domain: string;
+  appId: string | number;
+  apiToken: string;
+  query: string;
+  fields?: string[];
+}): Promise<KintoneRecordsResponse> {
+  const base = normalizeKintoneDomain(params.domain);
+  const url = new URL(`${base}/k/v1/records.json`);
+  url.searchParams.set("app", String(params.appId));
+  url.searchParams.set("query", params.query);
+  if (params.fields?.length) {
+    params.fields.forEach((f) => url.searchParams.append("fields[]", f));
+  }
+
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    headers: {
+      "X-Cybozu-API-Token": params.apiToken,
+    },
+    cache: "no-store",
+  });
+
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`kintone API ${res.status}: ${text.slice(0, 500)}`);
+  }
+  return JSON.parse(text) as KintoneRecordsResponse;
+}
+
+/** DATE / DATETIME の値から year_month 用オブジェクトへ */
+export function kintoneDateToYearMonth(
+  value: unknown
+): { year: number; month: number } | null {
+  if (value == null || value === "") return null;
+  const s = String(value).trim();
+  const m = /^(\d{4})-(\d{1,2})(?:-\d{1,2})?/.exec(s);
+  if (m) {
+    return { year: Number(m[1]), month: Number(m[2]) };
+  }
+  return null;
+}
+
+/** 数値フィールドの値 */
+export function kintoneNumberValue(record: KintoneRecord, fieldCode: string): number | null {
+  const cell = record[fieldCode];
+  if (!cell || typeof cell !== "object" || !("value" in cell)) return null;
+  const v = (cell as { value: unknown }).value;
+  if (v === "" || v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** 文字列フィールドの値 */
+export function kintoneStringValue(record: KintoneRecord, fieldCode: string): string {
+  const cell = record[fieldCode];
+  if (!cell || typeof cell !== "object" || !("value" in cell)) return "";
+  const v = (cell as { value: unknown }).value;
+  return v == null ? "" : String(v);
+}
