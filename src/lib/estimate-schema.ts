@@ -180,6 +180,18 @@ export const SALES_AGENCY_CONTACT_FIELDS: FormFieldDef[] = [
   },
 ];
 
+/** 契約形態を変更したときにクリアしない values キー（販売代理店ブロック・電話の国番号・ローカル番号を含む） */
+export const SALES_AGENCY_PRESERVED_KEYS: readonly string[] = (() => {
+  const keys: string[] = [];
+  for (const f of SALES_AGENCY_CONTACT_FIELDS) {
+    keys.push(f.id);
+    if (f.kind === "phone_country" && f.dialField && f.localField) {
+      keys.push(f.dialField, f.localField);
+    }
+  }
+  return keys;
+})();
+
 /** お申込内容の追加項目（用途・備考など） */
 export const APPLICATION_DETAIL_EXTRA_FIELDS: FormFieldDef[] = [
   {

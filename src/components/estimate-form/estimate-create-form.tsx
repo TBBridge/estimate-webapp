@@ -15,6 +15,7 @@ import {
   OPTION_ITEMS,
   ALLOWED_I_REPORTER_LICENSE_COUNTS,
   resolveCustomerDisplayName,
+  SALES_AGENCY_PRESERVED_KEYS,
   type DeliveryType,
   type ContractType,
 } from "@/lib/estimate-schema";
@@ -99,13 +100,30 @@ export default function EstimateCreateForm() {
     setDeliveryType(v ? (v as DeliveryType) : "");
     setContractType("");
     setCloudBilling("");
-    setValues({});
+    setValues((prev) => {
+      const next: FormValues = {};
+      for (const key of SALES_AGENCY_PRESERVED_KEYS) {
+        if (key in prev && prev[key] !== undefined) {
+          next[key] = prev[key];
+        }
+      }
+      return next;
+    });
   };
 
   const handleContractChange = (v: string) => {
     setContractType(v ? (v as ContractType) : "");
     if (deliveryType !== "cloud" || v !== "new") setCloudBilling("");
-    setValues({});
+    // 見積内容だけリセットし、ログイン代理店から入った販売代理店欄は維持する
+    setValues((prev) => {
+      const next: FormValues = {};
+      for (const key of SALES_AGENCY_PRESERVED_KEYS) {
+        if (key in prev && prev[key] !== undefined) {
+          next[key] = prev[key];
+        }
+      }
+      return next;
+    });
   };
 
   const update = (id: string, value: unknown) => {
