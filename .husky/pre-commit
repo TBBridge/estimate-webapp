@@ -1,0 +1,2 @@
+#!/usr/bin/env sh
+# 必要ならここで lint 等を実行（例: npm run lint）

@@ -46,6 +46,17 @@ npm run dev
 
 http://localhost:3000 で開き、未ログイン時は `/login` にリダイレクトされます。
 
+### Git / GitHub（コミット後の自動 push）
+
+[Husky](https://typicode.github.io/husky/) の `post-commit` で、**ローカルで `git commit` した直後に `git push` が走り**、追跡ブランチが設定されていれば GitHub に反映されます。
+
+- 初回のみ: `git push -u origin main`（または作業ブランチ）で upstream を設定しておいてください。
+- 自動 push を一回だけ無効にする: `SKIP_AUTO_PUSH=1 git commit -m "..."`（PowerShell では `$env:SKIP_AUTO_PUSH=1; git commit ...`）
+- すべての Husky を無効にする: `HUSKY=0 git commit ...`
+- **ファイル保存だけでは push されません。** 変更をコミットしたタイミングでリモートへ送られます。
+
+`npm install` 実行時に `prepare` スクリプトでフックが有効になります。リポジトリをクローンした直後も `npm install` が必要です。
+
 ### 環境変数（kintone 連携）
 
 ライセンス追加・オプション追加で「kintoneから既存情報を取得」を使う場合、`.env.local` 等に以下を設定します。テンプレートは `.env.example` を参照。

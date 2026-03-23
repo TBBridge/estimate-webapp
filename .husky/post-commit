@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+# コミット後に origin へ push（無効化: SKIP_AUTO_PUSH=1 git commit）
+[ "${SKIP_AUTO_PUSH:-}" = "1" ] && exit 0
+git push
