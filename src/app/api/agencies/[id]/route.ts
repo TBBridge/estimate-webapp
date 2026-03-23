@@ -1,16 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-
-function isUniqueEmailError(e: unknown): boolean {
-  if (e && typeof e === "object" && "code" in e && (e as { code: string }).code === "23505") {
-    return true;
-  }
-  const msg =
-    e && typeof e === "object" && "message" in e && typeof (e as { message: unknown }).message === "string"
-      ? (e as { message: string }).message
-      : String(e);
-  return /duplicate key|unique constraint/i.test(msg);
-}
+import { agencyMutationErrorResponse } from "@/app/api/agencies/agency-mutation-errors";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -105,14 +95,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       createdAt: r.created_at,
     });
   } catch (e) {
-    console.error(e);
-    if (isUniqueEmailError(e)) {
-      return NextResponse.json(
-        { error: "このログインメールは既に登録されています" },
-        { status: 409 }
-      );
-    }
-    return NextResponse.json({ error: "保存に失敗しました。しばらくしてから再度お試しください。" }, { status: 500 });
+    return agencyMutationErrorResponse(e, "[agencies PUT]");
   }
 }
 

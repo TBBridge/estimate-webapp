@@ -46,6 +46,12 @@ npm run dev
 
 http://localhost:3000 で開き、未ログイン時は `/login` にリダイレクトされます。
 
+### データベース（Neon）
+
+本番・プレビューでは **Vercel の Neon 連携** により `DATABASE_URL` または `POSTGRES_URL` のいずれかが設定されることがあります。アプリは `DATABASE_URL` → `POSTGRES_URL` → … の順で参照します。`DATABASE_URL` だけが無い状態で `POSTGRES_URL` だけあると、以前の実装では接続に失敗することがありました（現在は両方に対応）。
+
+ローカルでは `.env.local` に Neon の接続文字列を `DATABASE_URL` で設定してください。
+
 ### Git / GitHub（コミット後の自動 push）
 
 [Husky](https://typicode.github.io/husky/) の `post-commit` で、**ローカルで `git commit` した直後に `git push` が走り**、追跡ブランチが設定されていれば GitHub に反映されます。

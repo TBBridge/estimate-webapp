@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { agencyMutationErrorResponse } from "@/app/api/agencies/agency-mutation-errors";
 
 export async function GET() {
   try {
@@ -32,17 +33,6 @@ export async function GET() {
     console.error(e);
     return NextResponse.json({ error: "Failed to fetch agencies" }, { status: 500 });
   }
-}
-
-function isUniqueEmailError(e: unknown): boolean {
-  if (e && typeof e === "object" && "code" in e && (e as { code: string }).code === "23505") {
-    return true;
-  }
-  const msg =
-    e && typeof e === "object" && "message" in e && typeof (e as { message: unknown }).message === "string"
-      ? (e as { message: string }).message
-      : String(e);
-  return /duplicate key|unique constraint/i.test(msg);
 }
 
 export async function POST(req: Request) {
@@ -100,13 +90,6 @@ export async function POST(req: Request) {
       createdAt: r.created_at,
     }, { status: 201 });
   } catch (e) {
-    console.error(e);
-    if (isUniqueEmailError(e)) {
-      return NextResponse.json(
-        { error: "このログインメールは既に登録されています" },
-        { status: 409 }
-      );
-    }
-    return NextResponse.json({ error: "保存に失敗しました。しばらくしてから再度お試しください。" }, { status: 500 });
+    return agencyMutationErrorResponse(e, "[agencies POST]");
   }
 }
