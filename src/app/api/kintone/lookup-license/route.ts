@@ -138,6 +138,19 @@ export async function POST(req: Request) {
   } catch (e) {
     console.error("[kintone/lookup-license]", e);
     const msg = e instanceof Error ? e.message : String(e);
+    const isFieldMissing =
+      /GAIA_IQ11|not found|Specified field/i.test(msg) ||
+      /フィールド.*見つかりません/i.test(msg);
+    if (isFieldMissing) {
+      return NextResponse.json(
+        {
+          error:
+            "kintone のフィールドコードがこのアプリに存在しません。Vercel（または .env.local）の KINTONE_FIELD_AGENCY_ID などを、kintone アプリの「フィールドコード」に合わせてください。一覧はブラウザで GET /api/kintone/app-fields を開いて確認できます。",
+          detail: msg.slice(0, 400),
+        },
+        { status: 502 }
+      );
+    }
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

@@ -70,10 +70,25 @@ http://localhost:3000 で開き、未ログイン時は `/login` にリダイレ
 | 変数 | 説明 |
 |------|------|
 | `KINTONE_DOMAIN` | kintone のドメイン（例: `https://dea5gs2qu9n6.cybozu.com`） |
-| `KINTONE_API_TOKEN_APP219` | アプリ219の API トークン |
-| `KINTONE_APP_LICENSE` | 省略時 `219` |
-| `KINTONE_FIELD_*` | フィールドコードがデフォルトと異なる場合のみ上書き |
-| `KINTONE_MATCH_AGENCY_BY` | `id`（既定）または `name`（代理店名で突合） |
+| `KINTONE_API_TOKEN_APP219` | 対象アプリの API トークン（レコード閲覧・フィールド参照） |
+| `KINTONE_APP_LICENSE` | 省略時 `219`（ライセンス管理アプリの ID） |
+| `KINTONE_MATCH_AGENCY_BY` | `id`（既定: Web の代理店 ID を kintone に格納）または `name`（代理店名で突合） |
+
+**フィールドコード（`KINTONE_APP_LICENSE` のアプリに実在するコードに合わせる）**
+
+| 環境変数 | アプリ内の役割（論理） | コード未設定時の既定値 |
+|----------|------------------------|------------------------|
+| `KINTONE_FIELD_AGENCY_ID` | 代理店の突合（ID または名前） | `agency_id` |
+| `KINTONE_FIELD_CUSTOMER` | 顧客（エンドユーザー）会社名 | `customer_name` |
+| `KINTONE_FIELD_LICENSE` | 既存ライセンス数 | `license_count` |
+| `KINTONE_FIELD_MAINT_START` | 保守開始日 | `maint_start` |
+| `KINTONE_FIELD_MAINT_END` | 保守終了日 | `maint_end` |
+
+kintone のエラー `GAIA_IQ11` / 「Specified field (…) not found」は、上記いずれかの**フィールドコードがアプリに存在しない**ときに出ます。Vercel の環境変数に **存在しない名前**（例: `会社名_代理店`）を入れていると同様のエラーになります。
+
+**実アプリのフィールドコード一覧の確認:** デプロイ先のオリジンでブラウザから  
+`GET /api/kintone/app-fields`  
+を開くと、JSON で `fields`（`code` / `type` / `label`）と、現在の `lookupMapping` がアプリに存在するか（`mappingStatus`）が返ります。
 
 未設定の場合は API が 503 を返し、画面上に案内メッセージが表示されます。
 

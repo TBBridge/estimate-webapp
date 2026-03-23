@@ -165,6 +165,7 @@ export default function EstimateCreateForm() {
         found?: boolean;
         message?: string;
         error?: string;
+        detail?: string;
         configured?: boolean;
         existingLicenseCount?: number;
         existingMaintenanceStart?: { year: number; month: number };
@@ -176,7 +177,9 @@ export default function EstimateCreateForm() {
         return;
       }
       if (!res.ok) {
-        throw new Error(data.error || `HTTP ${res.status}`);
+        const base = data.error || `HTTP ${res.status}`;
+        const extra = data.detail?.trim() ? `\n${data.detail.trim()}` : "";
+        throw new Error(base + extra);
       }
       if (!data.found) {
         setKintoneMsg(data.message || (isEn ? "No matching record." : "該当するレコードがありません"));

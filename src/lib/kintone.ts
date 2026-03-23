@@ -58,6 +58,46 @@ export async function fetchKintoneRecords(params: {
   return JSON.parse(text) as KintoneRecordsResponse;
 }
 
+/** GET /k/v1/app/form/fields.json — アプリのフィールドコード一覧（環境変数の突合用） */
+export async function fetchKintoneFormFields(params: {
+  domain: string;
+  appId: string | number;
+  apiToken: string;
+}): Promise<Record<string, unknown>> {
+  const base = normalizeKintoneDomain(params.domain);
+  const url = new URL(`${base}/k/v1/app/form/fields.json`);
+  url.searchParams.set("app", String(params.appId));
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    headers: {
+      "X-Cybozu-API-Token": params.apiToken,
+    },
+    cache: "no-store",
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`kintone form API ${res.status}: ${text.slice(0, 500)}`);
+  }
+  return JSON.parse(text) as Record<string, unknown>;
+}
+
+/** form/fields の properties を一覧用にフラット化 */
+export function flattenKintoneFormFieldList(data: Record<string, unknown>): {
+  code: string;
+  type: string;
+  label: string;
+}[] {
+  const props = data.properties;
+  if (!props || typeof props !== "object") return [];
+  const out: { code: string; type: string; label: string }[] = [];
+  for (const [code, def] of Object.entries(props as Record<string, Record<string, unknown>>)) {
+    const type = String(def?.type ?? "");
+    const label = String(def?.label ?? "");
+    out.push({ code, type, label });
+  }
+  return out.sort((a, b) => a.code.localeCompare(b.code));
+}
+
 /** DATE / DATETIME の値から year_month 用オブジェクトへ */
 export function kintoneDateToYearMonth(
   value: unknown
