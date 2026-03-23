@@ -94,7 +94,12 @@ export default function AdminAgentsPage() {
     await deleteAgency(id);
   };
 
-  const inputCls = "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40 dark:border-stone-600 dark:bg-stone-800";
+  const inputBaseCls =
+    "rounded-lg border border-stone-300 bg-white px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40 dark:border-stone-600 dark:bg-stone-800";
+  const inputCls = `w-full ${inputBaseCls}`;
+  /** 国番号＋ローカル番号行（flex 内で w-full を二重に付けない） */
+  const dialSelectCls = `${inputBaseCls} max-w-[min(100%,12rem)] shrink-0`;
+  const localPhoneCls = `${inputBaseCls} min-w-0 flex-1 basis-0`;
 
   return (
     <div className="space-y-6">
@@ -195,34 +200,47 @@ export default function AdminAgentsPage() {
                 <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.department")}</label>
                 <input type="text" value={form.department ?? ""} onChange={(e) => setForm((p) => ({ ...p, department: e.target.value }))} className={inputCls} />
               </div>
-              <div>
+              <div className="min-w-0">
                 <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.phone")}</label>
-                <div className="flex gap-2">
+                <div className="flex min-w-0 flex-wrap gap-2">
                   <select
                     value={form.phoneCountryCode ?? DEFAULT_DIAL_CODE}
                     onChange={(e) => setForm((p) => ({ ...p, phoneCountryCode: e.target.value }))}
-                    className={`${inputCls} w-[44%] shrink-0`}
+                    className={dialSelectCls}
+                    aria-label={t(locale, "admin.agents.phone")}
                   >
                     {COUNTRY_DIAL_CODES.map((o) => (
                       <option key={o.value} value={o.value}>{isEn ? o.labelEn : o.labelJa}</option>
                     ))}
                   </select>
-                  <input type="text" value={form.phoneLocal ?? ""} onChange={(e) => setForm((p) => ({ ...p, phoneLocal: e.target.value }))} className={inputCls} placeholder="3-1234-5678" />
+                  <input
+                    type="text"
+                    value={form.phoneLocal ?? ""}
+                    onChange={(e) => setForm((p) => ({ ...p, phoneLocal: e.target.value }))}
+                    className={localPhoneCls}
+                    placeholder="3-1234-5678"
+                  />
                 </div>
               </div>
-              <div>
+              <div className="min-w-0">
                 <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.fax")}</label>
-                <div className="flex gap-2">
+                <div className="flex min-w-0 flex-wrap gap-2">
                   <select
                     value={form.faxCountryCode ?? DEFAULT_DIAL_CODE}
                     onChange={(e) => setForm((p) => ({ ...p, faxCountryCode: e.target.value }))}
-                    className={`${inputCls} w-[44%] shrink-0`}
+                    className={dialSelectCls}
+                    aria-label={t(locale, "admin.agents.fax")}
                   >
                     {COUNTRY_DIAL_CODES.map((o) => (
                       <option key={o.value} value={o.value}>{isEn ? o.labelEn : o.labelJa}</option>
                     ))}
                   </select>
-                  <input type="text" value={form.faxLocal ?? ""} onChange={(e) => setForm((p) => ({ ...p, faxLocal: e.target.value }))} className={inputCls} />
+                  <input
+                    type="text"
+                    value={form.faxLocal ?? ""}
+                    onChange={(e) => setForm((p) => ({ ...p, faxLocal: e.target.value }))}
+                    className={localPhoneCls}
+                  />
                 </div>
               </div>
               {/* 承認者名 */}
