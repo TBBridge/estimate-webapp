@@ -30,6 +30,7 @@ export default function AdminAgentsPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm());
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   type AgentSortKey = "name" | "agencyType" | "email" | "approverName" | "approverEmail" | "createdAt";
   const [sortKey, setSortKey] = useState<AgentSortKey>("createdAt");
@@ -60,7 +61,12 @@ export default function AdminAgentsPage() {
     </th>
   );
 
-  const openAdd = () => { setEditId(null); setForm(emptyForm()); setShowModal(true); };
+  const openAdd = () => {
+    setEditId(null);
+    setForm(emptyForm());
+    setSaveError("");
+    setShowModal(true);
+  };
   const openEdit = (ag: Agency) => {
     setEditId(ag.id);
     setForm({
@@ -77,16 +83,32 @@ export default function AdminAgentsPage() {
       approverName: ag.approverName,
       approverEmail: ag.approverEmail,
     });
+    setSaveError("");
     setShowModal(true);
   };
 
   const handleSave = async () => {
+    setSaveError("");
+    const name = form.name.trim();
+    const email = form.email.trim();
+    if (!name || !email) {
+      setSaveError(t(locale, "admin.agents.validationRequired"));
+      return;
+    }
     setSaving(true);
     try {
-      if (editId) { await updateAgency(editId, form); }
-      else { await createAgency(form); }
+      if (editId) {
+        await updateAgency(editId, { ...form, name, email });
+      } else {
+        await createAgency({ ...form, name, email });
+      }
       setShowModal(false);
-    } finally { setSaving(false); }
+    } catch (e) {
+      console.error("[admin/agents save]", e);
+      setSaveError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -254,12 +276,23 @@ export default function AdminAgentsPage() {
                 <input type="email" value={form.approverEmail} onChange={(e) => setForm((p) => ({ ...p, approverEmail: e.target.value }))} className={inputCls} />
               </div>
             </div>
+            {saveError && (
+              <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 font-body text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200" role="alert">
+                {saveError}
+              </p>
+            )}
             <div className="mt-6 flex justify-end gap-2">
-              <button type="button" onClick={() => setShowModal(false)}
-                className="rounded-lg border border-stone-300 px-4 py-2 font-body text-sm text-[var(--color-ink)] hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowModal(false);
+                  setSaveError("");
+                }}
+                className="rounded-lg border border-stone-300 px-4 py-2 font-body text-sm text-[var(--color-ink)] hover:bg-stone-100 dark:border-stone-600 dark:hover:bg-stone-700"
+              >
                 {t(locale, "admin.agents.cancel")}
               </button>
-              <button type="button" onClick={handleSave} disabled={saving}
+              <button type="button" onClick={() => void handleSave()} disabled={saving}
                 className="rounded-lg bg-[var(--color-brand)] px-4 py-2 font-body text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
                 {saving ? t(locale, "common.loading") : t(locale, "admin.agents.save")}
               </button>

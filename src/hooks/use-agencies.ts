@@ -8,6 +8,17 @@ const fetcher = async (url: string) => {
   return r.json();
 };
 
+function messageFromErrorBody(text: string, status: number): string {
+  try {
+    const j = JSON.parse(text) as { error?: string };
+    if (typeof j.error === "string" && j.error.trim()) return j.error;
+  } catch {
+    /* plain text or HTML */
+  }
+  if (text.trim()) return text.slice(0, 300);
+  return `HTTP ${status}`;
+}
+
 export function useAgencies() {
   const { data, error, isLoading } = useSWR<Agency[]>(KEY, fetcher);
   return { agencies: data ?? [], error, isLoading };
@@ -19,8 +30,9 @@ export async function createAgency(body: Omit<Agency, "id" | "createdAt">): Prom
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(await res.text());
-  const created = await res.json();
+  const text = await res.text();
+  if (!res.ok) throw new Error(messageFromErrorBody(text, res.status));
+  const created = JSON.parse(text) as Agency;
   await mutate(KEY);
   return created;
 }
@@ -31,8 +43,9 @@ export async function updateAgency(id: string, body: Omit<Agency, "id" | "create
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(await res.text());
-  const updated = await res.json();
+  const text = await res.text();
+  if (!res.ok) throw new Error(messageFromErrorBody(text, res.status));
+  const updated = JSON.parse(text) as Agency;
   await mutate(KEY);
   return updated;
 }

@@ -34,24 +34,36 @@ export async function GET() {
   }
 }
 
+function isUniqueEmailError(e: unknown): boolean {
+  if (e && typeof e === "object" && "code" in e && (e as { code: string }).code === "23505") {
+    return true;
+  }
+  const msg =
+    e && typeof e === "object" && "message" in e && typeof (e as { message: unknown }).message === "string"
+      ? (e as { message: string }).message
+      : String(e);
+  return /duplicate key|unique constraint/i.test(msg);
+}
+
 export async function POST(req: Request) {
   try {
     const sql = getDb();
-    const body = await req.json();
-    const {
-      name,
-      email,
-      loginPassword,
-      agencyType,
-      contactName,
-      department,
-      phoneCountryCode,
-      phoneLocal,
-      faxCountryCode,
-      faxLocal,
-      approverName,
-      approverEmail,
-    } = body as Record<string, string | undefined>;
+    const body = (await req.json()) as Record<string, unknown>;
+    const name = String(body.name ?? "").trim();
+    const email = String(body.email ?? "").trim();
+    if (!name || !email) {
+      return NextResponse.json({ error: "代理店名とログインメールは必須です" }, { status: 400 });
+    }
+    const loginPassword = String(body.loginPassword ?? "");
+    const agencyType = String(body.agencyType ?? "");
+    const contactName = String(body.contactName ?? "");
+    const department = String(body.department ?? "");
+    const phoneCountryCode = String(body.phoneCountryCode ?? "+81");
+    const phoneLocal = String(body.phoneLocal ?? "");
+    const faxCountryCode = String(body.faxCountryCode ?? "+81");
+    const faxLocal = String(body.faxLocal ?? "");
+    const approverName = String(body.approverName ?? "");
+    const approverEmail = String(body.approverEmail ?? "");
     const rows = await sql`
       INSERT INTO agencies (
         name, email, login_password, agency_type, contact_name, department,
@@ -59,10 +71,10 @@ export async function POST(req: Request) {
         approver_name, approver_email
       )
       VALUES (
-        ${name}, ${email}, ${loginPassword ?? ""}, ${agencyType ?? ""},
-        ${contactName ?? ""}, ${department ?? ""},
-        ${phoneCountryCode ?? "+81"}, ${phoneLocal ?? ""},
-        ${faxCountryCode ?? "+81"}, ${faxLocal ?? ""},
+        ${name}, ${email}, ${loginPassword}, ${agencyType},
+        ${contactName}, ${department},
+        ${phoneCountryCode}, ${phoneLocal},
+        ${faxCountryCode}, ${faxLocal},
         ${approverName}, ${approverEmail}
       )
       RETURNING id, name, email, login_password, agency_type, contact_name, department,
@@ -89,6 +101,12 @@ export async function POST(req: Request) {
     }, { status: 201 });
   } catch (e) {
     console.error(e);
-    return NextResponse.json({ error: "Failed to create agency" }, { status: 500 });
+    if (isUniqueEmailError(e)) {
+      return NextResponse.json(
+        { error: "このログインメールは既に登録されています" },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json({ error: "保存に失敗しました。しばらくしてから再度お試しください。" }, { status: 500 });
   }
 }

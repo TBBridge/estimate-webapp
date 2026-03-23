@@ -1,6 +1,17 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 
+function isUniqueEmailError(e: unknown): boolean {
+  if (e && typeof e === "object" && "code" in e && (e as { code: string }).code === "23505") {
+    return true;
+  }
+  const msg =
+    e && typeof e === "object" && "message" in e && typeof (e as { message: unknown }).message === "string"
+      ? (e as { message: string }).message
+      : String(e);
+  return /duplicate key|unique constraint/i.test(msg);
+}
+
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const sql = getDb();
@@ -41,31 +52,33 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     const sql = getDb();
     const { id } = await params;
     const body = await req.json();
-    const {
-      name,
-      email,
-      loginPassword,
-      agencyType,
-      contactName,
-      department,
-      phoneCountryCode,
-      phoneLocal,
-      faxCountryCode,
-      faxLocal,
-      approverName,
-      approverEmail,
-    } = body as Record<string, string | undefined>;
+    const b = body as Record<string, unknown>;
+    const name = String(b.name ?? "").trim();
+    const email = String(b.email ?? "").trim();
+    const loginPassword = String(b.loginPassword ?? "");
+    const agencyType = String(b.agencyType ?? "");
+    const contactName = String(b.contactName ?? "");
+    const department = String(b.department ?? "");
+    const phoneCountryCode = String(b.phoneCountryCode ?? "+81");
+    const phoneLocal = String(b.phoneLocal ?? "");
+    const faxCountryCode = String(b.faxCountryCode ?? "+81");
+    const faxLocal = String(b.faxLocal ?? "");
+    const approverName = String(b.approverName ?? "");
+    const approverEmail = String(b.approverEmail ?? "");
+    if (!name || !email) {
+      return NextResponse.json({ error: "代理店名とログインメールは必須です" }, { status: 400 });
+    }
     const rows = await sql`
       UPDATE agencies
       SET name = ${name}, email = ${email},
-          login_password = ${loginPassword ?? ""},
-          agency_type = ${agencyType ?? ""},
-          contact_name = ${contactName ?? ""},
-          department = ${department ?? ""},
-          phone_country_code = ${phoneCountryCode ?? "+81"},
-          phone_local = ${phoneLocal ?? ""},
-          fax_country_code = ${faxCountryCode ?? "+81"},
-          fax_local = ${faxLocal ?? ""},
+          login_password = ${loginPassword},
+          agency_type = ${agencyType},
+          contact_name = ${contactName},
+          department = ${department},
+          phone_country_code = ${phoneCountryCode},
+          phone_local = ${phoneLocal},
+          fax_country_code = ${faxCountryCode},
+          fax_local = ${faxLocal},
           approver_name = ${approverName}, approver_email = ${approverEmail}
       WHERE id = ${id}
       RETURNING id, name, email, login_password, agency_type, contact_name, department,
@@ -93,7 +106,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     });
   } catch (e) {
     console.error(e);
-    return NextResponse.json({ error: "Failed to update agency" }, { status: 500 });
+    if (isUniqueEmailError(e)) {
+      return NextResponse.json(
+        { error: "このログインメールは既に登録されています" },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json({ error: "保存に失敗しました。しばらくしてから再度お試しください。" }, { status: 500 });
   }
 }
 
