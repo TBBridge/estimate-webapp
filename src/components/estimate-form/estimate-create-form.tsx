@@ -26,7 +26,47 @@ type FormValues = Record<string, unknown>;
 type SubmitState = "idle" | "submitting" | "done" | "error";
 type KintoneLookupState = "idle" | "loading";
 
+/** kintone 候補（lookup-license API の candidates と一致） */
+type KintoneLicenseCandidate = {
+  recordId: string;
+  customerDisplay: string;
+  existingLicenseCount?: number;
+  existingMaintenanceStart?: { year: number; month: number };
+  existingMaintenanceEnd?: { year: number; month: number };
+};
+
 const KINTONE_LOOKUP_DEBOUNCE_MS = 600;
+
+function stripKintoneFilledFields(prev: FormValues): FormValues {
+  const next = { ...prev };
+  delete next.existingLicenseCount;
+  delete next.existingMaintenanceStart;
+  delete next.existingMaintenanceEnd;
+  return next;
+}
+
+function mergeKintoneCandidate(
+  prev: FormValues,
+  c: KintoneLicenseCandidate,
+): FormValues {
+  const next = { ...prev };
+  if (c.existingLicenseCount != null && !Number.isNaN(Number(c.existingLicenseCount))) {
+    next.existingLicenseCount = c.existingLicenseCount;
+  }
+  if (c.existingMaintenanceStart?.year != null && c.existingMaintenanceStart?.month != null) {
+    next.existingMaintenanceStart = {
+      year: c.existingMaintenanceStart.year,
+      month: c.existingMaintenanceStart.month,
+    };
+  }
+  if (c.existingMaintenanceEnd?.year != null && c.existingMaintenanceEnd?.month != null) {
+    next.existingMaintenanceEnd = {
+      year: c.existingMaintenanceEnd.year,
+      month: c.existingMaintenanceEnd.month,
+    };
+  }
+  return next;
+}
 
 export default function EstimateCreateForm() {
   const { locale } = useLocale();
@@ -42,6 +82,8 @@ export default function EstimateCreateForm() {
   const [kintoneLookupState, setKintoneLookupState] = useState<KintoneLookupState>("idle");
   const [kintoneMsg, setKintoneMsg] = useState<string>("");
   const [kintoneMsgIsError, setKintoneMsgIsError] = useState(false);
+  const [kintoneCandidates, setKintoneCandidates] = useState<KintoneLicenseCandidate[]>([]);
+  const [kintonePickedId, setKintonePickedId] = useState<string | null>(null);
   const kintoneSeqRef = useRef(0);
 
   const contractOptions = deliveryType ? getContractTypesForDelivery(deliveryType as DeliveryType) : [];
@@ -106,6 +148,8 @@ export default function EstimateCreateForm() {
       setKintoneMsg("");
       setKintoneMsgIsError(false);
       setKintoneLookupState("idle");
+      setKintoneCandidates([]);
+      setKintonePickedId(null);
       return;
     }
 
@@ -117,13 +161,9 @@ export default function EstimateCreateForm() {
       setKintoneMsg("");
       setKintoneMsgIsError(false);
       setKintoneLookupState("idle");
-      setValues((prev) => {
-        const next = { ...prev };
-        delete next.existingLicenseCount;
-        delete next.existingMaintenanceStart;
-        delete next.existingMaintenanceEnd;
-        return next;
-      });
+      setKintoneCandidates([]);
+      setKintonePickedId(null);
+      setValues((prev) => stripKintoneFilledFields(prev));
       return;
     }
 
@@ -148,6 +188,9 @@ export default function EstimateCreateForm() {
           });
           const data = (await res.json()) as {
             found?: boolean;
+            matchCount?: number;
+            candidates?: KintoneLicenseCandidate[];
+            requiresSelection?: boolean;
             message?: string;
             error?: string;
             detail?: string;
@@ -160,6 +203,8 @@ export default function EstimateCreateForm() {
           if (seq !== kintoneSeqRef.current) return;
 
           if (res.status === 503 && data.configured === false) {
+            setKintoneCandidates([]);
+            setKintonePickedId(null);
             setKintoneMsg(t(locale, "estimate.kintoneNotConfigured"));
             setKintoneMsgIsError(true);
             setKintoneLookupState("idle");
@@ -167,64 +212,50 @@ export default function EstimateCreateForm() {
           }
 
           if (!res.ok) {
+            setKintoneCandidates([]);
+            setKintonePickedId(null);
             setKintoneMsg(data.error ?? `HTTP ${res.status}`);
             setKintoneMsgIsError(true);
-            setValues((prev) => {
-              const next = { ...prev };
-              delete next.existingLicenseCount;
-              delete next.existingMaintenanceStart;
-              delete next.existingMaintenanceEnd;
-              return next;
-            });
+            setValues((prev) => stripKintoneFilledFields(prev));
             setKintoneLookupState("idle");
             return;
           }
 
-          if (!data.found) {
-            setKintoneMsg(t(locale, "estimate.kintoneNotFound"));
+          const candidates = Array.isArray(data.candidates) ? data.candidates : [];
+
+          if (!data.found || candidates.length === 0) {
+            setKintoneCandidates([]);
+            setKintonePickedId(null);
+            setKintoneMsg(data.message?.trim() || t(locale, "estimate.kintoneNotFound"));
             setKintoneMsgIsError(false);
-            setValues((prev) => {
-              const next = { ...prev };
-              delete next.existingLicenseCount;
-              delete next.existingMaintenanceStart;
-              delete next.existingMaintenanceEnd;
-              return next;
-            });
+            setValues((prev) => stripKintoneFilledFields(prev));
             setKintoneLookupState("idle");
             return;
           }
 
-          setValues((prev) => {
-            const next = { ...prev };
-            if (data.existingLicenseCount != null && !Number.isNaN(Number(data.existingLicenseCount))) {
-              next.existingLicenseCount = data.existingLicenseCount;
-            }
-            if (data.existingMaintenanceStart?.year != null && data.existingMaintenanceStart?.month != null) {
-              next.existingMaintenanceStart = {
-                year: data.existingMaintenanceStart.year,
-                month: data.existingMaintenanceStart.month,
-              };
-            }
-            if (data.existingMaintenanceEnd?.year != null && data.existingMaintenanceEnd?.month != null) {
-              next.existingMaintenanceEnd = {
-                year: data.existingMaintenanceEnd.year,
-                month: data.existingMaintenanceEnd.month,
-              };
-            }
-            return next;
-          });
+          if (candidates.length > 1) {
+            setKintoneCandidates(candidates);
+            setKintonePickedId(candidates[0]?.recordId ?? null);
+            setValues((prev) => stripKintoneFilledFields(prev));
+            setKintoneMsg(t(locale, "estimate.kintonePickPrompt"));
+            setKintoneMsgIsError(false);
+            setKintoneLookupState("idle");
+            return;
+          }
+
+          const only = candidates[0];
+          setKintoneCandidates([]);
+          setKintonePickedId(null);
+          setValues((prev) => mergeKintoneCandidate(prev, only));
           setKintoneMsg(t(locale, "estimate.kintoneLookupSuccess"));
         } catch (err) {
           if (seq !== kintoneSeqRef.current) return;
           console.error("[kintone lookup]", err);
+          setKintoneCandidates([]);
+          setKintonePickedId(null);
           setKintoneMsg(isEn ? "Search failed. Please try again." : "検索に失敗しました。しばらくしてから再度お試しください。");
-          setValues((prev) => {
-            const next = { ...prev };
-            delete next.existingLicenseCount;
-            delete next.existingMaintenanceStart;
-            delete next.existingMaintenanceEnd;
-            return next;
-          });
+          setKintoneMsgIsError(true);
+          setValues((prev) => stripKintoneFilledFields(prev));
         } finally {
           if (seq === kintoneSeqRef.current) {
             setKintoneLookupState("idle");
@@ -291,6 +322,8 @@ export default function EstimateCreateForm() {
     setKintoneLookupState("idle");
     setKintoneMsg("");
     setKintoneMsgIsError(false);
+    setKintoneCandidates([]);
+    setKintonePickedId(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -560,6 +593,79 @@ export default function EstimateCreateForm() {
               <p className="font-body text-sm text-red-600 dark:text-red-400" role="alert">
                 {errorMsg || t(locale, "estimate.submitError")}
               </p>
+            )}
+
+            {kintoneCandidates.length > 1 && (
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="kintone-pick-title"
+              >
+                <div className="max-h-[85vh] w-full max-w-lg overflow-hidden rounded-xl border border-stone-200 bg-[var(--color-surface)] shadow-lg dark:border-stone-600">
+                  <div className="border-b border-stone-200 px-4 py-3 dark:border-stone-600">
+                    <h2
+                      id="kintone-pick-title"
+                      className="font-body text-sm font-semibold text-[var(--color-ink)]"
+                    >
+                      {t(locale, "estimate.kintonePickPrompt")}
+                    </h2>
+                  </div>
+                  <ul className="max-h-[50vh] overflow-y-auto p-3 font-body text-sm">
+                    {kintoneCandidates.map((c) => (
+                      <li key={c.recordId} className="border-b border-stone-100 py-2 last:border-0 dark:border-stone-700">
+                        <label className="flex cursor-pointer items-start gap-2">
+                          <input
+                            type="radio"
+                            name="kintonePick"
+                            className="mt-1"
+                            checked={kintonePickedId === c.recordId}
+                            onChange={() => setKintonePickedId(c.recordId)}
+                          />
+                          <span className="text-[var(--color-ink)]">
+                            <span className="font-medium">{c.customerDisplay || c.recordId}</span>
+                            {c.existingLicenseCount != null && (
+                              <span className="ml-1 text-stone-500 dark:text-stone-400">
+                                ({t(locale, "estimate.licenses")}: {c.existingLicenseCount})
+                              </span>
+                            )}
+                          </span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="flex flex-wrap justify-end gap-2 border-t border-stone-200 px-4 py-3 dark:border-stone-600">
+                    <button
+                      type="button"
+                      className="rounded-lg border border-stone-300 px-3 py-2 text-sm text-[var(--color-ink)] hover:bg-stone-50 dark:border-stone-600 dark:hover:bg-stone-800"
+                      onClick={() => {
+                        setKintoneCandidates([]);
+                        setKintonePickedId(null);
+                        setValues((prev) => stripKintoneFilledFields(prev));
+                        setKintoneMsg("");
+                      }}
+                    >
+                      {t(locale, "estimate.kintonePickCancel")}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!kintonePickedId}
+                      className="rounded-lg bg-[var(--color-brand)] px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+                      onClick={() => {
+                        const c = kintoneCandidates.find((x) => x.recordId === kintonePickedId);
+                        if (!c) return;
+                        setValues((prev) => mergeKintoneCandidate(prev, c));
+                        setKintoneCandidates([]);
+                        setKintonePickedId(null);
+                        setKintoneMsg(t(locale, "estimate.kintoneLookupSuccess"));
+                        setKintoneMsgIsError(false);
+                      }}
+                    >
+                      {t(locale, "estimate.kintonePickApply")}
+                    </button>
+                  </div>
+                </div>
+              </div>
             )}
           </>
         )}

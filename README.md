@@ -75,6 +75,9 @@ http://localhost:3000 で開き、未ログイン時は `/login` にリダイレ
 | `KINTONE_APP_LICENSE` | 後方互換用の別名（`KINTONE_APP_ID` と同じ意味） |
 | `KINTONE_API_TOKEN_APP219` | 後方互換用のトークン変数名 |
 | `KINTONE_MATCH_AGENCY_BY` | `id`（既定: Web の代理店 ID を kintone に格納）または `name`（代理店名で突合） |
+| `KINTONE_CUSTOMER_MATCH_MODE` | `like`（既定・顧客名の部分一致）または `equals`（完全一致。ドロップダウン型の顧客フィールドは `equals` が必要なことがあります） |
+| `KINTONE_LOOKUP_MAX_RESULTS` | `like` 検索で返す最大件数（1〜100、既定 30）。複数件のときはフォームで 1 件を選択 |
+| `KINTONE_SEARCH_MIN_LENGTH` | `like` モードで検索語として使う最小文字数（既定 2） |
 
 **フィールドコード（`KINTONE_APP_ID` で指定したアプリに実在するコードに合わせる）**
 
