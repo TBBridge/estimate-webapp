@@ -1,7 +1,7 @@
 /**
  * GET /api/kintone/app-fields
  *
- * kintone アプリ（既定: KINTONE_APP_LICENSE / 219）のフィールドコード一覧を返す。
+ * kintone ライセンス参照アプリ（KINTONE_APP_ID 等）のフィールドコード一覧を返す。
  * Vercel の KINTONE_FIELD_* が実アプリのフィールドと一致しているか確認する用途。
  */
 import { NextResponse } from "next/server";
@@ -10,6 +10,7 @@ import {
   flattenKintoneFormFieldList,
   normalizeKintoneDomain,
 } from "@/lib/kintone";
+import { getKintoneLicenseAppConfig, kintoneConfigErrorMessage } from "@/lib/kintone-env";
 
 export const runtime = "nodejs";
 
@@ -19,20 +20,14 @@ function env(name: string, fallback = ""): string {
 
 export async function GET() {
   try {
-    const domain = env("KINTONE_DOMAIN");
-    const appId = env("KINTONE_APP_LICENSE", "219") || "219";
-    const apiToken = env("KINTONE_API_TOKEN_APP219");
-
-    if (!domain || !apiToken) {
+    const kc = getKintoneLicenseAppConfig();
+    if (!kc) {
       return NextResponse.json(
-        {
-          error:
-            "kintone が未設定です。KINTONE_DOMAIN と KINTONE_API_TOKEN_APP219 を環境変数に設定してください。",
-          configured: false,
-        },
+        { error: kintoneConfigErrorMessage(), configured: false },
         { status: 503 }
       );
     }
+    const { domain, appId, apiToken } = kc;
 
     const raw = await fetchKintoneFormFields({ domain, appId, apiToken });
     const fields = flattenKintoneFormFieldList(raw);

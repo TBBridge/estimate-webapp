@@ -1,14 +1,15 @@
 /**
  * POST /api/kintone/lookup-license
  *
- * アプリ219: 同一代理店・同一顧客（会社名）のレコードを検索し、
+ * 同一代理店・同一顧客（会社名）のレコードを検索し、
  * 既存ライセンス数・保守開始/終了年月の候補を返す。
  *
  * 必須環境変数:
- *   KINTONE_DOMAIN（例: https://dea5gs2qu9n6.cybozu.com）
- *   KINTONE_API_TOKEN_APP219（アプリ219の API トークン）
+ *   KINTONE_DOMAIN
+ *   KINTONE_API_TOKEN または KINTONE_API_TOKEN_APP219
+ *   KINTONE_APP_ID または KINTONE_APP_LICENSE（省略時 219）
  *
- * フィールドコード（kintone アプリ219の設定に合わせて変更）:
+ * フィールドコード（対象アプリの設定に合わせて変更）:
  *   KINTONE_FIELD_AGENCY_ID   デフォルト: agency_id
  *   KINTONE_FIELD_CUSTOMER    デフォルト: customer_name
  *   KINTONE_FIELD_LICENSE     デフォルト: license_count
@@ -25,6 +26,7 @@ import {
   kintoneNumberValue,
   kintoneStringValue,
 } from "@/lib/kintone";
+import { getKintoneLicenseAppConfig, kintoneConfigErrorMessage } from "@/lib/kintone-env";
 
 export const runtime = "nodejs";
 
@@ -34,20 +36,14 @@ function env(name: string, fallback = ""): string {
 
 export async function POST(req: Request) {
   try {
-    const domain = env("KINTONE_DOMAIN");
-    const appId = env("KINTONE_APP_LICENSE", "219") || "219";
-    const apiToken = env("KINTONE_API_TOKEN_APP219");
-
-    if (!domain || !apiToken) {
+    const kc = getKintoneLicenseAppConfig();
+    if (!kc) {
       return NextResponse.json(
-        {
-          error:
-            "kintone が未設定です。KINTONE_DOMAIN と KINTONE_API_TOKEN_APP219 を環境変数に設定してください。",
-          configured: false,
-        },
+        { error: kintoneConfigErrorMessage(), configured: false },
         { status: 503 }
       );
     }
+    const { domain, appId, apiToken } = kc;
 
     const body = await req.json() as {
       agencyId?: string;

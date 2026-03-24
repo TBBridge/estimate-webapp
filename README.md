@@ -70,11 +70,13 @@ http://localhost:3000 で開き、未ログイン時は `/login` にリダイレ
 | 変数 | 説明 |
 |------|------|
 | `KINTONE_DOMAIN` | kintone のドメイン（例: `https://dea5gs2qu9n6.cybozu.com`） |
-| `KINTONE_API_TOKEN_APP219` | 対象アプリの API トークン（レコード閲覧・フィールド参照） |
-| `KINTONE_APP_LICENSE` | 省略時 `219`（ライセンス管理アプリの ID） |
+| `KINTONE_APP_ID` | **ライセンス参照アプリの ID**（推奨。未設定時は `KINTONE_APP_LICENSE`、それもなければ `219`） |
+| `KINTONE_API_TOKEN` | そのアプリ用 API トークン（推奨。未設定時は `KINTONE_API_TOKEN_APP219`） |
+| `KINTONE_APP_LICENSE` | 後方互換用の別名（`KINTONE_APP_ID` と同じ意味） |
+| `KINTONE_API_TOKEN_APP219` | 後方互換用のトークン変数名 |
 | `KINTONE_MATCH_AGENCY_BY` | `id`（既定: Web の代理店 ID を kintone に格納）または `name`（代理店名で突合） |
 
-**フィールドコード（`KINTONE_APP_LICENSE` のアプリに実在するコードに合わせる）**
+**フィールドコード（`KINTONE_APP_ID` で指定したアプリに実在するコードに合わせる）**
 
 | 環境変数 | アプリ内の役割（論理） | コード未設定時の既定値 |
 |----------|------------------------|------------------------|
