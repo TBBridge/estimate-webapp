@@ -1,16 +1,14 @@
 /**
  * 新規契約（contract_type === "new"）の見積が承認されたとき、
- * kintone 営業案件管理アプリへ upsert（同一代理店＋同一顧客名で既存があれば更新）。
+ * kintone 営業案件管理アプリへ upsert（既定: 同一顧客名で 1 レコード。別代理店からの見積は同一レコードを更新）。
  */
 import { DELIVERY_TYPES, CONTRACT_TYPES } from "@/lib/constants";
-import {
-  escapeKintoneQueryString,
-  fetchKintoneRecords,
-  postKintoneRecord,
-  putKintoneRecord,
-  type KintoneRecordInput,
-} from "@/lib/kintone";
+import { fetchKintoneRecords, kintoneStringValue, postKintoneRecord, putKintoneRecord, type KintoneRecordInput } from "@/lib/kintone";
 import { getKintoneSalesAppConfig } from "@/lib/kintone-env";
+import {
+  buildKintoneSalesLookupQuery,
+  getKintoneSalesUpsertScope,
+} from "@/lib/kintone-sales-query";
 import type { KintoneSalesSyncResultDto } from "@/lib/kintone-sales-types";
 
 export type EstimateRowForKintoneSales = {
@@ -65,18 +63,6 @@ function approvedDateOnly(approvedAtChar: string | null): string {
   return m ? m[1] : new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tokyo" });
 }
 
-function buildAgencyQueryClause(
-  fieldAgency: string,
-  matchBy: string,
-  agencyId: string,
-  agencyName: string
-): string {
-  if (matchBy === "name" && agencyName) {
-    return `${fieldAgency} = "${escapeKintoneQueryString(agencyName)}"`;
-  }
-  return `${fieldAgency} = "${escapeKintoneQueryString(agencyId)}"`;
-}
-
 /**
  * 見積1件分の kintone レコードペイロード（フィールドコードは環境変数で指定）
  */
@@ -114,6 +100,11 @@ export function buildKintoneSalesRecordPayload(row: EstimateRowForKintoneSales):
   return record;
 }
 
+function buildEstimateHistoryLine(row: EstimateRowForKintoneSales): string {
+  const d = approvedDateOnly(row.approved_at);
+  return `[${d}] ${row.agency_name} / ${row.no}`;
+}
+
 export async function syncApprovedNewEstimateToKintoneSales(
   row: EstimateRowForKintoneSales
 ): Promise<KintoneSalesSyncResultDto> {
@@ -137,30 +128,31 @@ export async function syncApprovedNewEstimateToKintoneSales(
 
   const fieldAgency = env("KINTONE_SALES_FIELD_AGENCY_ID");
   const matchBy = env("KINTONE_SALES_MATCH_AGENCY_BY") || "id";
+  const scope = getKintoneSalesUpsertScope();
+  const historyCode = env("KINTONE_SALES_FIELD_ESTIMATE_HISTORY");
 
   const customerTrim = row.customer_name.trim();
   if (!customerTrim) {
     return { ok: false, error: "顧客名が空のため kintone に登録できません。" };
   }
 
-  const escapedCustomer = escapeKintoneQueryString(customerTrim);
-  let query: string;
-  if (fieldAgency) {
-    const agencyPart = buildAgencyQueryClause(
-      fieldAgency,
-      matchBy,
-      row.agency_id,
-      row.agency_name
-    );
-    query = `${agencyPart} and ${fieldCustomer} = "${escapedCustomer}" order by $id desc limit 1`;
-  } else {
-    query = `${fieldCustomer} = "${escapedCustomer}" order by $id desc limit 1`;
-  }
+  const query = buildKintoneSalesLookupQuery({
+    customerTrim,
+    fieldCustomer,
+    scope,
+    fieldAgency,
+    matchBy,
+    agencyId: row.agency_id,
+    agencyName: row.agency_name,
+  });
 
   const record = buildKintoneSalesRecordPayload(row);
   if (Object.keys(record).length === 0) {
     return { ok: false, error: "マッピング対象フィールドが1つもありません（KINTONE_SALES_FIELD_* を設定してください）。" };
   }
+
+  const fetchFields = ["$id", fieldCustomer];
+  if (historyCode) fetchFields.push(historyCode);
 
   try {
     const existing = await fetchKintoneRecords({
@@ -168,11 +160,23 @@ export async function syncApprovedNewEstimateToKintoneSales(
       appId: kc.appId,
       apiToken: kc.apiToken,
       query,
-      fields: ["$id", fieldCustomer],
+      fields: fetchFields,
     });
 
     const first = existing.records?.[0];
     const existingId = first?.$id?.value;
+
+    if (historyCode) {
+      const line = buildEstimateHistoryLine(row);
+      const maxLen = 120000;
+      if (existingId) {
+        const prev = first ? kintoneStringValue(first, historyCode).trim() : "";
+        const next = prev ? `${prev}\n${line}` : line;
+        record[historyCode] = { value: next.length > maxLen ? next.slice(next.length - maxLen) : next };
+      } else {
+        record[historyCode] = { value: line };
+      }
+    }
 
     if (existingId) {
       await putKintoneRecord({

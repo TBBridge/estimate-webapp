@@ -4,15 +4,23 @@
  */
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { fetchKintoneSalesPreviewForCustomer } from "@/lib/kintone-sales-preview";
 import { syncApprovedNewEstimateToKintoneSales } from "@/lib/kintone-sales-sync";
 import type { KintoneSalesSyncResultDto } from "@/lib/kintone-sales-types";
+import type { Locale } from "@/lib/translations";
 
 type Params = { params: Promise<{ id: string }> };
 
-export async function GET(_req: Request, { params }: Params) {
+export async function GET(req: Request, { params }: Params) {
   try {
     const sql = getDb();
     const { id } = await params;
+    const { searchParams } = new URL(req.url);
+    const includeKintoneSales =
+      searchParams.get("includeKintoneSales") === "1" ||
+      searchParams.get("includeKintoneSales") === "true";
+    const locale = (searchParams.get("locale") === "en" ? "en" : "ja") as Locale;
+
     const rows = await sql`
       SELECT id, no, agency_id, agency_name, customer_name,
              delivery_type, contract_type, cloud_billing,
@@ -24,6 +32,17 @@ export async function GET(_req: Request, { params }: Params) {
     `;
     if (rows.length === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const r = rows[0];
+
+    let kintoneSales: Awaited<ReturnType<typeof fetchKintoneSalesPreviewForCustomer>> | undefined;
+    if (includeKintoneSales) {
+      kintoneSales = await fetchKintoneSalesPreviewForCustomer(
+        String(r.customer_name ?? ""),
+        String(r.agency_id ?? ""),
+        String(r.agency_name ?? ""),
+        locale
+      );
+    }
+
     return NextResponse.json({
       id: r.id, no: r.no,
       agencyId: r.agency_id, agencyName: r.agency_name,
@@ -37,6 +56,7 @@ export async function GET(_req: Request, { params }: Params) {
       status: r.status,
       createdAt: r.created_at,
       approvedAt: r.approved_at ?? undefined,
+      ...(kintoneSales ? { kintoneSales } : {}),
     });
   } catch (e) {
     console.error("[estimates/id GET]", e);
