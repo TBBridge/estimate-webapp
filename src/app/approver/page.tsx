@@ -9,6 +9,7 @@ import type { Estimate } from "@/lib/mock-data";
 import { DELIVERY_TYPES, CONTRACT_TYPES } from "@/lib/constants";
 import { mutate } from "swr";
 import { alertKintoneSalesSyncAfterApprove } from "@/lib/kintone-approve-feedback";
+import { EstimateApplicationDetail } from "@/components/estimate-detail/estimate-application-detail";
 
 const STATUS_BADGE: Record<string, string> = {
   pending:  "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
@@ -38,8 +39,6 @@ function DetailModal({ estimate: e, locale, onClose, onAction }: DetailModalProp
     url: (e as Estimate & { pdfUrl?: string }).pdfUrl,
     generating: false,
   });
-  const formInputs = (e as Estimate & { formInputs?: Record<string, unknown> }).formInputs ?? {};
-
   async function handleGeneratePdf() {
     setPdfState({ generating: true });
     try {
@@ -78,7 +77,7 @@ function DetailModal({ estimate: e, locale, onClose, onAction }: DetailModalProp
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 backdrop-blur-sm">
-      <div className="w-full max-w-lg rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] shadow-xl">
+      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] shadow-xl">
         <div className="flex items-center justify-between border-b border-[var(--color-border)] px-6 py-4">
           <div>
             <p className="font-mono text-xs text-[var(--color-ink-muted)]">{e.no}</p>
@@ -89,38 +88,15 @@ function DetailModal({ estimate: e, locale, onClose, onAction }: DetailModalProp
           </span>
         </div>
 
-        <div className="divide-y divide-[var(--color-border)] overflow-y-auto px-6" style={{ maxHeight: "52vh" }}>
-          {[
-            ["代理店", e.agencyName],
-            ["顧客名", e.customerName],
-            ["提供形態", deliveryLabel(e.deliveryType)],
-            ["契約形態", contractLabel(e.contractType)],
-            ["申請日", e.createdAt],
-          ].map(([label, value]) => (
-            <div key={label} className="flex items-center justify-between py-3">
-              <span className="font-body text-sm text-[var(--color-ink-muted)]">{label}</span>
-              <span className="font-body text-sm text-[var(--color-ink)]">{value}</span>
-            </div>
-          ))}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+          <EstimateApplicationDetail estimate={e} locale={locale} />
+        </div>
 
-          {Object.keys(formInputs).length > 0 && (
-            <div className="py-3">
-              <p className="mb-2 font-body text-sm font-medium text-[var(--color-ink)]">{l("admin.estimates.formInputs")}</p>
-              <div className="rounded-lg bg-[var(--color-surface)] p-3 space-y-1">
-                {Object.entries(formInputs).map(([k, v]) => (
-                  <div key={k} className="flex gap-2 font-mono text-xs">
-                    <span className="shrink-0 text-[var(--color-ink-subtle)]">{k}:</span>
-                    <span className="text-[var(--color-ink)]">{JSON.stringify(v)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
+        <div className="shrink-0 space-y-0 divide-y divide-[var(--color-border)] border-t border-[var(--color-border)] px-6">
           {/* 見積書ダウンロード（承認者: Excel + PDF 両方） */}
           {(e as Estimate & { excelUrl?: string }).excelUrl && (
             <div className="py-3">
-              <p className="mb-2 font-body text-xs font-medium text-[var(--color-ink-muted)]">見積書</p>
+              <p className="mb-2 font-body text-xs font-medium text-[var(--color-ink-muted)]">{l("admin.estimates.estimateDocuments")}</p>
               <div className="flex flex-wrap gap-2">
                 <a
                   href={(e as Estimate & { excelUrl?: string }).excelUrl}
@@ -178,7 +154,7 @@ function DetailModal({ estimate: e, locale, onClose, onAction }: DetailModalProp
           )}
         </div>
 
-        <div className="flex items-center justify-between border-t border-[var(--color-border)] px-6 py-4">
+        <div className="flex shrink-0 items-center justify-between border-t border-[var(--color-border)] px-6 py-4">
           <button type="button" onClick={onClose}
             className="rounded-lg border border-[var(--color-border)] px-4 py-2 font-body text-sm text-[var(--color-ink-muted)] hover:bg-[var(--color-surface-sub)]">
             {l("admin.estimates.closeModal")}
