@@ -8,6 +8,7 @@ import { useAgencies } from "@/hooks/use-agencies";
 import type { Estimate, EstimateStatus } from "@/lib/mock-data";
 import { DELIVERY_TYPES, CONTRACT_TYPES } from "@/lib/constants";
 import { mutate } from "swr";
+import { alertKintoneSalesSyncAfterApprove } from "@/lib/kintone-approve-feedback";
 
 const STATUS_BADGE: Record<string, string> = {
   pending:  "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
@@ -39,7 +40,7 @@ type DetailModalProps = {
   estimate: Estimate;
   locale: "ja" | "en";
   onClose: () => void;
-  onStatusChange: (id: string, status: "approved" | "rejected") => Promise<void>;
+  onStatusChange: (id: string, status: "approved" | "rejected") => Promise<unknown>;
 };
 
 function DetailModal({ estimate: e, locale, onClose, onStatusChange }: DetailModalProps) {
@@ -79,8 +80,12 @@ function DetailModal({ estimate: e, locale, onClose, onStatusChange }: DetailMod
     const msg = status === "approved" ? l("admin.estimates.confirmApprove") : l("admin.estimates.confirmReject");
     if (!confirm(msg)) return;
     setLoading(status);
-    await onStatusChange(e.id, status);
-    setLoading(null);
+    try {
+      const payload = await onStatusChange(e.id, status);
+      alertKintoneSalesSyncAfterApprove(locale, status, payload);
+    } finally {
+      setLoading(null);
+    }
     onClose();
   }
 
@@ -280,9 +285,12 @@ export default function AdminEstimatesPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     });
-    if (!res.ok) throw new Error(await res.text());
-    // SWR キャッシュを無効化して再フェッチ
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(typeof data?.error === "string" ? data.error : `HTTP ${res.status}`);
+    }
     await mutate(() => true, undefined, { revalidate: true });
+    return data;
   }
 
   return (

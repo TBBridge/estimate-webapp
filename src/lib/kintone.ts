@@ -58,6 +58,70 @@ export async function fetchKintoneRecords(params: {
   return JSON.parse(text) as KintoneRecordsResponse;
 }
 
+/** kintone レコードの record オブジェクト（フィールドコード → { value }） */
+export type KintoneRecordInput = Record<string, { value: unknown }>;
+
+/**
+ * レコード登録 POST /k/v1/record.json
+ * @see https://cybozu.dev/ja/kintone/docs/rest-api/records/add-record/
+ */
+export async function postKintoneRecord(params: {
+  domain: string;
+  appId: string | number;
+  apiToken: string;
+  record: KintoneRecordInput;
+}): Promise<{ id: string }> {
+  const base = normalizeKintoneDomain(params.domain);
+  const res = await fetch(`${base}/k/v1/record.json`, {
+    method: "POST",
+    headers: {
+      "X-Cybozu-API-Token": params.apiToken,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ app: params.appId, record: params.record }),
+    cache: "no-store",
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`kintone add record ${res.status}: ${text.slice(0, 500)}`);
+  }
+  const j = JSON.parse(text) as { id?: string };
+  const id = j.id != null ? String(j.id) : "";
+  if (!id) throw new Error(`kintone add record: missing id in response`);
+  return { id };
+}
+
+/**
+ * レコード更新 PUT /k/v1/record.json
+ * @see https://cybozu.dev/ja/kintone/docs/rest-api/records/update-record/
+ */
+export async function putKintoneRecord(params: {
+  domain: string;
+  appId: string | number;
+  apiToken: string;
+  recordId: string | number;
+  record: KintoneRecordInput;
+}): Promise<void> {
+  const base = normalizeKintoneDomain(params.domain);
+  const res = await fetch(`${base}/k/v1/record.json`, {
+    method: "PUT",
+    headers: {
+      "X-Cybozu-API-Token": params.apiToken,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      app: params.appId,
+      id: params.recordId,
+      record: params.record,
+    }),
+    cache: "no-store",
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`kintone update record ${res.status}: ${text.slice(0, 500)}`);
+  }
+}
+
 /** GET /k/v1/app/form/fields.json — アプリのフィールドコード一覧（環境変数の突合用） */
 export async function fetchKintoneFormFields(params: {
   domain: string;

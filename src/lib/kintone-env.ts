@@ -31,3 +31,22 @@ export function kintoneConfigErrorMessage(): string {
     "必要に応じて KINTONE_APP_ID（アプリ番号）を環境変数に設定してください。"
   );
 }
+
+/** 営業案件管理アプリ（新規見積の承認時に upsert） */
+export type KintoneSalesAppConfig = {
+  domain: string;
+  appId: string;
+  apiToken: string;
+};
+
+/**
+ * 営業案件管理アプリ用。KINTONE_SALES_APP_ID と KINTONE_SALES_API_TOKEN が揃っているときのみ有効。
+ * ライセンス参照アプリとは別トークン（アプリ単位）を推奨。
+ */
+export function getKintoneSalesAppConfig(): KintoneSalesAppConfig | null {
+  const domain = process.env.KINTONE_DOMAIN?.trim() ?? "";
+  const appId = process.env.KINTONE_SALES_APP_ID?.trim() ?? "";
+  const apiToken = process.env.KINTONE_SALES_API_TOKEN?.trim() ?? "";
+  if (!domain || !appId || !apiToken) return null;
+  return { domain, appId, apiToken };
+}

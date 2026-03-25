@@ -8,6 +8,7 @@ import { useEstimates } from "@/hooks/use-estimates";
 import type { Estimate } from "@/lib/mock-data";
 import { DELIVERY_TYPES, CONTRACT_TYPES } from "@/lib/constants";
 import { mutate } from "swr";
+import { alertKintoneSalesSyncAfterApprove } from "@/lib/kintone-approve-feedback";
 
 const STATUS_BADGE: Record<string, string> = {
   pending:  "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
@@ -27,7 +28,7 @@ type DetailModalProps = {
   estimate: Estimate;
   locale: "ja" | "en";
   onClose: () => void;
-  onAction: (id: string, status: "approved" | "rejected") => Promise<void>;
+  onAction: (id: string, status: "approved" | "rejected") => Promise<unknown>;
 };
 
 function DetailModal({ estimate: e, locale, onClose, onAction }: DetailModalProps) {
@@ -67,11 +68,12 @@ function DetailModal({ estimate: e, locale, onClose, onAction }: DetailModalProp
     if (!confirm(msg)) return;
     setLoading(status);
     try {
-      await onAction(e.id, status);
-      onClose();
+      const payload = await onAction(e.id, status);
+      alertKintoneSalesSyncAfterApprove(locale, status, payload);
     } finally {
       setLoading(null);
     }
+    onClose();
   }
 
   return (
@@ -223,8 +225,12 @@ export default function ApproverPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     });
-    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(typeof data?.error === "string" ? data.error : `HTTP ${res.status}`);
+    }
     await mutate(() => true, undefined, { revalidate: true });
+    return data;
   }
 
   return (
@@ -292,12 +298,22 @@ export default function ApproverPage() {
               {e.status === "pending" && (
                 <div className="flex gap-2 shrink-0 ml-4">
                   <button type="button"
-                    onClick={(ev) => { ev.stopPropagation(); if (confirm(l("admin.estimates.confirmReject"))) handleAction(e.id, "rejected"); }}
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      if (!confirm(l("admin.estimates.confirmReject"))) return;
+                      void handleAction(e.id, "rejected").catch((err) => alert(String(err)));
+                    }}
                     className="rounded-lg border border-red-300 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400">
                     {l("admin.estimates.reject")}
                   </button>
                   <button type="button"
-                    onClick={(ev) => { ev.stopPropagation(); if (confirm(l("admin.estimates.confirmApprove"))) handleAction(e.id, "approved"); }}
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      if (!confirm(l("admin.estimates.confirmApprove"))) return;
+                      void handleAction(e.id, "approved")
+                        .then((payload) => alertKintoneSalesSyncAfterApprove(locale, "approved", payload))
+                        .catch((err) => alert(String(err)));
+                    }}
                     className="rounded-lg bg-[var(--color-brand)] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90">
                     {l("admin.estimates.approve")}
                   </button>
