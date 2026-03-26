@@ -16,6 +16,7 @@ import {
   ALLOWED_I_REPORTER_LICENSE_COUNTS,
   resolveCustomerDisplayName,
   SALES_AGENCY_PRESERVED_KEYS,
+  isFormFieldVisible,
   type DeliveryType,
   type ContractType,
 } from "@/lib/estimate-schema";
@@ -154,8 +155,7 @@ export default function EstimateCreateForm() {
     }
 
     const nameJa = String(values.userCompanyNameJa ?? "").trim();
-    const nameZh = String(values.userCompanyNameZh ?? "").trim();
-    const customerSearch = nameJa || nameZh;
+    const customerSearch = nameJa;
 
     if (!customerSearch) {
       setKintoneMsg("");
@@ -270,7 +270,6 @@ export default function EstimateCreateForm() {
     user?.agencyId,
     user?.role,
     values.userCompanyNameJa,
-    values.userCompanyNameZh,
     contractType,
     deliveryType,
     locale,
@@ -308,7 +307,16 @@ export default function EstimateCreateForm() {
   };
 
   const update = (id: string, value: unknown) => {
-    setValues((prev) => ({ ...prev, [id]: value }));
+    setValues((prev) => {
+      const next: FormValues = { ...prev, [id]: value };
+      if (id === "userReleaseSubscription" && value === "no") {
+        delete next.userReleaseLanguage;
+      }
+      if (id === "salesReleaseSubscription" && value === "no") {
+        delete next.salesReleaseLanguage;
+      }
+      return next;
+    });
   };
 
   const resetForm = () => {
@@ -713,6 +721,8 @@ function FieldRenderer({
   onChange: (fieldId: string, v: unknown) => void;
   locale: Locale;
 }) {
+  if (!isFormFieldVisible(field, formValues)) return null;
+
   const { id, labelJa, labelEn, kind, optionIds, required } = field;
   const label = locale === "en" ? labelEn : labelJa;
 
@@ -953,6 +963,32 @@ function FieldRenderer({
           required={required}
           className="mt-1 w-full min-h-[4rem] rounded-lg border border-stone-300 bg-white px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40 dark:border-stone-600 dark:bg-stone-800"
         />
+      </div>
+    );
+  }
+
+  if (kind === "select" && field.radioOptions) {
+    const opts = field.radioOptions;
+    const str = String(value ?? "");
+    return (
+      <div>
+        <label className="block font-body text-sm text-[var(--color-ink-muted)]">
+          {label}
+          {required && " *"}
+        </label>
+        <select
+          value={str}
+          onChange={(e) => onChange(id, e.target.value === "" ? undefined : e.target.value)}
+          required={required}
+          className="mt-1 w-full max-w-md rounded-lg border border-stone-300 bg-white px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40 dark:border-stone-600 dark:bg-stone-800"
+        >
+          <option value="">{t(locale, "common.selectPlaceholder")}</option>
+          {opts.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {locale === "en" ? opt.labelEn : opt.labelJa}
+            </option>
+          ))}
+        </select>
       </div>
     );
   }

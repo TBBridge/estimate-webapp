@@ -95,7 +95,7 @@ export async function POST(req: Request) {
     if (nameZh && nameZh !== nameJa) termsRaw.push(nameZh);
     if (termsRaw.length === 0) {
       return NextResponse.json(
-        { error: "会社名（日本語または中国語）を入力してから検索してください" },
+        { error: "会社名（正式名称）を入力してから検索してください" },
         { status: 400 }
       );
     }

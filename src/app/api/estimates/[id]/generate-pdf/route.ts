@@ -15,8 +15,8 @@
  *   - 代理店が自分の見積一覧で PDF ボタンを押したとき
  */
 import { NextResponse } from "next/server";
-import { put } from "@vercel/blob";
 import { getDb } from "@/lib/db";
+import { generateEstimatePdfAndSave } from "@/lib/estimate-pdf-generate";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -61,30 +61,7 @@ export async function POST(_req: Request, { params }: Params) {
       );
     }
 
-    // Excel を Blob から取得
-    const excelRes = await fetch(est.excel_url as string);
-    if (!excelRes.ok) {
-      return NextResponse.json(
-        { error: `Excel ファイルの取得に失敗しました: ${excelRes.status}` },
-        { status: 500 }
-      );
-    }
-    const excelBuffer = Buffer.from(await excelRes.arrayBuffer());
-
-    // PDF 生成（Wasm: LibreOffice）
-    const { convertExcelToPdf } = await import("@/lib/pdf-generator");
-    const pdfBuffer = await convertExcelToPdf(excelBuffer);
-
-    // Blob に保存
-    const { url: pdfUrl } = await put(
-      `estimates/${id}/${est.no}.pdf`,
-      pdfBuffer,
-      { access: "public", addRandomSuffix: false }
-    );
-
-    // DB 更新
-    await sql`UPDATE estimates SET pdf_url = ${pdfUrl} WHERE id = ${id}`;
-
+    const { pdfUrl } = await generateEstimatePdfAndSave(sql, id);
     return NextResponse.json({ pdfUrl });
 
   } catch (e) {

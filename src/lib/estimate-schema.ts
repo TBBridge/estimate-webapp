@@ -52,8 +52,12 @@ export type FormFieldKind =
   | "option_license_counts"
   | "textarea"
   | "radio"
+  | "select"
   | "email"
   | "phone_country";
+
+/** 別フィールドの値が一致するときだけ表示（例: リリース案内言語は配信登録「する」のときのみ） */
+export type FormFieldShowWhen = { field: string; equals: string };
 
 export interface RadioOptionDef {
   value: string;
@@ -71,17 +75,29 @@ export interface FormFieldDef {
   required?: boolean;
   /** textarea の行数 */
   rows?: number;
-  /** kind === "radio" のとき */
+  /** kind === "radio" または kind === "select" の選択肢 */
   radioOptions?: RadioOptionDef[];
   /** kind === "phone_country" のとき（values のキー） */
   dialField?: string;
   localField?: string;
+  showWhen?: FormFieldShowWhen;
+}
+
+export function isFormFieldVisible(f: FormFieldDef, values: Record<string, unknown>): boolean {
+  if (!f.showWhen) return true;
+  const v = String(values[f.showWhen.field] ?? "").trim();
+  return v === f.showWhen.equals;
 }
 
 /** ユーザー会社名・提供先（エンドユーザー）情報 */
 export const END_USER_COMPANY_FIELDS: FormFieldDef[] = [
-  { id: "userCompanyNameZh", labelJa: "会社名（中国語名）", labelEn: "Company name (Chinese)", kind: "text", required: false },
-  { id: "userCompanyNameJa", labelJa: "会社名（日本語名）", labelEn: "Company name (Japanese)", kind: "text", required: true },
+  {
+    id: "userCompanyNameJa",
+    labelJa: "会社名（正式名称）",
+    labelEn: "Company name (official legal name)",
+    kind: "text",
+    required: true,
+  },
   { id: "userCompanyNameReading", labelJa: "会社名（略称のよみがな）", labelEn: "Company name (abbreviation reading)", kind: "text", required: false },
   { id: "userContactLastName", labelJa: "担当者氏名（姓）", labelEn: "Contact last name", kind: "text", required: false },
   { id: "userContactFirstName", labelJa: "担当者氏名（名）", labelEn: "Contact first name", kind: "text", required: false },
@@ -123,6 +139,7 @@ export const END_USER_COMPANY_FIELDS: FormFieldDef[] = [
     labelEn: "Release notice language (end user)",
     kind: "radio",
     required: true,
+    showWhen: { field: "userReleaseSubscription", equals: "yes" },
     radioOptions: [
       { value: "zh", labelJa: "中国語", labelEn: "Chinese" },
       { value: "ja", labelJa: "日本語", labelEn: "Japanese" },
@@ -172,6 +189,7 @@ export const SALES_AGENCY_CONTACT_FIELDS: FormFieldDef[] = [
     labelEn: "Release notice language (agency)",
     kind: "radio",
     required: true,
+    showWhen: { field: "salesReleaseSubscription", equals: "yes" },
     radioOptions: [
       { value: "zh", labelJa: "中国語", labelEn: "Chinese" },
       { value: "ja", labelJa: "日本語", labelEn: "Japanese" },
@@ -191,6 +209,54 @@ export const SALES_AGENCY_PRESERVED_KEYS: readonly string[] = (() => {
   }
   return keys;
 })();
+
+/** 申込「用途」プルダウン */
+export const APPLICATION_PURPOSE_OPTIONS: RadioOptionDef[] = [
+  { value: "efficiency", labelJa: "業務効率化", labelEn: "Operational efficiency" },
+  { value: "compliance", labelJa: "法令・規制対応", labelEn: "Legal / regulatory compliance" },
+  { value: "quality", labelJa: "品質管理", labelEn: "Quality management" },
+  { value: "maintenance", labelJa: "設備保全・点検", labelEn: "Equipment maintenance / inspection" },
+  { value: "sales_service", labelJa: "営業・サービス支援", labelEn: "Sales / service support" },
+  { value: "other", labelJa: "その他", labelEn: "Other" },
+];
+
+/** 申込「業種」プルダウン */
+export const APPLICATION_INDUSTRY_OPTIONS: RadioOptionDef[] = [
+  { value: "manufacturing", labelJa: "製造業", labelEn: "Manufacturing" },
+  { value: "construction", labelJa: "建設・土木", labelEn: "Construction / civil engineering" },
+  { value: "energy", labelJa: "電力・エネルギー", labelEn: "Power / energy" },
+  { value: "logistics", labelJa: "運輸・物流", labelEn: "Transportation / logistics" },
+  { value: "it_comm", labelJa: "情報通信", labelEn: "IT / telecommunications" },
+  { value: "finance", labelJa: "金融・保険", labelEn: "Finance / insurance" },
+  { value: "medical", labelJa: "医療・福祉", labelEn: "Healthcare / welfare" },
+  { value: "government", labelJa: "官公庁・自治体", labelEn: "Government / public sector" },
+  { value: "retail", labelJa: "小売・流通", labelEn: "Retail / distribution" },
+  { value: "real_estate", labelJa: "不動産", labelEn: "Real estate" },
+  { value: "other", labelJa: "その他", labelEn: "Other" },
+];
+
+/** 申込「提案状況」プルダウン */
+export const APPLICATION_PROPOSAL_STATUS_OPTIONS: RadioOptionDef[] = [
+  { value: "initial", labelJa: "初回アプローチ・ヒアリング", labelEn: "Initial approach / hearing" },
+  { value: "considering", labelJa: "検討中", labelEn: "Under consideration" },
+  { value: "proposal", labelJa: "提案・デモ実施中", labelEn: "Proposal / demo in progress" },
+  { value: "poc", labelJa: "PoC・実証実験", labelEn: "PoC / trial" },
+  { value: "quotation", labelJa: "見積提出済", labelEn: "Quotation submitted" },
+  { value: "verbal", labelJa: "口頭受注・内諾", labelEn: "Verbal commitment" },
+  { value: "order_pending", labelJa: "受注手続き中", labelEn: "Order processing" },
+  { value: "lost", labelJa: "失注・見送り", labelEn: "Lost / postponed" },
+];
+
+/** 申込「受注見込み時期」プルダウン */
+export const APPLICATION_EXPECTED_ORDER_OPTIONS: RadioOptionDef[] = [
+  { value: "this_month", labelJa: "今月中", labelEn: "Within this month" },
+  { value: "next_month", labelJa: "翌月", labelEn: "Next month" },
+  { value: "within_3mo", labelJa: "3ヶ月以内", labelEn: "Within 3 months" },
+  { value: "within_6mo", labelJa: "6ヶ月以内", labelEn: "Within 6 months" },
+  { value: "this_fy", labelJa: "当会計年度内", labelEn: "Within this fiscal year" },
+  { value: "next_fy", labelJa: "来期以降", labelEn: "Next fiscal year or later" },
+  { value: "undecided", labelJa: "未定", labelEn: "Undecided" },
+];
 
 /** お申込内容の追加項目（用途・備考など） */
 export const APPLICATION_DETAIL_EXTRA_FIELDS: FormFieldDef[] = [
@@ -217,12 +283,42 @@ export const APPLICATION_DETAIL_EXTRA_FIELDS: FormFieldDef[] = [
       { value: "no", labelJa: "なし", labelEn: "No" },
     ],
   },
-  { id: "applicationPurpose", labelJa: "用途", labelEn: "Purpose of use", kind: "textarea", rows: 3, required: false },
-  { id: "applicationIndustry", labelJa: "業種", labelEn: "Industry", kind: "text", required: false },
+  {
+    id: "applicationPurpose",
+    labelJa: "用途",
+    labelEn: "Purpose of use",
+    kind: "select",
+    required: true,
+    radioOptions: APPLICATION_PURPOSE_OPTIONS,
+  },
+  {
+    id: "applicationIndustry",
+    labelJa: "業種",
+    labelEn: "Industry",
+    kind: "select",
+    required: true,
+    radioOptions: APPLICATION_INDUSTRY_OPTIONS,
+  },
+  {
+    id: "applicationProposalStatus",
+    labelJa: "提案状況",
+    labelEn: "Proposal status",
+    kind: "select",
+    required: true,
+    radioOptions: APPLICATION_PROPOSAL_STATUS_OPTIONS,
+  },
+  {
+    id: "applicationExpectedOrder",
+    labelJa: "受注見込み時期",
+    labelEn: "Expected order timing",
+    kind: "select",
+    required: true,
+    radioOptions: APPLICATION_EXPECTED_ORDER_OPTIONS,
+  },
   { id: "applicationRemarks", labelJa: "備考", labelEn: "Remarks", kind: "textarea", rows: 3, required: false },
 ];
 
-/** 一覧・Excel「For:」用の顧客表示名（日本語名 → 中国語名 → 旧フィールド） */
+/** 一覧・Excel「For:」用の顧客表示名（正式名称 → 旧データの中国語名 → 旧フィールド） */
 export function resolveCustomerDisplayName(formInputs: Record<string, unknown>): string {
   const ja = String(formInputs.userCompanyNameJa ?? "").trim();
   const zh = String(formInputs.userCompanyNameZh ?? "").trim();

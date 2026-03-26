@@ -56,7 +56,17 @@ export function EstimateApplicationDetail({ estimate, locale }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [estimate.id, locale]);
+  }, [
+    estimate.id,
+    locale,
+    estimate.customerName,
+    estimate.agencyName,
+    estimate.amount,
+    estimate.maintenanceFee,
+    estimate.formInputs,
+    estimate.excelUrl,
+    estimate.pdfUrl,
+  ]);
 
   const sections = buildEstimateApplicationSections(
     {

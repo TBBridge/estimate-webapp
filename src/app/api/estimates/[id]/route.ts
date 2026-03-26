@@ -1,6 +1,7 @@
 /**
- * GET  /api/estimates/[id]  — 見積詳細取得
- * PUT  /api/estimates/[id]  — ステータス更新（approved / rejected）
+ * GET   /api/estimates/[id]  — 見積詳細取得
+ * PATCH /api/estimates/[id]  — 管理者・承認者向け: 顧客名・代理店名・金額・form_inputs の更新
+ * PUT   /api/estimates/[id]  — ステータス更新（approved / rejected）
  */
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
@@ -60,6 +61,102 @@ export async function GET(req: Request, { params }: Params) {
     });
   } catch (e) {
     console.error("[estimates/id GET]", e);
+    return NextResponse.json({ error: String(e) }, { status: 500 });
+  }
+}
+
+function jsonEstimateRow(r: Record<string, unknown>) {
+  return {
+    id: r.id,
+    no: r.no,
+    agencyId: r.agency_id,
+    agencyName: r.agency_name,
+    customerName: r.customer_name,
+    deliveryType: r.delivery_type,
+    contractType: r.contract_type,
+    cloudBilling: r.cloud_billing,
+    amount: Number(r.amount),
+    maintenanceFee: Number(r.maintenance_fee),
+    formInputs: r.form_inputs,
+    excelUrl: r.excel_url ?? "",
+    pdfUrl: r.pdf_url ?? "",
+    status: r.status,
+    createdAt: r.created_at,
+    approvedAt: r.approved_at ?? undefined,
+  };
+}
+
+export async function PATCH(req: Request, { params }: Params) {
+  try {
+    const sql = getDb();
+    const { id } = await params;
+    const body = (await req.json()) as {
+      customerName?: string;
+      agencyName?: string;
+      amount?: number;
+      maintenanceFee?: number;
+      formInputs?: Record<string, unknown>;
+    };
+
+    const curRows = await sql`
+      SELECT id, no, agency_id, agency_name, customer_name,
+             delivery_type, contract_type, cloud_billing,
+             amount, maintenance_fee, form_inputs, excel_url, pdf_url, status,
+             TO_CHAR(created_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS created_at,
+             TO_CHAR(approved_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS approved_at
+      FROM estimates WHERE id = ${id}
+    `;
+    if (curRows.length === 0) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    const cur = curRows[0] as Record<string, unknown>;
+
+    const customer_name =
+      body.customerName !== undefined ? String(body.customerName).trim() : String(cur.customer_name ?? "");
+    const agency_name =
+      body.agencyName !== undefined ? String(body.agencyName).trim() : String(cur.agency_name ?? "");
+    const amount =
+      body.amount !== undefined
+        ? Math.max(0, Math.floor(Number(body.amount)))
+        : Number(cur.amount ?? 0);
+    const maintenance_fee =
+      body.maintenanceFee !== undefined
+        ? Math.max(0, Math.floor(Number(body.maintenanceFee)))
+        : Number(cur.maintenance_fee ?? 0);
+
+    if (body.amount !== undefined && !Number.isFinite(amount)) {
+      return NextResponse.json({ error: "amount が不正です" }, { status: 400 });
+    }
+    if (body.maintenanceFee !== undefined && !Number.isFinite(maintenance_fee)) {
+      return NextResponse.json({ error: "maintenanceFee が不正です" }, { status: 400 });
+    }
+
+    let form_inputs: unknown = cur.form_inputs;
+    if (body.formInputs !== undefined) {
+      if (body.formInputs === null || typeof body.formInputs !== "object" || Array.isArray(body.formInputs)) {
+        return NextResponse.json({ error: "formInputs はオブジェクトである必要があります" }, { status: 400 });
+      }
+      form_inputs = body.formInputs;
+    }
+
+    const updated = await sql`
+      UPDATE estimates
+      SET customer_name = ${customer_name},
+          agency_name = ${agency_name},
+          amount = ${amount},
+          maintenance_fee = ${maintenance_fee},
+          form_inputs = ${JSON.stringify(form_inputs)}::jsonb
+      WHERE id = ${id}
+      RETURNING id, no, agency_id, agency_name, customer_name,
+                delivery_type, contract_type, cloud_billing,
+                amount, maintenance_fee, form_inputs, excel_url, pdf_url, status,
+                TO_CHAR(created_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS created_at,
+                TO_CHAR(approved_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS approved_at
+    `;
+    const r = updated[0] as Record<string, unknown>;
+    return NextResponse.json(jsonEstimateRow(r));
+  } catch (e) {
+    console.error("[estimates/id PATCH]", e);
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }
 }

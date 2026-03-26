@@ -9,6 +9,7 @@ import {
   END_USER_COMPANY_FIELDS,
   SALES_AGENCY_CONTACT_FIELDS,
   getFormFields,
+  isFormFieldVisible,
   needsCloudBillingChoice,
   OPTION_ITEMS,
   type ContractType,
@@ -115,7 +116,7 @@ function rowForField(f: FormFieldDef, values: Record<string, unknown>, locale: L
     const raw = values[f.id];
     return { label: fieldLabel(f, locale), value: formatYearMonth(raw, locale) };
   }
-  if (f.kind === "radio") {
+  if (f.kind === "radio" || f.kind === "select") {
     return { label: fieldLabel(f, locale), value: formatRadio(f, values[f.id], locale) };
   }
 
@@ -155,7 +156,7 @@ function sectionFromFields(
 ): EstimateFormDisplaySection {
   return {
     title,
-    rows: fields.map((f) => rowForField(f, values, locale)),
+    rows: fields.filter((f) => isFormFieldVisible(f, values)).map((f) => rowForField(f, values, locale)),
   };
 }
 

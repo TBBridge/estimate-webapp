@@ -2,6 +2,16 @@ import type { Locale } from "@/lib/translations";
 import { t } from "@/lib/translations";
 import type { KintoneSalesSyncResultDto } from "@/lib/kintone-sales-types";
 
+/** GAIA_NO01 等: トークンにレコード編集 API が許可されていない（同一顧客の 2 件目以降は更新が必須） */
+export function isKintoneSalesEditPermissionError(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes("gaia_no01") ||
+    m.includes("cannot run the specified api") ||
+    (m.includes("update record") && m.includes("403"))
+  );
+}
+
 function isSyncPayload(x: unknown): x is KintoneSalesSyncResultDto {
   if (!x || typeof x !== "object" || !("ok" in x)) return false;
   const o = x as { ok: unknown };
@@ -26,7 +36,16 @@ export function alertKintoneSalesSyncAfterApprove(
   const sync = getKintoneSalesSyncFromPayload(payload);
   if (!sync) return;
   if (sync.ok === false) {
-    alert(t(locale, "admin.estimates.kintoneSalesError", { detail: sync.error }));
+    const detail = sync.error ?? "";
+    if (isKintoneSalesEditPermissionError(detail)) {
+      alert(
+        t(locale, "admin.estimates.kintoneSalesErrorTokenEdit", { detail }) +
+          "\n\n" +
+          t(locale, "admin.estimates.kintoneSalesErrorTokenEditHint")
+      );
+    } else {
+      alert(t(locale, "admin.estimates.kintoneSalesError", { detail }));
+    }
     return;
   }
   if ("skipped" in sync && sync.skipped) return;
