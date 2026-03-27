@@ -1,8 +1,11 @@
 /**
  * 見積に紐づく Blob 上の Excel から PDF を生成し、Blob に保存して pdf_url を更新する。
+ * Vercel Blob は同一パスへの上書き不可のため、PDF も毎回ユニークなパスに保存する。
  */
+import { randomBytes } from "crypto";
 import { put } from "@vercel/blob";
 import type { getDb } from "@/lib/db";
+import { sanitizeEstimateNoForBlobPath } from "@/lib/excel-file-history";
 
 type Sql = ReturnType<typeof getDb>;
 
@@ -31,7 +34,10 @@ export async function generateEstimatePdfAndSave(sql: Sql, estimateId: string): 
   const { convertExcelToPdf } = await import("@/lib/pdf-generator");
   const pdfBuffer = await convertExcelToPdf(excelBuffer);
 
-  const { url: pdfUrl } = await put(`estimates/${estimateId}/${est.no}.pdf`, pdfBuffer, {
+  const safeNo = sanitizeEstimateNoForBlobPath(est.no);
+  const unique = `${Date.now()}_${randomBytes(4).toString("hex")}`;
+  const pdfBlobPath = `estimates/${estimateId}/${safeNo}_${unique}.pdf`;
+  const { url: pdfUrl } = await put(pdfBlobPath, pdfBuffer, {
     access: "public",
     addRandomSuffix: false,
   });
