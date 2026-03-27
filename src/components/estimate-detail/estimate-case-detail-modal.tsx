@@ -7,12 +7,32 @@ import { t } from "@/lib/translations";
 import type { Locale } from "@/lib/translations";
 import { EstimateApplicationDetail } from "@/components/estimate-detail/estimate-application-detail";
 import { alertKintoneSalesSyncAfterApprove } from "@/lib/kintone-approve-feedback";
+import { FormFieldRenderer, type FormFieldValues } from "@/components/estimate-form/form-field-renderer";
+import {
+  APPLICATION_DETAIL_EXTRA_FIELDS,
+  END_USER_COMPANY_FIELDS,
+  getFormFields,
+  needsCloudBillingChoice,
+  SALES_AGENCY_CONTACT_FIELDS,
+} from "@/lib/estimate-schema";
+import { isValidEmail } from "@/lib/validation";
 
 const STATUS_BADGE: Record<string, string> = {
   pending: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
   approved: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
   rejected: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
 };
+
+function cloneFormInputs(raw: unknown): FormFieldValues {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    try {
+      return JSON.parse(JSON.stringify(raw)) as FormFieldValues;
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
 
 function statusLabel(locale: Locale, s: string) {
   const map: Record<string, string> = {
@@ -69,7 +89,7 @@ export function EstimateCaseDetailModal({
   const [agencyName, setAgencyName] = useState(e.agencyName);
   const [amountStr, setAmountStr] = useState(String(e.amount));
   const [maintStr, setMaintStr] = useState(String(e.maintenanceFee));
-  const [formJson, setFormJson] = useState(() => JSON.stringify(e.formInputs ?? {}, null, 2));
+  const [formValues, setFormValues] = useState<FormFieldValues>(() => cloneFormInputs(e.formInputs));
   const [editError, setEditError] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
 
@@ -96,10 +116,27 @@ export function EstimateCaseDetailModal({
       setAgencyName(e.agencyName);
       setAmountStr(String(e.amount));
       setMaintStr(String(e.maintenanceFee));
-      setFormJson(JSON.stringify(e.formInputs ?? {}, null, 2));
+      setFormValues(cloneFormInputs(e.formInputs));
       setEditError("");
     }
   }, [editOpen, e.id, e.customerName, e.agencyName, e.amount, e.maintenanceFee, e.formInputs]);
+
+  const formFieldsEdit = getFormFields(e.deliveryType, e.contractType);
+  const showPeriodMonthsEdit =
+    needsCloudBillingChoice(e.deliveryType, e.contractType) && e.cloudBilling === "period";
+
+  function updateFormField(id: string, v: unknown) {
+    setFormValues((prev) => {
+      const next: FormFieldValues = { ...prev, [id]: v };
+      if (id === "userReleaseSubscription" && v === "no") {
+        delete next.userReleaseLanguage;
+      }
+      if (id === "salesReleaseSubscription" && v === "no") {
+        delete next.salesReleaseLanguage;
+      }
+      return next;
+    });
+  }
 
   async function handleGeneratePdf() {
     setPdfState({ generating: true, error: undefined });
@@ -126,19 +163,6 @@ export function EstimateCaseDetailModal({
   }
 
   async function saveEdit() {
-    let formInputs: Record<string, unknown>;
-    try {
-      const parsed = JSON.parse(formJson) as unknown;
-      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-        setEditError(l("admin.estimates.editFormJsonInvalid"));
-        return;
-      }
-      formInputs = parsed as Record<string, unknown>;
-    } catch {
-      setEditError(l("admin.estimates.editFormJsonInvalid"));
-      return;
-    }
-
     const amount = Math.floor(Number(amountStr));
     const maintenanceFee = Math.floor(Number(maintStr));
     if (!Number.isFinite(amount) || amount < 0) {
@@ -148,6 +172,17 @@ export function EstimateCaseDetailModal({
     if (!Number.isFinite(maintenanceFee) || maintenanceFee < 0) {
       setEditError(l("admin.estimates.editMaintInvalid"));
       return;
+    }
+
+    const emailsToCheck = [
+      String(formValues.userEmail ?? "").trim(),
+      String(formValues.salesAgencyEmail ?? "").trim(),
+    ].filter(Boolean);
+    for (const em of emailsToCheck) {
+      if (!isValidEmail(em)) {
+        setEditError(t(locale, "estimate.emailInvalid"));
+        return;
+      }
     }
 
     setSavingEdit(true);
@@ -161,7 +196,7 @@ export function EstimateCaseDetailModal({
           agencyName: agencyName.trim(),
           amount,
           maintenanceFee,
-          formInputs,
+          formInputs: formValues,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -250,58 +285,146 @@ export function EstimateCaseDetailModal({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
           {editOpen ? (
-            <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+            <div className="space-y-5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
               <p className="font-body text-sm font-medium text-[var(--color-ink)]">{l("admin.estimates.editSectionTitle")}</p>
-              <label className="block">
-                <span className="font-body text-xs text-[var(--color-ink-muted)]">{l("admin.estimates.customer")}</span>
-                <input
-                  value={customerName}
-                  onChange={(ev) => setCustomerName(ev.target.value)}
-                  className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 font-body text-sm"
-                />
-              </label>
-              <label className="block">
-                <span className="font-body text-xs text-[var(--color-ink-muted)]">{l("admin.estimates.agency")}</span>
-                <input
-                  value={agencyName}
-                  onChange={(ev) => setAgencyName(ev.target.value)}
-                  className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 font-body text-sm"
-                />
-              </label>
-              <div className="flex flex-wrap gap-3">
-                <label className="block flex-1 min-w-[8rem]">
-                  <span className="font-body text-xs text-[var(--color-ink-muted)]">{l("admin.estimates.amount")}</span>
+              <div className="space-y-3">
+                <p className="font-body text-xs font-medium uppercase tracking-wide text-[var(--color-ink-muted)]">
+                  {l("admin.estimates.sectionMeta")}
+                </p>
+                <label className="block">
+                  <span className="font-body text-xs text-[var(--color-ink-muted)]">{l("admin.estimates.customer")}</span>
                   <input
-                    type="number"
-                    min={0}
-                    value={amountStr}
-                    onChange={(ev) => setAmountStr(ev.target.value)}
+                    value={customerName}
+                    onChange={(ev) => setCustomerName(ev.target.value)}
                     className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 font-body text-sm"
                   />
                 </label>
-                <label className="block flex-1 min-w-[8rem]">
-                  <span className="font-body text-xs text-[var(--color-ink-muted)]">
-                    {l("admin.estimates.maintenanceFeeShort")}
-                  </span>
+                <label className="block">
+                  <span className="font-body text-xs text-[var(--color-ink-muted)]">{l("admin.estimates.agency")}</span>
                   <input
-                    type="number"
-                    min={0}
-                    value={maintStr}
-                    onChange={(ev) => setMaintStr(ev.target.value)}
+                    value={agencyName}
+                    onChange={(ev) => setAgencyName(ev.target.value)}
                     className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 font-body text-sm"
                   />
                 </label>
+                <div className="flex flex-wrap gap-3">
+                  <label className="block min-w-[8rem] flex-1">
+                    <span className="font-body text-xs text-[var(--color-ink-muted)]">{l("admin.estimates.amount")}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={amountStr}
+                      onChange={(ev) => setAmountStr(ev.target.value)}
+                      className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 font-body text-sm"
+                    />
+                  </label>
+                  <label className="block min-w-[8rem] flex-1">
+                    <span className="font-body text-xs text-[var(--color-ink-muted)]">
+                      {l("admin.estimates.maintenanceFeeShort")}
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={maintStr}
+                      onChange={(ev) => setMaintStr(ev.target.value)}
+                      className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 font-body text-sm"
+                    />
+                  </label>
+                </div>
               </div>
-              <label className="block">
-                <span className="font-body text-xs text-[var(--color-ink-muted)]">{l("admin.estimates.editFormJsonLabel")}</span>
-                <textarea
-                  value={formJson}
-                  onChange={(ev) => setFormJson(ev.target.value)}
-                  rows={14}
-                  spellCheck={false}
-                  className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-stone-950/5 px-3 py-2 font-mono text-xs text-[var(--color-ink)] dark:bg-stone-950/40"
-                />
-              </label>
+
+              <div className="space-y-3 border-t border-[var(--color-border)] pt-4">
+                <h4 className="font-body text-sm font-medium text-[var(--color-ink)]">
+                  {t(locale, "estimate.sectionEndUserCompany")}
+                </h4>
+                <p className="font-body text-xs text-[var(--color-ink-muted)]">
+                  {t(locale, "estimate.sectionEndUserCompanyHint")}
+                </p>
+                {END_USER_COMPANY_FIELDS.map((f) => (
+                  <FormFieldRenderer
+                    key={f.id}
+                    field={f}
+                    value={formValues[f.id]}
+                    formValues={formValues}
+                    onChange={updateFormField}
+                    locale={locale}
+                  />
+                ))}
+              </div>
+
+              {formFieldsEdit.length > 0 && (
+                <div className="space-y-3 border-t border-[var(--color-border)] pt-4">
+                  <h4 className="font-body text-sm font-medium text-[var(--color-ink)]">
+                    {t(locale, "estimate.contentSection")}
+                  </h4>
+                  {formFieldsEdit.map((f) => (
+                    <FormFieldRenderer
+                      key={f.id}
+                      field={f}
+                      value={formValues[f.id]}
+                      formValues={formValues}
+                      onChange={updateFormField}
+                      locale={locale}
+                    />
+                  ))}
+                  {showPeriodMonthsEdit && (
+                    <div>
+                      <label className="block font-body text-sm text-[var(--color-ink-muted)]">
+                        {t(locale, "estimate.periodMonths")} *
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={(formValues.periodMonths as number | undefined) ?? ""}
+                        onChange={(ev) =>
+                          updateFormField(
+                            "periodMonths",
+                            ev.target.value === "" ? undefined : Number(ev.target.value)
+                          )
+                        }
+                        required
+                        className="mt-1 w-full max-w-[160px] rounded-lg border border-stone-300 bg-white px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40 dark:border-stone-600 dark:bg-stone-800"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-3 border-t border-[var(--color-border)] pt-4">
+                <h4 className="font-body text-sm font-medium text-[var(--color-ink)]">
+                  {t(locale, "estimate.sectionSalesAgency")}
+                </h4>
+                <p className="font-body text-xs text-[var(--color-ink-muted)]">
+                  {t(locale, "estimate.sectionSalesAgencyHint")}
+                </p>
+                {SALES_AGENCY_CONTACT_FIELDS.map((f) => (
+                  <FormFieldRenderer
+                    key={f.id}
+                    field={f}
+                    value={formValues[f.id]}
+                    formValues={formValues}
+                    onChange={updateFormField}
+                    locale={locale}
+                  />
+                ))}
+              </div>
+
+              <div className="space-y-3 border-t border-[var(--color-border)] pt-4">
+                <h4 className="font-body text-sm font-medium text-[var(--color-ink)]">
+                  {t(locale, "estimate.sectionApplicationExtra")}
+                </h4>
+                {APPLICATION_DETAIL_EXTRA_FIELDS.map((f) => (
+                  <FormFieldRenderer
+                    key={f.id}
+                    field={f}
+                    value={formValues[f.id]}
+                    formValues={formValues}
+                    onChange={updateFormField}
+                    locale={locale}
+                  />
+                ))}
+              </div>
+
               {editError && <p className="font-body text-sm text-red-600">{editError}</p>}
               <div className="flex flex-wrap gap-2">
                 <button
