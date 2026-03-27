@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { parseExcelFileHistory } from "@/lib/excel-file-history";
 
 export async function GET(req: Request) {
   try {
@@ -16,7 +17,7 @@ export async function GET(req: Request) {
     const rows = await sql`
       SELECT id, no, agency_id, agency_name, customer_name,
              delivery_type, contract_type, cloud_billing, amount, maintenance_fee,
-             form_inputs, excel_url, pdf_url, status,
+             form_inputs, excel_url, excel_file_history, pdf_url, status,
              TO_CHAR(created_at  AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS created_at,
              TO_CHAR(approved_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS approved_at
       FROM estimates
@@ -36,6 +37,7 @@ export async function GET(req: Request) {
       amount: Number(r.amount), maintenanceFee: Number(r.maintenance_fee),
       formInputs: r.form_inputs ?? {},
       excelUrl: r.excel_url ?? "",
+      excelFileHistory: parseExcelFileHistory((r as { excel_file_history?: unknown }).excel_file_history),
       pdfUrl: r.pdf_url ?? "",
       status: r.status, createdAt: r.created_at, approvedAt: r.approved_at ?? undefined,
     })));

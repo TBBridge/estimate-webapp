@@ -9,6 +9,7 @@ import { fetchKintoneSalesPreviewForCustomer } from "@/lib/kintone-sales-preview
 import { syncApprovedNewEstimateToKintoneSales } from "@/lib/kintone-sales-sync";
 import type { KintoneSalesSyncResultDto } from "@/lib/kintone-sales-types";
 import type { Locale } from "@/lib/translations";
+import { parseExcelFileHistory } from "@/lib/excel-file-history";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -25,7 +26,7 @@ export async function GET(req: Request, { params }: Params) {
     const rows = await sql`
       SELECT id, no, agency_id, agency_name, customer_name,
              delivery_type, contract_type, cloud_billing,
-             amount, maintenance_fee, form_inputs, excel_url, pdf_url, status,
+             amount, maintenance_fee, form_inputs, excel_url, pdf_url, excel_file_history, status,
              TO_CHAR(created_at  AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS created_at,
              TO_CHAR(approved_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS approved_at
       FROM estimates
@@ -53,6 +54,7 @@ export async function GET(req: Request, { params }: Params) {
       amount: Number(r.amount), maintenanceFee: Number(r.maintenance_fee),
       formInputs: r.form_inputs,
       excelUrl: r.excel_url ?? "",
+      excelFileHistory: parseExcelFileHistory((r as { excel_file_history?: unknown }).excel_file_history),
       pdfUrl: r.pdf_url ?? "",
       status: r.status,
       createdAt: r.created_at,
@@ -79,6 +81,7 @@ function jsonEstimateRow(r: Record<string, unknown>) {
     maintenanceFee: Number(r.maintenance_fee),
     formInputs: r.form_inputs,
     excelUrl: r.excel_url ?? "",
+    excelFileHistory: parseExcelFileHistory(r.excel_file_history),
     pdfUrl: r.pdf_url ?? "",
     status: r.status,
     createdAt: r.created_at,
@@ -149,7 +152,7 @@ export async function PATCH(req: Request, { params }: Params) {
       WHERE id = ${id}
       RETURNING id, no, agency_id, agency_name, customer_name,
                 delivery_type, contract_type, cloud_billing,
-                amount, maintenance_fee, form_inputs, excel_url, pdf_url, status,
+                amount, maintenance_fee, form_inputs, excel_url, excel_file_history, pdf_url, status,
                 TO_CHAR(created_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS created_at,
                 TO_CHAR(approved_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS approved_at
     `;

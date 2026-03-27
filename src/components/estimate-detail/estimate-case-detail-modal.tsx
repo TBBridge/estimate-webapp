@@ -16,6 +16,7 @@ import {
   SALES_AGENCY_CONTACT_FIELDS,
 } from "@/lib/estimate-schema";
 import { isValidEmail } from "@/lib/validation";
+import type { ExcelFileHistoryEntry } from "@/lib/excel-file-history";
 
 const STATUS_BADGE: Record<string, string> = {
   pending: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
@@ -57,6 +58,9 @@ export function apiJsonToEstimate(d: Record<string, unknown>): Estimate {
     maintenanceFee: Number(d.maintenanceFee),
     formInputs: (d.formInputs as Record<string, unknown>) ?? {},
     excelUrl: String(d.excelUrl ?? ""),
+    excelFileHistory: Array.isArray(d.excelFileHistory)
+      ? (d.excelFileHistory as ExcelFileHistoryEntry[])
+      : [],
     pdfUrl: String(d.pdfUrl ?? ""),
     status: d.status as Estimate["status"],
     createdAt: String(d.createdAt),
@@ -260,6 +264,7 @@ export function EstimateCaseDetailModal({
   }
 
   const excelUrl = e.excelUrl && String(e.excelUrl).trim() ? String(e.excelUrl) : "";
+  const excelHistory = e.excelFileHistory ?? [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 backdrop-blur-sm">
@@ -545,6 +550,35 @@ export function EstimateCaseDetailModal({
                   <p className="w-full font-body text-xs text-red-600 dark:text-red-400">{pdfState.error}</p>
                 )}
               </div>
+
+              {excelHistory.length > 0 && (
+                <div className="mt-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-sub)] p-3">
+                  <p className="font-body text-xs font-medium text-[var(--color-ink)]">{l("admin.estimates.excelHistory")}</p>
+                  <p className="mt-1 font-body text-xs text-[var(--color-ink-muted)]">{l("admin.estimates.excelHistoryHint")}</p>
+                  <ul className="mt-2 space-y-1.5 font-body text-xs">
+                    {[...excelHistory].reverse().map((h) => (
+                      <li key={`${h.version}-${h.url}`} className="flex flex-wrap items-baseline gap-2">
+                        <span className="shrink-0 text-[var(--color-ink-muted)]">
+                          {t(locale, "admin.estimates.excelHistoryVersion", { version: String(h.version) })}
+                        </span>
+                        <span className="text-[var(--color-ink-muted)]">
+                          {h.uploadedAt.includes("T")
+                            ? h.uploadedAt.slice(0, 19).replace("T", " ")
+                            : h.uploadedAt}
+                        </span>
+                        <a
+                          href={h.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-medium text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-400"
+                        >
+                          {l("admin.estimates.downloadExcel")}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           ) : null}
         </div>

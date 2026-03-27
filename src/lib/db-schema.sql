@@ -96,6 +96,8 @@ ALTER TABLE estimates ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at:
 ALTER TABLE estimates ALTER COLUMN approved_at TYPE TIMESTAMPTZ USING approved_at::TIMESTAMPTZ;
 ALTER TABLE estimates ADD COLUMN IF NOT EXISTS excel_url TEXT NOT NULL DEFAULT '';
 ALTER TABLE estimates ADD COLUMN IF NOT EXISTS pdf_url   TEXT NOT NULL DEFAULT '';
+-- Excel 差し替え履歴（各要素: { version, url, uploadedAt }）。現在の excel_url は含めない（最新は excel_url）
+ALTER TABLE estimates ADD COLUMN IF NOT EXISTS excel_file_history JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 -- 見積書テンプレート
 CREATE TABLE IF NOT EXISTS templates (

@@ -3,6 +3,7 @@
  */
 
 import type { DeliveryType, ContractType } from "./estimate-schema";
+import type { ExcelFileHistoryEntry } from "./excel-file-history";
 
 // ─────────────────────────────────────────────
 // 代理店
@@ -51,6 +52,8 @@ export type Estimate = {
   maintenanceFee: number;
   formInputs?: Record<string, unknown>;
   excelUrl?: string;
+  /** 差し替え前の Excel（古い世代）。最新は excelUrl */
+  excelFileHistory?: ExcelFileHistoryEntry[];
   pdfUrl?: string;
   status: EstimateStatus;
   createdAt: string;
