@@ -50,6 +50,10 @@ export type Estimate = {
   cloudBilling?: string;
   amount: number;
   maintenanceFee: number;
+  /** 承認時点の本体見積金額（ダッシュボード集計用スナップショット） */
+  approvedAmountAtApproval?: number;
+  /** 承認時点の保守料 */
+  approvedMaintenanceFeeAtApproval?: number;
   formInputs?: Record<string, unknown>;
   excelUrl?: string;
   /** 差し替え前の Excel（古い世代）。最新は excelUrl */

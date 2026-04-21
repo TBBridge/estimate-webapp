@@ -26,7 +26,9 @@ export async function GET(req: Request, { params }: Params) {
     const rows = await sql`
       SELECT id, no, agency_id, agency_name, customer_name,
              delivery_type, contract_type, cloud_billing,
-             amount, maintenance_fee, form_inputs, excel_url, pdf_url, excel_file_history, status,
+             amount, maintenance_fee,
+             approved_amount_at_approval, approved_maintenance_fee_at_approval,
+             form_inputs, excel_url, pdf_url, excel_file_history, status,
              TO_CHAR(created_at  AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS created_at,
              TO_CHAR(approved_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS approved_at
       FROM estimates
@@ -52,6 +54,12 @@ export async function GET(req: Request, { params }: Params) {
       deliveryType: r.delivery_type, contractType: r.contract_type,
       cloudBilling: r.cloud_billing,
       amount: Number(r.amount), maintenanceFee: Number(r.maintenance_fee),
+      approvedAmountAtApproval:
+        r.approved_amount_at_approval != null ? Number(r.approved_amount_at_approval) : undefined,
+      approvedMaintenanceFeeAtApproval:
+        r.approved_maintenance_fee_at_approval != null
+          ? Number(r.approved_maintenance_fee_at_approval)
+          : undefined,
       formInputs: r.form_inputs,
       excelUrl: r.excel_url ?? "",
       excelFileHistory: parseExcelFileHistory((r as { excel_file_history?: unknown }).excel_file_history),
@@ -79,6 +87,12 @@ function jsonEstimateRow(r: Record<string, unknown>) {
     cloudBilling: r.cloud_billing,
     amount: Number(r.amount),
     maintenanceFee: Number(r.maintenance_fee),
+    approvedAmountAtApproval:
+      r.approved_amount_at_approval != null ? Number(r.approved_amount_at_approval) : undefined,
+    approvedMaintenanceFeeAtApproval:
+      r.approved_maintenance_fee_at_approval != null
+        ? Number(r.approved_maintenance_fee_at_approval)
+        : undefined,
     formInputs: r.form_inputs,
     excelUrl: r.excel_url ?? "",
     excelFileHistory: parseExcelFileHistory(r.excel_file_history),
@@ -104,7 +118,9 @@ export async function PATCH(req: Request, { params }: Params) {
     const curRows = await sql`
       SELECT id, no, agency_id, agency_name, customer_name,
              delivery_type, contract_type, cloud_billing,
-             amount, maintenance_fee, form_inputs, excel_url, pdf_url, status,
+             amount, maintenance_fee,
+             approved_amount_at_approval, approved_maintenance_fee_at_approval,
+             form_inputs, excel_url, pdf_url, status,
              TO_CHAR(created_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS created_at,
              TO_CHAR(approved_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS approved_at
       FROM estimates WHERE id = ${id}
@@ -152,7 +168,9 @@ export async function PATCH(req: Request, { params }: Params) {
       WHERE id = ${id}
       RETURNING id, no, agency_id, agency_name, customer_name,
                 delivery_type, contract_type, cloud_billing,
-                amount, maintenance_fee, form_inputs, excel_url, excel_file_history, pdf_url, status,
+                amount, maintenance_fee,
+                approved_amount_at_approval, approved_maintenance_fee_at_approval,
+                form_inputs, excel_url, excel_file_history, pdf_url, status,
                 TO_CHAR(created_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS created_at,
                 TO_CHAR(approved_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS approved_at
     `;
@@ -179,12 +197,21 @@ export async function PUT(req: Request, { params }: Params) {
     const rows = await sql`
       UPDATE estimates
       SET status = ${status},
-          approved_at = ${approvedAt}
+          approved_at = ${approvedAt},
+          approved_amount_at_approval = CASE
+            WHEN ${status} = 'approved' THEN amount
+            ELSE NULL
+          END,
+          approved_maintenance_fee_at_approval = CASE
+            WHEN ${status} = 'approved' THEN maintenance_fee
+            ELSE NULL
+          END
       WHERE id = ${id}
       RETURNING id, no, status,
                 agency_id, agency_name, customer_name,
                 delivery_type, contract_type, cloud_billing,
                 form_inputs, excel_url, pdf_url, amount, maintenance_fee,
+                approved_amount_at_approval, approved_maintenance_fee_at_approval,
                 TO_CHAR(approved_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS approved_at
     `;
     if (rows.length === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });

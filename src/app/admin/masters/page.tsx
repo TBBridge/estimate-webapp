@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { mutate } from "swr";
 import { useLocale } from "@/lib/locale-context";
 import { t } from "@/lib/translations";
 import { useMarginRates, updateMarginRate, createMarginRate, deleteMarginRate } from "@/hooks/use-margin-rates";
@@ -703,6 +704,68 @@ function TemplateTab({ locale }: { locale: string }) {
   );
 }
 
+function MastersCsvImportBar({ kind }: { kind: "margin" | "maintenance" | "unitPrices" }) {
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  const swrKey =
+    kind === "margin"
+      ? "/api/margin-rates"
+      : kind === "maintenance"
+        ? "/api/maintenance-rates"
+        : "/api/unit-prices";
+
+  const onChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setBusy(true);
+    setMsg("");
+    try {
+      const fd = new FormData();
+      fd.set("file", file);
+      fd.set("kind", kind);
+      const res = await fetch("/api/masters/import-csv", { method: "POST", body: fd });
+      const data = (await res.json().catch(() => ({}))) as {
+        upserted?: number;
+        errors?: { line: number; message: string }[];
+        error?: string;
+      };
+      if (!res.ok) {
+        setMsg(data.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      const errN = data.errors?.length ?? 0;
+      setMsg(`反映 ${data.upserted ?? 0} 行、エラー ${errN} 行`);
+      await mutate(swrKey);
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const hint =
+    kind === "margin"
+      ? "agency_id または agency_email, product_id, delivery_type, rate（0.7 または 70）"
+      : kind === "maintenance"
+        ? "agency_id または agency_email, product_id（任意）, rate"
+        : "product_id, product_name, delivery_type, tiers（JSON 配列）";
+
+  return (
+    <div className="border-b border-stone-200/80 px-4 py-3 dark:border-stone-700/80">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="font-body text-sm font-medium text-[var(--color-ink)]">CSVインポート</span>
+        <label className="cursor-pointer rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 font-body text-xs text-[var(--color-ink)] hover:bg-[var(--color-surface-sub)]">
+          {busy ? "処理中…" : "ファイル選択"}
+          <input type="file" accept=".csv,text/csv" className="hidden" disabled={busy} onChange={onChange} />
+        </label>
+        {msg && <span className="font-body text-xs text-[var(--color-ink-muted)]">{msg}</span>}
+      </div>
+      <p className="mt-1 font-body text-xs text-[var(--color-ink-muted)]">{hint}</p>
+    </div>
+  );
+}
+
 // ── ページ本体 ────────────────────────────────────────
 export default function AdminMastersPage() {
   const { locale } = useLocale();
@@ -738,10 +801,25 @@ export default function AdminMastersPage() {
         ))}
       </div>
       <div className="rounded-xl border border-stone-200/80 bg-[var(--color-surface-elevated)] shadow-sm dark:border-stone-700/80">
-        {tab === "margin"      && <MarginGrid      locale={locale} />}
-        {tab === "maintenance" && <MaintenanceGrid locale={locale} />}
-        {tab === "unitPrice"   && <UnitPriceTab    locale={locale} />}
-        {tab === "template"    && <TemplateTab     locale={locale} />}
+        {tab === "margin" && (
+          <>
+            <MastersCsvImportBar kind="margin" />
+            <MarginGrid locale={locale} />
+          </>
+        )}
+        {tab === "maintenance" && (
+          <>
+            <MastersCsvImportBar kind="maintenance" />
+            <MaintenanceGrid locale={locale} />
+          </>
+        )}
+        {tab === "unitPrice" && (
+          <>
+            <MastersCsvImportBar kind="unitPrices" />
+            <UnitPriceTab locale={locale} />
+          </>
+        )}
+        {tab === "template" && <TemplateTab locale={locale} />}
       </div>
     </div>
   );

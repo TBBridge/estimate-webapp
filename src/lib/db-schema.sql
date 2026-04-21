@@ -99,6 +99,10 @@ ALTER TABLE estimates ADD COLUMN IF NOT EXISTS pdf_url   TEXT NOT NULL DEFAULT '
 -- Excel 差し替え履歴（各要素: { version, url, uploadedAt }）。現在の excel_url は含めない（最新は excel_url）
 ALTER TABLE estimates ADD COLUMN IF NOT EXISTS excel_file_history JSONB NOT NULL DEFAULT '[]'::jsonb;
 
+-- 承認時点の見積金額スナップショット（ダッシュボード等で承認後の改ざんと切り離す）
+ALTER TABLE estimates ADD COLUMN IF NOT EXISTS approved_amount_at_approval INTEGER;
+ALTER TABLE estimates ADD COLUMN IF NOT EXISTS approved_maintenance_fee_at_approval INTEGER;
+
 -- 見積書テンプレート
 CREATE TABLE IF NOT EXISTS templates (
   id            TEXT PRIMARY KEY,          -- 'tpl-1' 〜 'tpl-7' (固定ID)

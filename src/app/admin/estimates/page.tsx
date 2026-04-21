@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useLocale } from "@/lib/locale-context";
 import { t } from "@/lib/translations";
 import { useEstimates } from "@/hooks/use-estimates";
@@ -58,7 +58,17 @@ export default function AdminEstimatesPage() {
     [filters],
   );
 
-  const { estimates, isLoading, error: estimatesError } = useEstimates(activeFilters);
+  const pageSize = 20;
+  const [page, setPage] = useState(1);
+  useEffect(() => {
+    setPage(1);
+  }, [activeFilters]);
+
+  const { estimates, total, isLoading, error: estimatesError } = useEstimates({
+    ...activeFilters,
+    page,
+    pageSize,
+  });
   const [selectedEstimate, setSelectedEstimate] = useState<Estimate | null>(null);
 
   type EstimateSortKey = "no" | "agencyName" | "customerName" | "deliveryType" | "contractType" | "status" | "createdAt";
@@ -161,7 +171,7 @@ export default function AdminEstimatesPage() {
           </button>
         </div>
         <p className="mt-2 font-body text-xs text-[var(--color-ink-muted)]">
-          {isLoading ? l("common.loading") : `${estimates.length} 件`}
+          {isLoading ? l("common.loading") : `全 ${total} 件（このページ ${estimates.length} 件）`}
         </p>
       </div>
 
@@ -218,6 +228,30 @@ export default function AdminEstimatesPage() {
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-4 py-3 font-body text-sm text-[var(--color-ink-muted)]">
+        <span>
+          ページ {page} / {Math.max(1, Math.ceil(total / pageSize) || 1)}
+        </span>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            disabled={page <= 1 || isLoading}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-[var(--color-ink)] hover:bg-[var(--color-surface-sub)] disabled:opacity-40"
+          >
+            前へ
+          </button>
+          <button
+            type="button"
+            disabled={isLoading || page * pageSize >= total}
+            onClick={() => setPage((p) => p + 1)}
+            className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-[var(--color-ink)] hover:bg-[var(--color-surface-sub)] disabled:opacity-40"
+          >
+            次へ
+          </button>
+        </div>
       </div>
 
       {/* 詳細モーダル */}

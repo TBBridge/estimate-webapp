@@ -65,6 +65,26 @@ export async function POST(req: Request) {
     const agencyRows = await sql`SELECT agency_type FROM agencies WHERE id = ${agencyId}`;
     const agencyType = (agencyRows[0]?.agency_type as string | undefined) ?? agencyName;
 
+    const mainProductId = "ireporter";
+    const mrRows = await sql`
+      SELECT CAST(rate AS FLOAT) AS rate FROM margin_rates
+      WHERE agency_id = ${agencyId} AND product_id = ${mainProductId} AND delivery_type = ${deliveryType}
+      LIMIT 1
+    `;
+    const maintRows = await sql`
+      SELECT CAST(rate AS FLOAT) AS rate FROM maintenance_rates
+      WHERE agency_id = ${agencyId} AND product_id = ${mainProductId}
+      LIMIT 1
+    `;
+    const productMarginRate =
+      mrRows[0]?.rate != null && Number.isFinite(Number(mrRows[0].rate))
+        ? Number(mrRows[0].rate)
+        : undefined;
+    const maintenanceMarginRate =
+      maintRows[0]?.rate != null && Number.isFinite(Number(maintRows[0].rate))
+        ? Number(maintRows[0].rate)
+        : undefined;
+
     const resolvedCustomerName =
       String(customerName ?? "").trim() ||
       resolveCustomerDisplayName((formInputs ?? {}) as Record<string, unknown>) ||
@@ -120,6 +140,8 @@ export async function POST(req: Request) {
                 cloudBilling,
                 formInputs,
                 createdAt,
+                productMarginRate,
+                maintenanceMarginRate,
               });
 
               const { url: exUrl } = await put(

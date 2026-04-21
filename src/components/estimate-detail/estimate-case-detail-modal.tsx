@@ -56,6 +56,12 @@ export function apiJsonToEstimate(d: Record<string, unknown>): Estimate {
     cloudBilling: d.cloudBilling ? String(d.cloudBilling) : undefined,
     amount: Number(d.amount),
     maintenanceFee: Number(d.maintenanceFee),
+    approvedAmountAtApproval:
+      d.approvedAmountAtApproval != null ? Number(d.approvedAmountAtApproval) : undefined,
+    approvedMaintenanceFeeAtApproval:
+      d.approvedMaintenanceFeeAtApproval != null
+        ? Number(d.approvedMaintenanceFeeAtApproval)
+        : undefined,
     formInputs: (d.formInputs as Record<string, unknown>) ?? {},
     excelUrl: String(d.excelUrl ?? ""),
     excelFileHistory: Array.isArray(d.excelFileHistory)

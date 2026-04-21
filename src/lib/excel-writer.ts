@@ -6,6 +6,8 @@
  *   C4: 代理店名（"To: {代理店名}" 形式）
  *   C5: エンドユーザ名① / 顧客名（"For: {顧客名}" 形式）
  *   C7: 代理店種別（仕切り率 VLOOKUP のキー = 代理店名）
+ *   C8: 本製品（i-Reporter 等）の仕切り率（小数 0〜1）
+ *   C9: 保守の仕切り率（小数 0〜1）
  *
  * オンプレ 新規（tpl-1）:
  *   C18: ライセンス数 / C21: オプション① / C24: オプション②
@@ -48,6 +50,10 @@ export interface WriteEstimateParams {
   formInputs: Record<string, unknown>;
   /** 見積作成日 (YYYY-MM-DD) */
   createdAt: string;
+  /** 本製品仕切り率（DB の rate と同じ小数 0〜1。未設定時は C8 を書かない） */
+  productMarginRate?: number;
+  /** 保守仕切り率 */
+  maintenanceMarginRate?: number;
 }
 
 /** セルに値をセット（数式セルは result を上書き） */
@@ -114,7 +120,7 @@ function secondOptionFromForm(formInputs: Record<string, unknown>): string {
 export async function writeEstimateToTemplate(
   params: WriteEstimateParams
 ): Promise<Buffer> {
-  const { templateBuffer, agencyName, agencyType, customerName, deliveryType, contractType, cloudBilling, formInputs, createdAt } = params;
+  const { templateBuffer, agencyName, agencyType, customerName, deliveryType, contractType, cloudBilling, formInputs, createdAt, productMarginRate, maintenanceMarginRate } = params;
 
   // stream.PassThrough 経由で読み込む（Vercel 環境で xlsx.load(Buffer) が不安定なため）
   const workbook = new ExcelJS.Workbook();
@@ -139,7 +145,13 @@ export async function writeEstimateToTemplate(
   setCell(sheet, "C4", `To: ${agencyName}`);
   setCell(sheet, "C5", `For: ${customerName}`);
   setCell(sheet, "C7", agencyType);  // VLOOKUP キー（代理店種別）
-  console.log(`[excel-writer] 共通: C3=${createdAt} C4=To:${agencyName} C5=For:${customerName} C7=${agencyType}`);
+  if (productMarginRate != null && Number.isFinite(productMarginRate)) {
+    setCell(sheet, "C8", productMarginRate);
+  }
+  if (maintenanceMarginRate != null && Number.isFinite(maintenanceMarginRate)) {
+    setCell(sheet, "C9", maintenanceMarginRate);
+  }
+  console.log(`[excel-writer] 共通: C3=${createdAt} C4=To:${agencyName} C5=For:${customerName} C7=${agencyType} C8=${productMarginRate ?? "-"} C9=${maintenanceMarginRate ?? "-"}`);
   console.log(`[excel-writer] formInputs: ${JSON.stringify(formInputs)}`);
 
   // ── パターン別フィールド ────────────────────────────

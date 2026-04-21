@@ -2,45 +2,107 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { parseExcelFileHistory } from "@/lib/excel-file-history";
 
+function mapEstimateListRow(r: Record<string, unknown>) {
+  return {
+    id: r.id,
+    no: r.no,
+    agencyId: r.agency_id,
+    agencyName: r.agency_name,
+    customerName: r.customer_name,
+    deliveryType: r.delivery_type,
+    contractType: r.contract_type,
+    cloudBilling: r.cloud_billing ?? undefined,
+    amount: Number(r.amount),
+    maintenanceFee: Number(r.maintenance_fee),
+    approvedAmountAtApproval:
+      r.approved_amount_at_approval != null ? Number(r.approved_amount_at_approval) : undefined,
+    approvedMaintenanceFeeAtApproval:
+      r.approved_maintenance_fee_at_approval != null
+        ? Number(r.approved_maintenance_fee_at_approval)
+        : undefined,
+    formInputs: r.form_inputs ?? {},
+    excelUrl: r.excel_url ?? "",
+    excelFileHistory: parseExcelFileHistory((r as { excel_file_history?: unknown }).excel_file_history),
+    pdfUrl: r.pdf_url ?? "",
+    status: r.status,
+    createdAt: r.created_at,
+    approvedAt: r.approved_at ?? undefined,
+  };
+}
+
 export async function GET(req: Request) {
   try {
     const sql = getDb();
     const { searchParams } = new URL(req.url);
-    const agencyId     = searchParams.get("agencyId")     ?? "";
+    const agencyId = searchParams.get("agencyId") ?? "";
     const deliveryType = searchParams.get("deliveryType") ?? "";
     const contractType = searchParams.get("contractType") ?? "";
-    const status       = searchParams.get("status")       ?? "";
+    const status = searchParams.get("status") ?? "";
     const customerName = searchParams.get("customerName") ?? "";
-    const from         = searchParams.get("from")         ?? "";
-    const to           = searchParams.get("to")           ?? "";
+    const from = searchParams.get("from") ?? "";
+    const to = searchParams.get("to") ?? "";
+    const pageRaw = searchParams.get("page");
+    const pageSizeRaw = searchParams.get("pageSize");
+    const paginate = pageRaw != null && pageRaw !== "" && pageSizeRaw != null && pageSizeRaw !== "";
+    const page = paginate ? Math.max(1, parseInt(pageRaw, 10) || 1) : 1;
+    const pageSize = paginate ? Math.min(100, Math.max(1, parseInt(pageSizeRaw, 10) || 20)) : 0;
+    const offset = paginate ? (page - 1) * pageSize : 0;
+
+    if (paginate) {
+      const [countRow] = await sql`
+        SELECT COUNT(*)::INT AS c FROM estimates
+        WHERE (${agencyId} = '' OR agency_id = ${agencyId})
+          AND (${deliveryType} = '' OR delivery_type = ${deliveryType})
+          AND (${contractType} = '' OR contract_type = ${contractType})
+          AND (${status} = '' OR status = ${status})
+          AND (${customerName} = '' OR customer_name ILIKE ${"%" + customerName + "%"})
+          AND (${from} = '' OR (created_at AT TIME ZONE 'Asia/Tokyo')::DATE >= ${from || null}::DATE)
+          AND (${to} = '' OR (created_at AT TIME ZONE 'Asia/Tokyo')::DATE <= ${to || null}::DATE)
+      `;
+      const rows = await sql`
+        SELECT id, no, agency_id, agency_name, customer_name,
+               delivery_type, contract_type, cloud_billing, amount, maintenance_fee,
+               approved_amount_at_approval, approved_maintenance_fee_at_approval,
+               form_inputs, excel_url, excel_file_history, pdf_url, status,
+               TO_CHAR(created_at  AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS created_at,
+               TO_CHAR(approved_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS approved_at
+        FROM estimates
+        WHERE (${agencyId} = '' OR agency_id = ${agencyId})
+          AND (${deliveryType} = '' OR delivery_type = ${deliveryType})
+          AND (${contractType} = '' OR contract_type = ${contractType})
+          AND (${status} = '' OR status = ${status})
+          AND (${customerName} = '' OR customer_name ILIKE ${"%" + customerName + "%"})
+          AND (${from} = '' OR (created_at AT TIME ZONE 'Asia/Tokyo')::DATE >= ${from || null}::DATE)
+          AND (${to} = '' OR (created_at AT TIME ZONE 'Asia/Tokyo')::DATE <= ${to || null}::DATE)
+        ORDER BY created_at DESC
+        LIMIT ${pageSize} OFFSET ${offset}
+      `;
+      return NextResponse.json({
+        estimates: rows.map((r) => mapEstimateListRow(r as Record<string, unknown>)),
+        total: Number(countRow.c),
+        page,
+        pageSize,
+      });
+    }
 
     const rows = await sql`
       SELECT id, no, agency_id, agency_name, customer_name,
              delivery_type, contract_type, cloud_billing, amount, maintenance_fee,
+             approved_amount_at_approval, approved_maintenance_fee_at_approval,
              form_inputs, excel_url, excel_file_history, pdf_url, status,
              TO_CHAR(created_at  AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS created_at,
              TO_CHAR(approved_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS approved_at
       FROM estimates
-      WHERE (${agencyId}     = '' OR agency_id     = ${agencyId})
+      WHERE (${agencyId} = '' OR agency_id = ${agencyId})
         AND (${deliveryType} = '' OR delivery_type = ${deliveryType})
         AND (${contractType} = '' OR contract_type = ${contractType})
-        AND (${status}       = '' OR status        = ${status})
-        AND (${customerName} = '' OR customer_name ILIKE ${'%' + customerName + '%'})
+        AND (${status} = '' OR status = ${status})
+        AND (${customerName} = '' OR customer_name ILIKE ${"%" + customerName + "%"})
         AND (${from} = '' OR (created_at AT TIME ZONE 'Asia/Tokyo')::DATE >= ${from || null}::DATE)
-        AND (${to}   = '' OR (created_at AT TIME ZONE 'Asia/Tokyo')::DATE <= ${to   || null}::DATE)
+        AND (${to} = '' OR (created_at AT TIME ZONE 'Asia/Tokyo')::DATE <= ${to || null}::DATE)
       ORDER BY created_at DESC
     `;
-    return NextResponse.json(rows.map((r) => ({
-      id: r.id, no: r.no, agencyId: r.agency_id, agencyName: r.agency_name,
-      customerName: r.customer_name, deliveryType: r.delivery_type, contractType: r.contract_type,
-      cloudBilling: r.cloud_billing ?? undefined,
-      amount: Number(r.amount), maintenanceFee: Number(r.maintenance_fee),
-      formInputs: r.form_inputs ?? {},
-      excelUrl: r.excel_url ?? "",
-      excelFileHistory: parseExcelFileHistory((r as { excel_file_history?: unknown }).excel_file_history),
-      pdfUrl: r.pdf_url ?? "",
-      status: r.status, createdAt: r.created_at, approvedAt: r.approved_at ?? undefined,
-    })));
+    return NextResponse.json(rows.map((r) => mapEstimateListRow(r as Record<string, unknown>)));
   } catch (e) {
     console.error(e);
     return NextResponse.json({ error: "Failed to fetch estimates" }, { status: 500 });

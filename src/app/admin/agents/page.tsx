@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { mutate } from "swr";
 import { useLocale } from "@/lib/locale-context";
 import { t } from "@/lib/translations";
 import { useAgencies, createAgency, updateAgency, deleteAgency } from "@/hooks/use-agencies";
@@ -31,6 +32,8 @@ export default function AdminAgentsPage() {
   const [form, setForm] = useState(emptyForm());
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [importMsg, setImportMsg] = useState("");
+  const [importBusy, setImportBusy] = useState(false);
 
   type AgentSortKey = "name" | "agencyType" | "email" | "approverName" | "approverEmail" | "createdAt";
   const [sortKey, setSortKey] = useState<AgentSortKey>("createdAt");
@@ -116,6 +119,35 @@ export default function AdminAgentsPage() {
     await deleteAgency(id);
   };
 
+  const handleCsvImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setImportBusy(true);
+    setImportMsg("");
+    try {
+      const fd = new FormData();
+      fd.set("file", file);
+      const res = await fetch("/api/agencies/import-csv", { method: "POST", body: fd });
+      const data = (await res.json().catch(() => ({}))) as {
+        created?: number;
+        errors?: { line: number; message: string }[];
+        error?: string;
+      };
+      if (!res.ok) {
+        setImportMsg(data.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      const errN = data.errors?.length ?? 0;
+      setImportMsg(`登録 ${data.created ?? 0} 件、エラー ${errN} 件`);
+      await mutate("/api/agencies");
+    } catch (err) {
+      setImportMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
   const inputBaseCls =
     "rounded-lg border border-stone-300 bg-white px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40 dark:border-stone-600 dark:bg-stone-800";
   const inputCls = `w-full ${inputBaseCls}`;
@@ -134,11 +166,26 @@ export default function AdminAgentsPage() {
             {t(locale, "admin.agentsDescription")}
           </p>
         </div>
-        <button type="button" onClick={openAdd}
-          className="rounded-lg bg-[var(--color-brand)] px-4 py-2 font-body text-sm font-medium text-white hover:opacity-90">
-          + {t(locale, "admin.agents.add")}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="cursor-pointer rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-4 py-2 font-body text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface-sub)]">
+            {importBusy ? "…" : "CSVインポート"}
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              disabled={importBusy}
+              onChange={handleCsvImport}
+            />
+          </label>
+          <button type="button" onClick={openAdd}
+            className="rounded-lg bg-[var(--color-brand)] px-4 py-2 font-body text-sm font-medium text-white hover:opacity-90">
+            + {t(locale, "admin.agents.add")}
+          </button>
+        </div>
       </div>
+      {importMsg && (
+        <p className="font-body text-xs text-[var(--color-ink-muted)]">{importMsg}</p>
+      )}
 
       <div className="overflow-x-auto rounded-xl border border-stone-200/80 bg-[var(--color-surface-elevated)] shadow-sm dark:border-stone-700/80">
         {isLoading ? (
