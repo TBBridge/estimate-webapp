@@ -103,6 +103,8 @@ ALTER TABLE estimates ADD COLUMN IF NOT EXISTS excel_file_history JSONB NOT NULL
 ALTER TABLE estimates ADD COLUMN IF NOT EXISTS approved_amount_at_approval INTEGER;
 ALTER TABLE estimates ADD COLUMN IF NOT EXISTS approved_maintenance_fee_at_approval INTEGER;
 
+ALTER TABLE estimates ADD COLUMN IF NOT EXISTS hubspot_deal_id TEXT NOT NULL DEFAULT '';
+
 -- 見積書テンプレート
 CREATE TABLE IF NOT EXISTS templates (
   id            TEXT PRIMARY KEY,          -- 'tpl-1' 〜 'tpl-7' (固定ID)

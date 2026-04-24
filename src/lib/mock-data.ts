@@ -62,6 +62,8 @@ export type Estimate = {
   status: EstimateStatus;
   createdAt: string;
   approvedAt?: string;
+  /** HubSpot 取引 ID（承認時に同期。Excel テンプレート C11 にも反映） */
+  hubspotDealId?: string;
 };
 
 export const MOCK_ESTIMATES: Estimate[] = [

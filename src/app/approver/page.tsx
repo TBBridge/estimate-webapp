@@ -8,7 +8,12 @@ import { useEstimates } from "@/hooks/use-estimates";
 import type { Estimate } from "@/lib/mock-data";
 import { DELIVERY_TYPES, CONTRACT_TYPES } from "@/lib/constants";
 import { mutate } from "swr";
-import { alertKintoneSalesSyncAfterApprove } from "@/lib/kintone-approve-feedback";
+import {
+  alertHubSpotSyncAfterApprove,
+  buildHubSpotDuplicateConfirmMessage,
+  getHubSpotDuplicateFromPayload,
+  HUBSPOT_DUPLICATE_CANCELLED,
+} from "@/lib/hubspot-approve-feedback";
 import {
   EstimateCaseDetailModal,
   apiJsonToEstimate,
@@ -46,17 +51,32 @@ export default function ApproverPage() {
     : estimates;
 
   async function handleAction(id: string, status: "approved" | "rejected") {
-    const res = await fetch(`/api/estimates/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
+    let confirmHubSpotDuplicate = false;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await fetch(`/api/estimates/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, confirmHubSpotDuplicate }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        await mutate(() => true, undefined, { revalidate: true });
+        return data;
+      }
+      if (res.status === 409) {
+        const dup = getHubSpotDuplicateFromPayload(data);
+        if (dup) {
+          const msg = buildHubSpotDuplicateConfirmMessage(locale, dup);
+          if (confirm(msg)) {
+            confirmHubSpotDuplicate = true;
+            continue;
+          }
+          throw new Error(HUBSPOT_DUPLICATE_CANCELLED);
+        }
+      }
       throw new Error(typeof data?.error === "string" ? data.error : `HTTP ${res.status}`);
     }
-    await mutate(() => true, undefined, { revalidate: true });
-    return data;
+    throw new Error(`HTTP retry exceeded`);
   }
 
   async function refreshEstimateInModal(id: string) {
@@ -144,8 +164,11 @@ export default function ApproverPage() {
                       ev.stopPropagation();
                       if (!confirm(l("admin.estimates.confirmApprove"))) return;
                       void handleAction(e.id, "approved")
-                        .then((payload) => alertKintoneSalesSyncAfterApprove(locale, "approved", payload))
-                        .catch((err) => alert(String(err)));
+                        .then((payload) => alertHubSpotSyncAfterApprove(locale, "approved", payload))
+                        .catch((err) => {
+                          const m = err instanceof Error ? err.message : String(err);
+                          if (m !== HUBSPOT_DUPLICATE_CANCELLED) alert(m);
+                        });
                     }}
                     className="rounded-lg bg-[var(--color-brand)] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90">
                     {l("admin.estimates.approve")}

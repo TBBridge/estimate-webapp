@@ -6,13 +6,12 @@ import type { Estimate } from "@/lib/mock-data";
 import { t } from "@/lib/translations";
 import type { Locale } from "@/lib/translations";
 
-type KintoneSalesClient =
+type HubSpotDealsClient =
   | { configured: false }
   | {
       configured: true;
       found: boolean;
-      recordId?: string;
-      rows: { label: string; value: string }[];
+      deals: Array<{ id: string; dealName: string; customerName?: string }>;
       error?: string;
     };
 
@@ -22,17 +21,17 @@ type Props = {
 };
 
 export function EstimateApplicationDetail({ estimate, locale }: Props) {
-  const [kintoneSales, setKintoneSales] = useState<KintoneSalesClient | null>(null);
+  const [hubspotDeals, setHubspotDeals] = useState<HubSpotDealsClient | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setKintoneSales(null);
+    setHubspotDeals(null);
     (async () => {
       try {
         const res = await fetch(
-          `/api/estimates/${estimate.id}?includeKintoneSales=1&locale=${locale}`
+          `/api/estimates/${estimate.id}?includeHubSpotDeals=1&locale=${locale}`
         );
-        let data: { kintoneSales?: KintoneSalesClient; error?: string } = {};
+        let data: { hubspotDeals?: HubSpotDealsClient; error?: string } = {};
         try {
           data = await res.json();
         } catch {
@@ -40,33 +39,25 @@ export function EstimateApplicationDetail({ estimate, locale }: Props) {
         }
         if (cancelled) return;
         if (!res.ok) {
-          setKintoneSales({
+          setHubspotDeals({
             configured: true,
             found: false,
-            rows: [],
+            deals: [],
             error: data.error ?? `HTTP ${res.status}`,
           });
           return;
         }
-        if (data.kintoneSales) setKintoneSales(data.kintoneSales);
+        if (data.hubspotDeals) setHubspotDeals(data.hubspotDeals);
+        else setHubspotDeals({ configured: false });
       } catch {
-        if (!cancelled) setKintoneSales({ configured: true, found: false, rows: [], error: "fetch failed" });
+        if (!cancelled)
+          setHubspotDeals({ configured: true, found: false, deals: [], error: "fetch failed" });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [
-    estimate.id,
-    locale,
-    estimate.customerName,
-    estimate.agencyName,
-    estimate.amount,
-    estimate.maintenanceFee,
-    estimate.formInputs,
-    estimate.excelUrl,
-    estimate.pdfUrl,
-  ]);
+  }, [estimate.id, locale, estimate.customerName]);
 
   const sections = buildEstimateApplicationSections(
     {
@@ -83,6 +74,8 @@ export function EstimateApplicationDetail({ estimate, locale }: Props) {
     },
     locale
   );
+
+  const linkedHubspotDealId = (estimate.hubspotDealId ?? "").trim();
 
   return (
     <div className="space-y-4">
@@ -118,37 +111,57 @@ export function EstimateApplicationDetail({ estimate, locale }: Props) {
         </div>
       ))}
 
-      {kintoneSales === null && (
-        <p className="font-body text-xs text-[var(--color-ink-muted)]">{t(locale, "admin.estimates.kintoneSalesLoading")}</p>
+      {hubspotDeals === null && (
+        <p className="font-body text-xs text-[var(--color-ink-muted)]">
+          {t(locale, "admin.estimates.hubspotDealsLoading")}
+        </p>
       )}
 
-      {kintoneSales && kintoneSales.configured && (
+      {hubspotDeals && hubspotDeals.configured && (
         <div>
           <h3 className="mb-2 font-body text-xs font-semibold uppercase tracking-wide text-[var(--color-ink-muted)]">
-            {t(locale, "admin.estimates.sectionKintoneSales")}
+            {t(locale, "admin.estimates.sectionHubSpotDeals")}
           </h3>
-          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5">
-            {kintoneSales.error ? (
-              <p className="font-body text-sm text-amber-800 dark:text-amber-200">{kintoneSales.error}</p>
-            ) : kintoneSales.found && kintoneSales.rows.length > 0 ? (
-              <div className="divide-y divide-[var(--color-border)]">
-                {kintoneSales.rows.map((r, j) => (
-                  <div
-                    key={j}
-                    className="flex flex-col gap-1 py-2 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
-                  >
-                    <span className="shrink-0 font-body text-xs text-[var(--color-ink-muted)] sm:max-w-[42%]">
-                      {r.label}
-                    </span>
-                    <span className="min-w-0 font-body text-sm text-[var(--color-ink)] whitespace-pre-wrap break-words sm:text-right">
-                      {r.value}
-                    </span>
-                  </div>
-                ))}
+          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 space-y-2">
+            {linkedHubspotDealId && (
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4 border-b border-[var(--color-border)] pb-2">
+                <span className="shrink-0 font-body text-xs text-[var(--color-ink-muted)] sm:max-w-[42%]">
+                  {t(locale, "admin.estimates.hubspotCurrentDealId")}
+                </span>
+                <span className="min-w-0 font-mono text-sm text-[var(--color-ink)] sm:text-right">
+                  {linkedHubspotDealId}
+                </span>
               </div>
+            )}
+
+            {hubspotDeals.error ? (
+              <p className="font-body text-sm text-amber-800 dark:text-amber-200">{hubspotDeals.error}</p>
+            ) : hubspotDeals.found && hubspotDeals.deals.length > 0 ? (
+              <>
+                <p className="font-body text-xs text-[var(--color-ink-muted)]">
+                  {t(locale, "admin.estimates.hubspotDealsFound", {
+                    count: String(hubspotDeals.deals.length),
+                  })}
+                </p>
+                <div className="divide-y divide-[var(--color-border)]">
+                  {hubspotDeals.deals.map((d) => (
+                    <div
+                      key={d.id}
+                      className="flex flex-col gap-1 py-2 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
+                    >
+                      <span className="shrink-0 font-mono text-xs text-[var(--color-ink-muted)] sm:max-w-[42%]">
+                        {t(locale, "admin.estimates.hubspotDealId")}: {d.id}
+                      </span>
+                      <span className="min-w-0 font-body text-sm text-[var(--color-ink)] whitespace-pre-wrap break-words sm:text-right">
+                        {d.dealName || d.customerName || "-"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
             ) : (
               <p className="font-body text-sm text-[var(--color-ink-muted)]">
-                {t(locale, "admin.estimates.kintoneSalesNoRecord")}
+                {t(locale, "admin.estimates.hubspotDealsNoDeal")}
               </p>
             )}
           </div>

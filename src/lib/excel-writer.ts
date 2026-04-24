@@ -8,6 +8,7 @@
  *   C7: 代理店種別（仕切り率 VLOOKUP のキー = 代理店名）
  *   C8: 本製品（i-Reporter 等）の仕切り率（小数 0〜1）
  *   C9: 保守の仕切り率（小数 0〜1）
+ *   C11: Hubspot NO（承認時に HubSpot 取引 ID を書き込む）
  *
  * オンプレ 新規（tpl-1）:
  *   C18: ライセンス数 / C21: オプション① / C24: オプション②
@@ -54,6 +55,8 @@ export interface WriteEstimateParams {
   productMarginRate?: number;
   /** 保守仕切り率 */
   maintenanceMarginRate?: number;
+  /** HubSpot 取引ID（C11 セル「Hubspot NO」。未設定なら書き込まない） */
+  hubspotNo?: string;
 }
 
 /** セルに値をセット（数式セルは result を上書き） */
@@ -120,7 +123,7 @@ function secondOptionFromForm(formInputs: Record<string, unknown>): string {
 export async function writeEstimateToTemplate(
   params: WriteEstimateParams
 ): Promise<Buffer> {
-  const { templateBuffer, agencyName, agencyType, customerName, deliveryType, contractType, cloudBilling, formInputs, createdAt, productMarginRate, maintenanceMarginRate } = params;
+  const { templateBuffer, agencyName, agencyType, customerName, deliveryType, contractType, cloudBilling, formInputs, createdAt, productMarginRate, maintenanceMarginRate, hubspotNo } = params;
 
   // stream.PassThrough 経由で読み込む（Vercel 環境で xlsx.load(Buffer) が不安定なため）
   const workbook = new ExcelJS.Workbook();
@@ -151,7 +154,10 @@ export async function writeEstimateToTemplate(
   if (maintenanceMarginRate != null && Number.isFinite(maintenanceMarginRate)) {
     setCell(sheet, "C9", maintenanceMarginRate);
   }
-  console.log(`[excel-writer] 共通: C3=${createdAt} C4=To:${agencyName} C5=For:${customerName} C7=${agencyType} C8=${productMarginRate ?? "-"} C9=${maintenanceMarginRate ?? "-"}`);
+  if (hubspotNo && String(hubspotNo).trim() !== "") {
+    setCell(sheet, "C11", String(hubspotNo).trim());
+  }
+  console.log(`[excel-writer] 共通: C3=${createdAt} C4=To:${agencyName} C5=For:${customerName} C7=${agencyType} C8=${productMarginRate ?? "-"} C9=${maintenanceMarginRate ?? "-"} C11=${hubspotNo ?? "-"}`);
   console.log(`[excel-writer] formInputs: ${JSON.stringify(formInputs)}`);
 
   // ── パターン別フィールド ────────────────────────────
@@ -231,5 +237,29 @@ export async function writeEstimateToTemplate(
 
   const buf = await workbook.xlsx.writeBuffer();
   console.log(`[excel-writer] 書き込み完了`);
+  return Buffer.from(buf);
+}
+
+/**
+ * 既存の Excel ファイルの「設定情報」シート C11 セルだけ HubSpot 取引 ID を書き込み、
+ * 上書き用の Buffer を返す。承認時に既存テンプレートを再利用するためのユーティリティ。
+ */
+export async function updateExcelHubSpotNo(
+  existingExcelBuffer: Buffer,
+  hubspotNo: string
+): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  const pass = new PassThrough();
+  const readPromise = workbook.xlsx.read(pass);
+  pass.end(existingExcelBuffer);
+  await readPromise;
+
+  const sheet = workbook.getWorksheet("設定情報");
+  if (!sheet) {
+    throw new Error("「設定情報」シートが見つかりません（HubSpot NO 書き込み）。");
+  }
+  setCell(sheet, "C11", String(hubspotNo).trim());
+
+  const buf = await workbook.xlsx.writeBuffer();
   return Buffer.from(buf);
 }

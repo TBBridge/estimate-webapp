@@ -115,6 +115,9 @@ export async function POST(req: Request) {
     const record = rows[0];
 
     // ── Excel 生成 & Blob 保存 ────────────────────────────
+    // HubSpot 連携は承認時（PUT /api/estimates/[id] status=approved）に行うため、
+    // submit 時点では C11 セル（Hubspot NO）は空のままとする
+    let hubspotDealId = "";
     let excelUrl = "";
 
     if (process.env.BLOB_READ_WRITE_TOKEN) {
@@ -168,6 +171,7 @@ export async function POST(req: Request) {
         return NextResponse.json({
           id: record.id, no: record.no, status: record.status,
           createdAt: record.created_at, excelUrl: "", pdfUrl: "",
+          hubspotDealId: hubspotDealId || undefined,
           excelError: errMsg,
         }, { status: 201 });
       }
@@ -199,6 +203,7 @@ export async function POST(req: Request) {
       createdAt: record.created_at,
       excelUrl,
       pdfUrl: "",
+      ...(hubspotDealId ? { hubspotDealId } : {}),
     }, { status: 201 });
 
   } catch (e) {

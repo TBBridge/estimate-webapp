@@ -6,7 +6,10 @@ import type { Estimate } from "@/lib/mock-data";
 import { t } from "@/lib/translations";
 import type { Locale } from "@/lib/translations";
 import { EstimateApplicationDetail } from "@/components/estimate-detail/estimate-application-detail";
-import { alertKintoneSalesSyncAfterApprove } from "@/lib/kintone-approve-feedback";
+import {
+  alertHubSpotSyncAfterApprove,
+  HUBSPOT_DUPLICATE_CANCELLED,
+} from "@/lib/hubspot-approve-feedback";
 import { FormFieldRenderer, type FormFieldValues } from "@/components/estimate-form/form-field-renderer";
 import {
   APPLICATION_DETAIL_EXTRA_FIELDS,
@@ -71,6 +74,7 @@ export function apiJsonToEstimate(d: Record<string, unknown>): Estimate {
     status: d.status as Estimate["status"],
     createdAt: String(d.createdAt),
     approvedAt: d.approvedAt ? String(d.approvedAt) : undefined,
+    hubspotDealId: d.hubspotDealId ? String(d.hubspotDealId) : undefined,
   };
 }
 
@@ -260,12 +264,20 @@ export function EstimateCaseDetailModal({
       status === "approved" ? l("admin.estimates.confirmApprove") : l("admin.estimates.confirmReject");
     if (!confirm(msg)) return;
     setActionLoading(status);
+    let cancelled = false;
     try {
       const payload = await onStatusChange(e.id, status);
-      alertKintoneSalesSyncAfterApprove(locale, status, payload);
+      alertHubSpotSyncAfterApprove(locale, status, payload);
+    } catch (err) {
+      const m = err instanceof Error ? err.message : String(err);
+      if (m === HUBSPOT_DUPLICATE_CANCELLED) {
+        cancelled = true;
+      } else {
+        alert(m);
+      }
     } finally {
       setActionLoading(null);
-      onClose();
+      if (!cancelled) onClose();
     }
   }
 

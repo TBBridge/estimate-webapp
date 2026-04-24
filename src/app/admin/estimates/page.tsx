@@ -12,6 +12,11 @@ import {
   EstimateCaseDetailModal,
   apiJsonToEstimate,
 } from "@/components/estimate-detail/estimate-case-detail-modal";
+import {
+  buildHubSpotDuplicateConfirmMessage,
+  getHubSpotDuplicateFromPayload,
+  HUBSPOT_DUPLICATE_CANCELLED,
+} from "@/lib/hubspot-approve-feedback";
 
 const STATUS_BADGE: Record<string, string> = {
   pending:  "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
@@ -106,17 +111,32 @@ export default function AdminEstimatesPage() {
   );
 
   async function handleStatusChange(id: string, status: "approved" | "rejected") {
-    const res = await fetch(`/api/estimates/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
+    let confirmHubSpotDuplicate = false;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await fetch(`/api/estimates/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, confirmHubSpotDuplicate }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        await mutate(() => true, undefined, { revalidate: true });
+        return data;
+      }
+      if (res.status === 409) {
+        const dup = getHubSpotDuplicateFromPayload(data);
+        if (dup) {
+          const msg = buildHubSpotDuplicateConfirmMessage(locale, dup);
+          if (confirm(msg)) {
+            confirmHubSpotDuplicate = true;
+            continue;
+          }
+          throw new Error(HUBSPOT_DUPLICATE_CANCELLED);
+        }
+      }
       throw new Error(typeof data?.error === "string" ? data.error : `HTTP ${res.status}`);
     }
-    await mutate(() => true, undefined, { revalidate: true });
-    return data;
+    throw new Error(`HTTP retry exceeded`);
   }
 
   async function refreshEstimateInModal(id: string) {

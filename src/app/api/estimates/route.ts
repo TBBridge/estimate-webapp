@@ -27,6 +27,7 @@ function mapEstimateListRow(r: Record<string, unknown>) {
     status: r.status,
     createdAt: r.created_at,
     approvedAt: r.approved_at ?? undefined,
+    hubspotDealId: String((r as { hubspot_deal_id?: string }).hubspot_deal_id ?? "") || undefined,
   };
 }
 
@@ -64,6 +65,7 @@ export async function GET(req: Request) {
                delivery_type, contract_type, cloud_billing, amount, maintenance_fee,
                approved_amount_at_approval, approved_maintenance_fee_at_approval,
                form_inputs, excel_url, excel_file_history, pdf_url, status,
+               COALESCE(hubspot_deal_id, '') AS hubspot_deal_id,
                TO_CHAR(created_at  AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS created_at,
                TO_CHAR(approved_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS approved_at
         FROM estimates
@@ -90,6 +92,7 @@ export async function GET(req: Request) {
              delivery_type, contract_type, cloud_billing, amount, maintenance_fee,
              approved_amount_at_approval, approved_maintenance_fee_at_approval,
              form_inputs, excel_url, excel_file_history, pdf_url, status,
+             COALESCE(hubspot_deal_id, '') AS hubspot_deal_id,
              TO_CHAR(created_at  AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS created_at,
              TO_CHAR(approved_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS approved_at
       FROM estimates
