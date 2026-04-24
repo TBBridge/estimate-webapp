@@ -5,6 +5,7 @@
  * 重複判定（いずれか）:
  *   - 単一プロパティ: HUBSPOT_MATCH_PROPERTY（HubSpot の内部名）と値は agency_id|正規化顧客名
  *   - AND 検索: HUBSPOT_MATCH_AGENCY_PROPERTY + HUBSPOT_MATCH_CUSTOMER_PROPERTY
+ *     （代理店プロパティが HubSpot の選択リストなら HUBSPOT_MATCH_AGENCY_SENDS=name。既定は name）
  *
  * 取引作成時は pipeline / dealstage が必要なため、未指定時は API で先頭パイプラインの先頭ステージを使用します。
  */
@@ -38,6 +39,12 @@ export type HubSpotConfig = {
     | HubSpotDedupeAnd
     | HubSpotDedupeCustomerOnly
     | { kind: "none" };
+  /**
+   * AND 照合時、HUBSPOT_MATCH_AGENCY_PROPERTY に入れる値。
+   * `name` = 見積の代理店名（HubSpot の選択リストと一致させる）。ドロップダウン型がほぼこちら。
+   * `id` = DB の agency_id（UUID）。単一行テキストで ID を保存している場合のみ。
+   */
+  agencyMatchSends: "id" | "name";
   pipelineId?: string;
   dealStageId?: string;
   /** 作成時にコピーする任意プロパティ internalName → 固定値またはテンプレート */
@@ -79,6 +86,10 @@ export function getHubSpotConfig(): HubSpotConfig | null {
   const pipelineId = process.env.HUBSPOT_PIPELINE_ID?.trim() || undefined;
   const dealStageId = process.env.HUBSPOT_DEAL_STAGE_ID?.trim() || undefined;
 
+  const agencySendsRaw = (process.env.HUBSPOT_MATCH_AGENCY_SENDS?.trim().toLowerCase() ?? "") as string;
+  const agencyMatchSends: "id" | "name" =
+    agencySendsRaw === "id" || agencySendsRaw === "uuid" ? "id" : "name";
+
   const extra: Record<string, string> = {};
   const extraJson = process.env.HUBSPOT_CREATE_PROPERTIES_JSON?.trim();
   if (extraJson) {
@@ -94,6 +105,7 @@ export function getHubSpotConfig(): HubSpotConfig | null {
     accessToken,
     apiBase,
     dedupe,
+    agencyMatchSends,
     pipelineId,
     dealStageId,
     extraCreateProperties: Object.keys(extra).length ? extra : undefined,

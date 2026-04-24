@@ -7,6 +7,13 @@ import { buildHubSpotSingleMatchValue } from "@/lib/hubspot-env";
 
 const USER_AGENT = "estimate-webapp/hubspot-deals";
 
+/** AND モードの代理店プロパティに送る値（HubSpot が UUID 用テキストか代理店名ドロップダウンかで切替） */
+function agencyFieldValue(config: HubSpotConfig, input: { agencyId: string; agencyName: string }): string {
+  return config.agencyMatchSends === "name"
+    ? String(input.agencyName ?? "").trim()
+    : String(input.agencyId ?? "").trim();
+}
+
 type HubSpotSearchResult = {
   total?: number;
   results?: Array<{ id: string; properties?: Record<string, string | null> }>;
@@ -20,6 +27,33 @@ type HubSpotPipelineResponse = {
 };
 
 let cachedDefaultStage: { pipelineId: string; stageId: string } | null = null;
+
+type HubSpotErrorBody = {
+  message?: string;
+  correlationId?: string;
+  errors?: Array<{ message?: string; context?: Record<string, unknown> }>;
+};
+
+function formatHubSpotErrorBody(status: number, text: string): string {
+  let detail = text.slice(0, 2000);
+  try {
+    const j = JSON.parse(text) as HubSpotErrorBody;
+    if (j.message) detail = j.message;
+    if (j.errors?.length) {
+      const parts = j.errors
+        .map((e) => {
+          const ctx = e.context ? ` ${JSON.stringify(e.context)}` : "";
+          return e.message ? `${e.message}${ctx}` : ctx.trim() || JSON.stringify(e);
+        })
+        .filter(Boolean);
+      if (parts.length) detail = `${detail} — ${parts.join(" | ")}`;
+    }
+    if (j.correlationId) detail = `${detail} [correlationId: ${j.correlationId}]`;
+  } catch {
+    /* raw text */
+  }
+  return `HubSpot API ${status}: ${detail}`;
+}
 
 async function hubspotFetchJson<T>(
   config: HubSpotConfig,
@@ -40,21 +74,14 @@ async function hubspotFetchJson<T>(
   });
   const text = await res.text();
   if (!res.ok) {
-    let detail = text;
-    try {
-      const j = JSON.parse(text) as { message?: string };
-      if (j.message) detail = j.message;
-    } catch {
-      /* ignore */
-    }
-    throw new Error(`HubSpot API ${res.status}: ${detail}`);
+    throw new Error(formatHubSpotErrorBody(res.status, text));
   }
   return (text ? JSON.parse(text) : {}) as T;
 }
 
 function buildSearchBody(
   config: HubSpotConfig,
-  input: { agencyId: string; customerName: string }
+  input: { agencyId: string; agencyName: string; customerName: string }
 ): { filterGroups: Array<{ filters: Array<Record<string, string>> }>; limit: number; properties: string[] } {
   const { dedupe } = config;
   const props = new Set<string>(["dealname", "pipeline", "dealstage"]);
@@ -82,7 +109,11 @@ function buildSearchBody(
       filterGroups: [
         {
           filters: [
-            { propertyName: dedupe.agencyProperty, operator: "EQ", value: input.agencyId },
+            {
+              propertyName: dedupe.agencyProperty,
+              operator: "EQ",
+              value: agencyFieldValue(config, { agencyId: input.agencyId, agencyName: input.agencyName }),
+            },
             { propertyName: dedupe.customerProperty, operator: "EQ", value: input.customerName.trim() },
           ],
         },
@@ -171,6 +202,7 @@ export async function findOrCreateDeal(
   try {
     const searchBody = buildSearchBody(config, {
       agencyId: input.agencyId,
+      agencyName: input.agencyName,
       customerName: input.customerName,
     });
     const searched = await hubspotFetchJson<HubSpotSearchResult>(
@@ -200,7 +232,10 @@ export async function findOrCreateDeal(
         input.customerName
       );
     } else if (dedupe.kind === "and") {
-      properties[dedupe.agencyProperty] = input.agencyId;
+      properties[dedupe.agencyProperty] = agencyFieldValue(config, {
+        agencyId: input.agencyId,
+        agencyName: input.agencyName,
+      });
       properties[dedupe.customerProperty] = input.customerName.trim();
     } else if (dedupe.kind === "customer") {
       properties[dedupe.customerProperty] = input.customerName.trim();
@@ -345,7 +380,10 @@ export async function createDealByCompanyName(
     if (dedupe.kind === "single") {
       properties[dedupe.property] = buildHubSpotSingleMatchValue(input.agencyId, customerName);
     } else if (dedupe.kind === "and") {
-      properties[dedupe.agencyProperty] = input.agencyId;
+      properties[dedupe.agencyProperty] = agencyFieldValue(config, {
+        agencyId: input.agencyId,
+        agencyName: input.agencyName,
+      });
       properties[dedupe.customerProperty] = customerName;
     } else if (dedupe.kind === "customer") {
       properties[dedupe.customerProperty] = customerName;
