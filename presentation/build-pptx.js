@@ -43,7 +43,7 @@ async function main() {
   // Slide 3: Architecture
   let s3 = pptx.addSlide();
   s3.addText("システム全体像（アーキテクチャ）", { x: 0.5, y: 0.4, w: 6, h: 0.5, fontSize: 24, bold: true, color: "2d3748" });
-  s3.addText("• インフラ：Vercel（サーバーレス）\n• フロント／バック：Next.js 15 / React 19 / TypeScript\n• データベース：Neon Postgres\n• ファイル：Vercel Blob（テンプレート・生成Excel/PDF）\n• 外部API：ConvertAPI（Excel→PDF変換）\n• ソース管理：GitHub", { x: 0.5, y: 1, w: 6, h: 2.8, fontSize: 12, color: "4a5568", bullet: true });
+  s3.addText("• インフラ：Vercel（サーバーレス）\n• フロント／バック：Next.js 15 / React 19 / TypeScript\n• データベース：Neon Postgres\n• ファイル：Vercel Blob（テンプレート・生成Excel/PDF）\n• 外部API：CloudConvert（Excel→PDF変換）\n• ソース管理：GitHub", { x: 0.5, y: 1, w: 6, h: 2.8, fontSize: 12, color: "4a5568", bullet: true });
   s3.addImage({ path: imgPath("slide03-architecture.png"), x: 7, y: 1.2, w: 2.5, h: 3.2 });
 
   // Slide 4: Roles
@@ -82,7 +82,7 @@ async function main() {
   s8.addText("コア機能② Excel自動入力とPDF生成", { x: 0.5, y: 0.4, w: 6, h: 0.5, fontSize: 24, bold: true, color: "2d3748" });
   s8.addText("Excel自動入力 (ExcelJS)", { x: 0.5, y: 0.95, w: 6, h: 0.3, fontSize: 12, bold: true, color: "4a5568" });
   s8.addText("• 「設定情報」シートに顧客名・ライセンス数・代理店種別を書き込み\n• Excel側のVLOOKUP・計算式をそのまま活用", { x: 0.5, y: 1.25, w: 6, h: 0.9, fontSize: 11, color: "4a5568", bullet: true });
-  s8.addText("高精度PDF変換 (ConvertAPI)", { x: 0.5, y: 2.25, w: 6, h: 0.3, fontSize: 12, bold: true, color: "4a5568" });
+  s8.addText("高精度PDF変換 (CloudConvert)", { x: 0.5, y: 2.25, w: 6, h: 0.3, fontSize: 12, bold: true, color: "4a5568" });
   s8.addText("• 「表紙」「ライセンス」「保守料」の3シートのみPDF化\n• 設定情報シートは veryHidden にし、数式参照を維持したまま変換対象から除外", { x: 0.5, y: 2.55, w: 6, h: 1, fontSize: 11, color: "4a5568", bullet: true });
   s8.addImage({ path: imgPath("slide08-excel-pdf.png"), x: 7, y: 1.2, w: 2.5, h: 3.2 });
 

@@ -7,7 +7,12 @@
  *   - AND 検索: HUBSPOT_MATCH_AGENCY_PROPERTY + HUBSPOT_MATCH_CUSTOMER_PROPERTY
  *     （代理店プロパティが HubSpot の選択リストなら HUBSPOT_MATCH_AGENCY_SENDS=name。既定は name）
  *
- * 取引作成時は pipeline / dealstage が必要なため、未指定時は API で先頭パイプラインの先頭ステージを使用します。
+ * 取引作成時のパイプライン／ステージ:
+ *   - HUBSPOT_PIPELINE_ID + HUBSPOT_DEAL_STAGE_ID が最優先
+ *   - 次に HUBSPOT_PIPELINE_LABEL + HUBSPOT_DEAL_STAGE_LABEL（HubSpot 画面のパイプライン名・ステージ名と完全一致）
+ *   - いずれも無ければ API で先頭パイプラインの先頭ステージを使用
+ *
+ * 取引の必須カスタム項目は内部名を環境変数で指定（会社名・都道府県・商談区分・取引担当者など）
  */
 
 export type HubSpotDedupeSingle = {
@@ -47,6 +52,24 @@ export type HubSpotConfig = {
   agencyMatchSends: "id" | "name";
   pipelineId?: string;
   dealStageId?: string;
+  /** パイプラインの表示ラベル（GET /pipelines/deals の label と一致） */
+  pipelineLabel?: string;
+  /** ステージの表示ラベル（当該パイプライン内 stages[].label と一致） */
+  dealStageLabel?: string;
+  /** 取引プロパティ内部名: 会社名（値は顧客の会社名＝customer_name） */
+  dealCompanyProperty?: string;
+  /** 取引プロパティ内部名: 都道府県 */
+  dealPrefectureProperty?: string;
+  /** 都道府県にセットする値（既定「海外」） */
+  dealPrefectureValue: string;
+  /** hubspot_owner_id（数値の文字列）。優先 */
+  dealOwnerId?: string;
+  /** 未設定時、Owners API で氏名が一致するユーザーを検索（例: YONGHU LU） */
+  dealOwnerSearchName?: string;
+  /** 取引プロパティ内部名: 商談区分（値は契約形態の日本語ラベル：新規／ライセンス追加／オプション追加） */
+  dealNegotiationProperty?: string;
+  /** true のとき取引名に見積番号を付与（既定 false＝会社名のみ） */
+  dealNameIncludeEstimateNo: boolean;
   /** 作成時にコピーする任意プロパティ internalName → 固定値またはテンプレート */
   extraCreateProperties?: Record<string, string>;
 };
@@ -85,6 +108,17 @@ export function getHubSpotConfig(): HubSpotConfig | null {
 
   const pipelineId = process.env.HUBSPOT_PIPELINE_ID?.trim() || undefined;
   const dealStageId = process.env.HUBSPOT_DEAL_STAGE_ID?.trim() || undefined;
+  const pipelineLabel = process.env.HUBSPOT_PIPELINE_LABEL?.trim() || undefined;
+  const dealStageLabel = process.env.HUBSPOT_DEAL_STAGE_LABEL?.trim() || undefined;
+
+  const dealCompanyProperty = process.env.HUBSPOT_DEAL_PROPERTY_COMPANY_NAME?.trim() || undefined;
+  const dealPrefectureProperty = process.env.HUBSPOT_DEAL_PROPERTY_PREFECTURE?.trim() || undefined;
+  const dealPrefectureValue =
+    process.env.HUBSPOT_DEAL_PREFECTURE_VALUE?.trim() || "海外";
+  const dealOwnerId = process.env.HUBSPOT_DEAL_OWNER_ID?.trim() || undefined;
+  const dealOwnerSearchName = process.env.HUBSPOT_DEAL_OWNER_SEARCH_NAME?.trim() || undefined;
+  const dealNegotiationProperty = process.env.HUBSPOT_DEAL_PROPERTY_NEGOTIATION?.trim() || undefined;
+  const dealNameIncludeEstimateNo = process.env.HUBSPOT_DEAL_NAME_INCLUDE_ESTIMATE_NO === "true";
 
   const agencySendsRaw = (process.env.HUBSPOT_MATCH_AGENCY_SENDS?.trim().toLowerCase() ?? "") as string;
   const agencyMatchSends: "id" | "name" =
@@ -108,6 +142,15 @@ export function getHubSpotConfig(): HubSpotConfig | null {
     agencyMatchSends,
     pipelineId,
     dealStageId,
+    pipelineLabel,
+    dealStageLabel,
+    dealCompanyProperty,
+    dealPrefectureProperty,
+    dealPrefectureValue,
+    dealOwnerId,
+    dealOwnerSearchName,
+    dealNegotiationProperty,
+    dealNameIncludeEstimateNo,
     extraCreateProperties: Object.keys(extra).length ? extra : undefined,
   };
 }

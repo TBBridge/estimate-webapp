@@ -2,10 +2,23 @@
  * HubSpot CRM API v3 — 取引の検索（POST /crm/v3/objects/deals/search）と作成（POST /crm/v3/objects/deals）
  */
 
+import { CONTRACT_TYPES } from "@/lib/constants";
 import type { HubSpotConfig } from "@/lib/hubspot-env";
 import { buildHubSpotSingleMatchValue } from "@/lib/hubspot-env";
 
 const USER_AGENT = "estimate-webapp/hubspot-deals";
+
+function contractTypeLabelJa(raw: string): string {
+  return CONTRACT_TYPES.find((c) => c.value === raw)?.labelJa ?? raw;
+}
+
+function buildDealName(config: HubSpotConfig, customerName: string, estimateNo?: string): string {
+  const name = customerName.trim();
+  if (config.dealNameIncludeEstimateNo && estimateNo?.trim()) {
+    return `${estimateNo.trim()} ${name}`.slice(0, 500);
+  }
+  return name.slice(0, 500);
+}
 
 /** AND モードの代理店プロパティに送る値（HubSpot が UUID 用テキストか代理店名ドロップダウンかで切替） */
 function agencyFieldValue(config: HubSpotConfig, input: { agencyId: string; agencyName: string }): string {
@@ -19,11 +32,11 @@ type HubSpotSearchResult = {
   results?: Array<{ id: string; properties?: Record<string, string | null> }>;
 };
 
-type HubSpotPipelineResponse = {
-  results: Array<{
-    id: string;
-    stages: Array<{ id: string; displayOrder: number }>;
-  }>;
+type HubSpotPipelineItem = {
+  id: string;
+  label: string;
+  displayOrder?: number;
+  stages: Array<{ id: string; label: string; displayOrder: number }>;
 };
 
 let cachedDefaultStage: { pipelineId: string; stageId: string } | null = null;
@@ -152,25 +165,46 @@ function buildSearchBody(
   };
 }
 
+async function fetchDealPipelines(config: HubSpotConfig): Promise<HubSpotPipelineItem[]> {
+  const data = await hubspotFetchJson<{ results: HubSpotPipelineItem[] }>(
+    config,
+    "GET",
+    "/crm/v3/pipelines/deals"
+  );
+  return data.results ?? [];
+}
+
 async function resolvePipelineAndStage(
   config: HubSpotConfig
 ): Promise<{ pipelineId: string; stageId: string }> {
   if (config.pipelineId && config.dealStageId) {
     return { pipelineId: config.pipelineId, stageId: config.dealStageId };
   }
+
+  const pipelines = await fetchDealPipelines(config);
+  const pipeLabel = config.pipelineLabel?.trim();
+  const stageLabel = config.dealStageLabel?.trim();
+
+  if (pipeLabel && stageLabel) {
+    const pl = pipelines.find((p) => p.label === pipeLabel);
+    if (!pl) {
+      throw new Error(
+        `HubSpot にパイプライン「${pipeLabel}」がありません。HUBSPOT_PIPELINE_LABEL / HUBSPOT_PIPELINE_ID を確認してください。`
+      );
+    }
+    const st = pl.stages.find((s) => s.label === stageLabel);
+    if (!st) {
+      throw new Error(
+        `パイプライン「${pipeLabel}」にステージ「${stageLabel}」がありません。HUBSPOT_DEAL_STAGE_LABEL / HUBSPOT_DEAL_STAGE_ID を確認してください。`
+      );
+    }
+    return { pipelineId: pl.id, stageId: st.id };
+  }
+
   if (cachedDefaultStage) return cachedDefaultStage;
 
-  const data = await hubspotFetchJson<HubSpotPipelineResponse>(
-    config,
-    "GET",
-    "/crm/v3/pipelines/deals"
-  );
-  const pipelines = [...(data.results ?? [])].sort((a, b) => {
-    const ao = (a as { displayOrder?: number }).displayOrder ?? 0;
-    const bo = (b as { displayOrder?: number }).displayOrder ?? 0;
-    return ao - bo;
-  });
-  const p = pipelines[0];
+  const sorted = [...pipelines].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+  const p = sorted[0];
   if (!p?.stages?.length) {
     throw new Error("HubSpot に取引パイプラインまたはステージがありません。");
   }
@@ -180,12 +214,80 @@ async function resolvePipelineAndStage(
   return cachedDefaultStage;
 }
 
+async function resolveDealOwnerId(config: HubSpotConfig): Promise<string | undefined> {
+  if (config.dealOwnerId?.trim()) return config.dealOwnerId.trim();
+  const search = config.dealOwnerSearchName?.trim();
+  if (!search) return undefined;
+  const normalized = search.toLowerCase().replace(/\s+/g, " ").trim();
+  const data = await hubspotFetchJson<{
+    results?: Array<{ id: string | number; firstName?: string; lastName?: string }>;
+  }>(config, "GET", "/crm/v3/owners?limit=500");
+  for (const o of data.results ?? []) {
+    const full = `${o.firstName ?? ""} ${o.lastName ?? ""}`
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+    if (full === normalized) return String(o.id);
+  }
+  console.warn(
+    `[hubspot] 取引担当者「${search}」に一致する Owner が見つかりません。HUBSPOT_DEAL_OWNER_ID を直接指定するか、Private App に crm.objects.owners.read を付与してください。`
+  );
+  return undefined;
+}
+
+/** テンプレ JSON のあと、会社名・都道府県・担当・商談区分を上書き設定 */
+async function applyDealRequiredAndExtraFields(
+  config: HubSpotConfig,
+  properties: Record<string, string>,
+  input: {
+    agencyId: string;
+    agencyName: string;
+    customerName: string;
+    estimateNo?: string;
+    contractType?: string;
+  }
+): Promise<void> {
+  const customerName = String(input.customerName ?? "").trim();
+  const contractLabel =
+    input.contractType != null && input.contractType !== ""
+      ? contractTypeLabelJa(input.contractType)
+      : "";
+
+  if (config.extraCreateProperties) {
+    for (const [k, v] of Object.entries(config.extraCreateProperties)) {
+      properties[k] = v
+        .replace(/\{\{estimate_no\}\}/g, input.estimateNo ?? "")
+        .replace(/\{\{customer_name\}\}/g, customerName)
+        .replace(/\{\{agency_id\}\}/g, input.agencyId)
+        .replace(/\{\{agency_name\}\}/g, input.agencyName.trim())
+        .replace(/\{\{contract_type\}\}/g, input.contractType ?? "")
+        .replace(/\{\{contract_type_label\}\}/g, contractLabel);
+    }
+  }
+
+  if (config.dealCompanyProperty) {
+    properties[config.dealCompanyProperty] = customerName;
+  }
+  if (config.dealPrefectureProperty) {
+    properties[config.dealPrefectureProperty] = config.dealPrefectureValue;
+  }
+  const ownerId = await resolveDealOwnerId(config);
+  if (ownerId) {
+    properties.hubspot_owner_id = ownerId;
+  }
+  if (config.dealNegotiationProperty && input.contractType) {
+    properties[config.dealNegotiationProperty] = contractTypeLabelJa(input.contractType);
+  }
+}
+
 export type FindOrCreateDealInput = {
   agencyId: string;
   agencyName: string;
   customerName: string;
   /** 見積番号（取引名に使用） */
   estimateNo: string;
+  /** 商談区分などに使う契約形態（DB の contract_type） */
+  contractType?: string;
 };
 
 export type FindOrCreateDealResult =
@@ -217,7 +319,7 @@ export async function findOrCreateDeal(
     }
 
     const { pipelineId, stageId } = await resolvePipelineAndStage(config);
-    const dealName = `${input.estimateNo} ${input.customerName.trim()}`.slice(0, 500);
+    const dealName = buildDealName(config, input.customerName, input.estimateNo);
 
     const properties: Record<string, string> = {
       dealname: dealName,
@@ -242,15 +344,13 @@ export async function findOrCreateDeal(
     }
     // dedupe.kind === "none" のときは追加プロパティなし（dealname のみ）
 
-    if (config.extraCreateProperties) {
-      for (const [k, v] of Object.entries(config.extraCreateProperties)) {
-        properties[k] = v
-          .replace(/\{\{estimate_no\}\}/g, input.estimateNo)
-          .replace(/\{\{customer_name\}\}/g, input.customerName.trim())
-          .replace(/\{\{agency_id\}\}/g, input.agencyId)
-          .replace(/\{\{agency_name\}\}/g, input.agencyName.trim());
-      }
-    }
+    await applyDealRequiredAndExtraFields(config, properties, {
+      agencyId: input.agencyId,
+      agencyName: input.agencyName,
+      customerName: input.customerName,
+      estimateNo: input.estimateNo,
+      contractType: input.contractType,
+    });
 
     const created = await hubspotFetchJson<{ id: string }>(
       config,
@@ -349,7 +449,9 @@ export type CreateDealByCompanyInput = {
   agencyId: string;
   agencyName: string;
   customerName: string;
-  /** 取引名に使う見積番号（無ければ会社名のみで取引名にする） */
+  /** DB の contract_type（商談区分に日本語ラベルを設定） */
+  contractType: string;
+  /** 取引名に使う見積番号（HUBSPOT_DEAL_NAME_INCLUDE_ESTIMATE_NO=true のときのみ付与） */
   estimateNo?: string;
 };
 
@@ -365,10 +467,7 @@ export async function createDealByCompanyName(
     }
 
     const { pipelineId, stageId } = await resolvePipelineAndStage(config);
-    const dealName = (input.estimateNo
-      ? `${input.estimateNo} ${customerName}`
-      : customerName
-    ).slice(0, 500);
+    const dealName = buildDealName(config, customerName, input.estimateNo);
 
     const properties: Record<string, string> = {
       dealname: dealName,
@@ -389,15 +488,13 @@ export async function createDealByCompanyName(
       properties[dedupe.customerProperty] = customerName;
     }
 
-    if (config.extraCreateProperties) {
-      for (const [k, v] of Object.entries(config.extraCreateProperties)) {
-        properties[k] = v
-          .replace(/\{\{estimate_no\}\}/g, input.estimateNo ?? "")
-          .replace(/\{\{customer_name\}\}/g, customerName)
-          .replace(/\{\{agency_id\}\}/g, input.agencyId)
-          .replace(/\{\{agency_name\}\}/g, input.agencyName.trim());
-      }
-    }
+    await applyDealRequiredAndExtraFields(config, properties, {
+      agencyId: input.agencyId,
+      agencyName: input.agencyName,
+      customerName,
+      estimateNo: input.estimateNo,
+      contractType: input.contractType,
+    });
 
     const created = await hubspotFetchJson<{ id: string }>(
       config,

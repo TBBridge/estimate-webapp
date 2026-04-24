@@ -5,10 +5,11 @@
  * 1. 自動入力済み Excel をコピーして PDF 用の一時ワークブックとする
  * 2. 一時ワークブックを開き、編集ロックがあれば解除する
  * 3. 「表紙」「ライセンス」「保守料」を visible、その他（設定情報など）を veryHidden に設定
- *    ※ 設定情報シートは数式参照元のため削除不可。非表示にすることで ConvertAPI の変換対象から除外する
+ *    ※ 設定情報シートは数式参照元のため削除不可。非表示にすることで変換エンジンの対象から除外する
  * 4. 表紙・ライセンス・保守料の3シートのみが PDF 化される
  *
- * 必須環境変数: CONVERTAPI_SECRET
+ * 変換: CloudConvert API v2（同期 Jobs: import/base64 → convert → export/url）
+ * 必須環境変数: CLOUDCONVERT_API_KEY（ダッシュボードで task.read / task.write を付与）
  */
 
 import ExcelJS from "exceljs";
@@ -16,6 +17,59 @@ import { PassThrough } from "stream";
 
 /** PDF に含める印刷対象シート名（この3シートのみ残し、他は削除） */
 const PRINT_SHEETS = ["表紙", "ライセンス", "保守料"];
+
+/** CloudConvert import/base64 は ~10MB 超で非推奨 */
+const CLOUDCONVERT_BASE64_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
+
+const DEFAULT_SYNC_JOBS_URL = "https://sync.api.cloudconvert.com/v2/jobs";
+
+type CloudConvertTask = {
+  name?: string;
+  operation?: string;
+  status?: string;
+  message?: string | null;
+  code?: string | null;
+  result?: { files?: Array<{ url?: string; filename?: string }> };
+};
+
+type CloudConvertJobData = {
+  status?: string;
+  tasks?: CloudConvertTask[];
+};
+
+function parseCloudConvertJob(text: string): CloudConvertJobData | null {
+  try {
+    const parsed = JSON.parse(text) as { data?: CloudConvertJobData } & CloudConvertJobData;
+    if (parsed.data && (parsed.data.status || parsed.data.tasks)) return parsed.data;
+    if (parsed.status || parsed.tasks) return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function formatCloudConvertFailure(resStatus: number, text: string): string {
+  const job = parseCloudConvertJob(text);
+  if (job?.tasks?.length) {
+    const errTasks = job.tasks.filter((t) => t.status === "error");
+    if (errTasks.length) {
+      return errTasks
+        .map((t) => `${t.operation ?? "?"}: ${t.message ?? t.code ?? "error"}`)
+        .join(" | ");
+    }
+  }
+  return text.slice(0, 500);
+}
+
+function findFinishedExportUrl(job: CloudConvertJobData): string | null {
+  for (const t of job.tasks ?? []) {
+    if (t.operation === "export/url" && t.status === "finished") {
+      const url = t.result?.files?.[0]?.url;
+      if (url) return url;
+    }
+  }
+  return null;
+}
 
 /**
  * stream.PassThrough 経由で ExcelJS にバッファを読み込む
@@ -37,8 +91,8 @@ async function loadWorkbook(buf: Buffer): Promise<ExcelJS.Workbook> {
  * - 印刷対象シート（表紙・ライセンス・保守料）を visible に設定
  * - 印刷対象外シート（設定情報など）を veryHidden に設定
  *   ※ 設定情報シートは数式参照元のため削除不可。非表示にすることで
- *     ConvertAPI の変換対象から除外しつつ、数式参照を維持する。
- * 返すバッファは ConvertAPI で PDF 化する用（設定情報は非表示として保持）
+ *     CloudConvert の変換対象から除外しつつ、数式参照を維持する。
+ * 返すバッファは CloudConvert で PDF 化する用（設定情報は非表示として保持）
  */
 async function prepareExcelForPdf(excelBuffer: Buffer): Promise<Buffer> {
   const workbook = await loadWorkbook(excelBuffer);
@@ -59,7 +113,7 @@ async function prepareExcelForPdf(excelBuffer: Buffer): Promise<Buffer> {
       // 印刷対象シートは必ず visible に
       ws.state = "visible";
     } else {
-      // 印刷対象外シートは veryHidden に（ConvertAPI が変換対象から除外）
+      // 印刷対象外シートは veryHidden に（変換時に対象外になりやすい）
       ws.state = "veryHidden";
     }
   }
@@ -71,57 +125,98 @@ async function prepareExcelForPdf(excelBuffer: Buffer): Promise<Buffer> {
   return Buffer.from(buf);
 }
 
-export async function convertExcelToPdf(excelBuffer: Buffer): Promise<Buffer> {
-  const secret = process.env.CONVERTAPI_SECRET;
-  if (!secret) {
+async function convertBufferWithCloudConvert(pdfReadyBuffer: Buffer): Promise<Buffer> {
+  const apiKey = process.env.CLOUDCONVERT_API_KEY?.trim();
+  if (!apiKey) {
     throw new Error(
-      "PDF生成には CONVERTAPI_SECRET 環境変数の設定が必要です。" +
-      "Vercel ダッシュボード → Settings → Environment Variables に CONVERTAPI_SECRET を追加してください。"
+      "PDF 生成には CLOUDCONVERT_API_KEY が必要です。" +
+        "CloudConvert ダッシュボードで API キーを作成し（task.read / task.write）、" +
+        "Vercel の Environment Variables に設定してください。"
     );
   }
 
-  // 自動入力済み Excel のコピー → 一時 PDF 用 Excel（3シートのみ）を生成
-  const pdfReadyBuffer = await prepareExcelForPdf(excelBuffer);
-
-  const arrayBuffer: ArrayBuffer = new Uint8Array(pdfReadyBuffer).buffer;
-  const blob = new Blob([arrayBuffer], {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  });
-
-  const formData = new FormData();
-  formData.append("File", blob, "estimate.xlsx");
-  formData.append("StoreFile", "true");
-
-  const res = await fetch(
-    `https://v2.convertapi.com/convert/xlsx/to/pdf`,
-    {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${secret}` },
-      body: formData,
-    }
-  );
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`ConvertAPI エラー ${res.status}: ${text.slice(0, 300)}`);
+  if (pdfReadyBuffer.length > CLOUDCONVERT_BASE64_IMPORT_MAX_BYTES) {
+    throw new Error(
+      `Excel が ${CLOUDCONVERT_BASE64_IMPORT_MAX_BYTES} バイトを超えています。` +
+        "CloudConvert の import/base64 は大きなファイル向けではないため、ファイルを分割するか縮小してください。"
+    );
   }
 
-  const json = await res.json() as {
-    Files?: { FileData?: string; Url?: string }[];
+  const syncUrl = (process.env.CLOUDCONVERT_SYNC_URL?.trim() || DEFAULT_SYNC_JOBS_URL).replace(/\/$/, "");
+  const engine = process.env.CLOUDCONVERT_EXCEL_ENGINE?.trim().toLowerCase();
+  /** office（既定）または libreoffice。空・auto なら engine 指定なし */
+  const useEngine =
+    engine === "" || engine === "auto" ? null : engine === "libreoffice" ? "libreoffice" : "office";
+
+  const base64 = pdfReadyBuffer.toString("base64");
+
+  const convertTask: Record<string, unknown> = {
+    operation: "convert",
+    input: "import_xlsx",
+    input_format: "xlsx",
+    output_format: "pdf",
+  };
+  if (useEngine) convertTask.engine = useEngine;
+
+  const body = {
+    tasks: {
+      import_xlsx: {
+        operation: "import/base64",
+        file: base64,
+        filename: "estimate.xlsx",
+      },
+      convert_pdf: convertTask,
+      export_url: {
+        operation: "export/url",
+        input: "convert_pdf",
+      },
+    },
+    tag: "estimate-webapp-excel-pdf",
   };
 
-  const file = json.Files?.[0];
-  if (!file) throw new Error("ConvertAPI: レスポンスにファイルが含まれていません");
+  const res = await fetch(syncUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  });
 
-  if (file.FileData) {
-    return Buffer.from(file.FileData, "base64");
+  const text = await res.text();
+  if (!res.ok) {
+    const detail = formatCloudConvertFailure(res.status, text);
+    throw new Error(`CloudConvert API ${res.status}: ${detail}`);
   }
 
-  if (file.Url) {
-    const dlRes = await fetch(file.Url);
-    if (!dlRes.ok) throw new Error(`ConvertAPI ダウンロードエラー: ${dlRes.status}`);
-    return Buffer.from(await dlRes.arrayBuffer());
+  const job = parseCloudConvertJob(text);
+  if (!job) {
+    throw new Error(`CloudConvert: 想定外の応答です: ${text.slice(0, 400)}`);
   }
 
-  throw new Error("ConvertAPI: PDF データを取得できませんでした");
+  if (job.status === "error") {
+    const detail = formatCloudConvertFailure(res.status, text);
+    throw new Error(`CloudConvert ジョブエラー: ${detail}`);
+  }
+
+  if (job.status !== "finished") {
+    throw new Error(`CloudConvert: ジョブが完了しませんでした (status=${job.status ?? "?"})`);
+  }
+
+  const fileUrl = findFinishedExportUrl(job);
+  if (!fileUrl) {
+    throw new Error("CloudConvert: export/url にダウンロード URL がありません");
+  }
+
+  const dlRes = await fetch(fileUrl);
+  if (!dlRes.ok) {
+    throw new Error(`CloudConvert PDF ダウンロード失敗: HTTP ${dlRes.status}`);
+  }
+  return Buffer.from(await dlRes.arrayBuffer());
+}
+
+export async function convertExcelToPdf(excelBuffer: Buffer): Promise<Buffer> {
+  const pdfReadyBuffer = await prepareExcelForPdf(excelBuffer);
+  return convertBufferWithCloudConvert(pdfReadyBuffer);
 }

@@ -303,6 +303,7 @@ export async function PUT(req: Request, { params }: Params) {
               agencyId: r.agency_id,
               agencyName: r.agency_name,
               customerName: r.customer_name,
+              contractType: r.contract_type,
               estimateNo: r.no,
             });
             if (!created.ok) {
