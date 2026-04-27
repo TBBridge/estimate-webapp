@@ -87,3 +87,16 @@ export function csvRowsToObjects(matrix: string[][]): Record<string, string>[] {
 export function parseCsv(text: string): Record<string, string>[] {
   return csvRowsToObjects(parseCsvRows(text));
 }
+
+/** RFC 4180 風: カンマ・改行・ダブルクォートを含むセルは引用し " をエスケープ */
+export function escapeCsvCell(s: string): string {
+  const t = String(s ?? "");
+  if (/[",\r\n]/.test(t)) {
+    return `"${t.replace(/"/g, '""')}"`;
+  }
+  return t;
+}
+
+export function buildCsv(rows: string[][]): string {
+  return rows.map((row) => row.map((c) => escapeCsvCell(c)).join(",")).join("\r\n");
+}

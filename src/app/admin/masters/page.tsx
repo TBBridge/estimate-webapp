@@ -704,9 +704,17 @@ function TemplateTab({ locale }: { locale: string }) {
   );
 }
 
-function MastersCsvImportBar({ kind }: { kind: "margin" | "maintenance" | "unitPrices" }) {
+function MastersCsvImportBar({
+  kind,
+  locale,
+}: {
+  kind: "margin" | "maintenance" | "unitPrices";
+  locale: "ja" | "en";
+}) {
+  const l = (k: string) => t(locale, k);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [downloadBusy, setDownloadBusy] = useState(false);
   const swrKey =
     kind === "margin"
       ? "/api/margin-rates"
@@ -744,6 +752,31 @@ function MastersCsvImportBar({ kind }: { kind: "margin" | "maintenance" | "unitP
     }
   };
 
+  const handleDownload = async () => {
+    setDownloadBusy(true);
+    setMsg("");
+    try {
+      const res = await fetch(`/api/masters/export-csv?kind=${encodeURIComponent(kind)}`);
+      if (!res.ok) {
+        setMsg(`HTTP ${res.status}`);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const base =
+        kind === "margin" ? "margin_rates" : kind === "maintenance" ? "maintenance_rates" : "unit_prices";
+      a.download = `${base}_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDownloadBusy(false);
+    }
+  };
+
   const hint =
     kind === "margin"
       ? "agency_id または agency_email, product_id, delivery_type, rate（0.7 または 70）"
@@ -754,6 +787,14 @@ function MastersCsvImportBar({ kind }: { kind: "margin" | "maintenance" | "unitP
   return (
     <div className="border-b border-stone-200/80 px-4 py-3 dark:border-stone-700/80">
       <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => void handleDownload()}
+          disabled={downloadBusy}
+          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 font-body text-xs text-[var(--color-ink)] hover:bg-[var(--color-surface-sub)] disabled:opacity-50"
+        >
+          {downloadBusy ? "…" : l("admin.masters.csvDownload")}
+        </button>
         <span className="font-body text-sm font-medium text-[var(--color-ink)]">CSVインポート</span>
         <label className="cursor-pointer rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 font-body text-xs text-[var(--color-ink)] hover:bg-[var(--color-surface-sub)]">
           {busy ? "処理中…" : "ファイル選択"}
@@ -803,19 +844,19 @@ export default function AdminMastersPage() {
       <div className="rounded-xl border border-stone-200/80 bg-[var(--color-surface-elevated)] shadow-sm dark:border-stone-700/80">
         {tab === "margin" && (
           <>
-            <MastersCsvImportBar kind="margin" />
+            <MastersCsvImportBar kind="margin" locale={locale} />
             <MarginGrid locale={locale} />
           </>
         )}
         {tab === "maintenance" && (
           <>
-            <MastersCsvImportBar kind="maintenance" />
+            <MastersCsvImportBar kind="maintenance" locale={locale} />
             <MaintenanceGrid locale={locale} />
           </>
         )}
         {tab === "unitPrice" && (
           <>
-            <MastersCsvImportBar kind="unitPrices" />
+            <MastersCsvImportBar kind="unitPrices" locale={locale} />
             <UnitPriceTab locale={locale} />
           </>
         )}

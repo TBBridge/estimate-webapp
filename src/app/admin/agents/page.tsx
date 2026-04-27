@@ -32,6 +32,7 @@ export default function AdminAgentsPage() {
   const [saveError, setSaveError] = useState("");
   const [importMsg, setImportMsg] = useState("");
   const [importBusy, setImportBusy] = useState(false);
+  const [downloadBusy, setDownloadBusy] = useState(false);
 
   type AgentSortKey = "name" | "agencyType" | "email" | "approverName" | "approverEmail" | "createdAt";
   const [sortKey, setSortKey] = useState<AgentSortKey>("createdAt");
@@ -126,6 +127,28 @@ export default function AdminAgentsPage() {
     }
   };
 
+  const handleDownloadCsv = async () => {
+    setDownloadBusy(true);
+    try {
+      const res = await fetch("/api/agencies/export-csv");
+      if (!res.ok) {
+        alert(`CSV ${t(locale, "admin.agents.csvDownload")}: HTTP ${res.status}`);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `agencies_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(String(err));
+    } finally {
+      setDownloadBusy(false);
+    }
+  };
+
   const handleCsvImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -174,6 +197,14 @@ export default function AdminAgentsPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void handleDownloadCsv()}
+            disabled={downloadBusy}
+            className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-4 py-2 font-body text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface-sub)] disabled:opacity-50"
+          >
+            {downloadBusy ? "…" : t(locale, "admin.agents.csvDownload")}
+          </button>
           <label className="cursor-pointer rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-4 py-2 font-body text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface-sub)]">
             {importBusy ? "…" : "CSVインポート"}
             <input
