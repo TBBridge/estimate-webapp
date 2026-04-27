@@ -1,10 +1,11 @@
 /**
- * GET   /api/estimates/[id]  — 見積詳細取得
- * PATCH /api/estimates/[id]  — 管理者・承認者向け: 顧客名・代理店名・金額・form_inputs の更新
- * PUT   /api/estimates/[id]  — ステータス更新（approved / rejected）
+ * GET    /api/estimates/[id]  — 見積詳細取得
+ * PATCH  /api/estimates/[id]  — 管理者・承認者向け: 顧客名・代理店名・金額・form_inputs の更新
+ * PUT    /api/estimates/[id]  — ステータス更新（approved / rejected）
+ * DELETE /api/estimates/[id]  — 見積削除
  */
 import { NextResponse } from "next/server";
-import { put } from "@vercel/blob";
+import { put, del } from "@vercel/blob";
 import { getDb } from "@/lib/db";
 import { fetchHubSpotDealsPreviewForCustomer, type HubSpotDealsPreviewPayload } from "@/lib/hubspot-deals-preview";
 import { getHubSpotConfig } from "@/lib/hubspot-env";
@@ -432,6 +433,50 @@ export async function PUT(req: Request, { params }: Params) {
     });
   } catch (e) {
     console.error("[estimates/id PUT]", e);
+    return NextResponse.json({ error: String(e) }, { status: 500 });
+  }
+}
+
+export async function DELETE(_req: Request, { params }: Params) {
+  try {
+    const sql = getDb();
+    const { id } = await params;
+
+    const rows = await sql`
+      SELECT id, excel_url, pdf_url, excel_file_history
+      FROM estimates WHERE id = ${id}
+    `;
+    if (rows.length === 0) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    const est = rows[0] as {
+      id: string;
+      excel_url: string;
+      pdf_url: string;
+      excel_file_history: unknown;
+    };
+
+    const blobUrls: string[] = [];
+    if (est.excel_url) blobUrls.push(est.excel_url);
+    if (est.pdf_url) blobUrls.push(est.pdf_url);
+    const history = parseExcelFileHistory(est.excel_file_history);
+    for (const h of history) {
+      if (h.url) blobUrls.push(h.url);
+    }
+
+    await sql`DELETE FROM estimates WHERE id = ${id}`;
+
+    if (blobUrls.length > 0 && process.env.BLOB_READ_WRITE_TOKEN) {
+      try {
+        await del(blobUrls);
+      } catch (blobErr) {
+        console.error("[estimates/id DELETE] Blob 削除失敗（DB は削除済み）:", blobErr);
+      }
+    }
+
+    return new NextResponse(null, { status: 204 });
+  } catch (e) {
+    console.error("[estimates/id DELETE]", e);
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }
 }

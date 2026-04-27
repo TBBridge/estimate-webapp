@@ -155,6 +155,21 @@ export default function AdminEstimatesPage() {
     throw new Error(`HTTP retry exceeded`);
   }
 
+  async function handleDeleteEstimate(id: string) {
+    if (!confirm(l("admin.estimates.confirmDelete"))) return;
+    try {
+      const res = await fetch(`/api/estimates/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(typeof data?.error === "string" ? data.error : l("admin.estimates.deleteFailed"));
+        return;
+      }
+      await mutate(() => true, undefined, { revalidate: true });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : l("admin.estimates.deleteFailed"));
+    }
+  }
+
   async function refreshEstimateInModal(id: string) {
     const res = await fetch(`/api/estimates/${id}`);
     const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
@@ -254,11 +269,18 @@ export default function AdminEstimatesPage() {
                 </td>
                 <td className="px-4 py-3 text-[var(--color-ink-muted)]">{e.createdAt}</td>
                 <td className="px-4 py-3">
-                  <button type="button"
-                    onClick={(ev) => { ev.stopPropagation(); setSelectedEstimate(e); }}
-                    className="rounded-lg border border-[var(--color-border)] px-3 py-1 text-xs text-[var(--color-ink-muted)] hover:bg-[var(--color-surface-sub)]">
-                    {l("admin.estimates.detail")}
-                  </button>
+                  <div className="flex gap-2">
+                    <button type="button"
+                      onClick={(ev) => { ev.stopPropagation(); setSelectedEstimate(e); }}
+                      className="rounded-lg border border-[var(--color-border)] px-3 py-1 text-xs text-[var(--color-ink-muted)] hover:bg-[var(--color-surface-sub)]">
+                      {l("admin.estimates.detail")}
+                    </button>
+                    <button type="button"
+                      onClick={(ev) => { ev.stopPropagation(); void handleDeleteEstimate(e.id); }}
+                      className="rounded-lg border border-red-300 px-3 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-950/30">
+                      {l("admin.estimates.delete")}
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
