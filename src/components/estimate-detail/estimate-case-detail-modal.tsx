@@ -113,6 +113,9 @@ export function EstimateCaseDetailModal({
     error?: string;
   }>({ url: pdfFromRow || undefined, generating: false });
 
+  /** 承認・差戻に必要（API も同条件） */
+  const hasPdfReady = Boolean((pdfState.url || pdfFromRow || "").toString().trim());
+
   const [excelBusy, setExcelBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -260,11 +263,16 @@ export function EstimateCaseDetailModal({
 
   async function handleAction(status: "approved" | "rejected") {
     if (!onStatusChange) return;
+    if (!hasPdfReady) {
+      alert(l("admin.estimates.pdfRequiredBeforeAction"));
+      return;
+    }
     const msg =
       status === "approved" ? l("admin.estimates.confirmApprove") : l("admin.estimates.confirmReject");
     if (!confirm(msg)) return;
     setActionLoading(status);
     let cancelled = false;
+    let hadError = false;
     try {
       const payload = await onStatusChange(e.id, status);
       alertHubSpotSyncAfterApprove(locale, status, payload);
@@ -273,11 +281,12 @@ export function EstimateCaseDetailModal({
       if (m === HUBSPOT_DUPLICATE_CANCELLED) {
         cancelled = true;
       } else {
+        hadError = true;
         alert(m);
       }
     } finally {
       setActionLoading(null);
-      if (!cancelled) onClose();
+      if (!cancelled && !hadError) onClose();
     }
   }
 
@@ -610,23 +619,36 @@ export function EstimateCaseDetailModal({
             {l("admin.estimates.closeModal")}
           </button>
           {onStatusChange && e.status === "pending" && (
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => void handleAction("rejected")}
-                disabled={savingEdit || excelBusy || pdfState.generating || actionLoading !== null}
-                className="rounded-lg border border-red-300 px-4 py-2 font-body text-sm text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-950/30"
-              >
-                {actionLoading === "rejected" ? l("admin.estimates.approving") : l("admin.estimates.reject")}
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleAction("approved")}
-                disabled={savingEdit || excelBusy || pdfState.generating || actionLoading !== null}
-                className="rounded-lg bg-[var(--color-brand)] px-4 py-2 font-body text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-              >
-                {actionLoading === "approved" ? l("admin.estimates.approving") : l("admin.estimates.approve")}
-              </button>
+            <div className="flex flex-col items-end gap-1">
+              {!hasPdfReady && (
+                <p className="max-w-sm text-right font-body text-xs text-amber-700 dark:text-amber-200">
+                  {l("admin.estimates.approveRejectDisabledNoPdf")}
+                </p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleAction("rejected")}
+                  disabled={
+                    savingEdit || excelBusy || pdfState.generating || actionLoading !== null || !hasPdfReady
+                  }
+                  title={!hasPdfReady ? l("admin.estimates.approveRejectDisabledNoPdf") : undefined}
+                  className="rounded-lg border border-red-300 px-4 py-2 font-body text-sm text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-950/30"
+                >
+                  {actionLoading === "rejected" ? l("admin.estimates.approving") : l("admin.estimates.reject")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleAction("approved")}
+                  disabled={
+                    savingEdit || excelBusy || pdfState.generating || actionLoading !== null || !hasPdfReady
+                  }
+                  title={!hasPdfReady ? l("admin.estimates.approveRejectDisabledNoPdf") : undefined}
+                  className="rounded-lg bg-[var(--color-brand)] px-4 py-2 font-body text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {actionLoading === "approved" ? l("admin.estimates.approving") : l("admin.estimates.approve")}
+                </button>
+              </div>
             </div>
           )}
         </div>

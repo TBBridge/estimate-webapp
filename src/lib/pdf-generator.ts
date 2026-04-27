@@ -61,6 +61,26 @@ function formatCloudConvertFailure(resStatus: number, text: string): string {
   return text.slice(0, 500);
 }
 
+/** 401/403 + Invalid scope など、HTTP 層の CloudConvert エラーを人が直せる文面に */
+function formatCloudConvertHttpError(status: number, text: string): string {
+  if (status === 401 || status === 403) {
+    try {
+      const j = JSON.parse(text) as { message?: string; code?: string };
+      const msg = j.message ?? "";
+      if (j.code === "FORBIDDEN" || /scope/i.test(msg)) {
+        return (
+          "API キーに必要なスコープがありません。CloudConvert ダッシュボード → API → v2 キーで、該当キーの編集を開き " +
+            "task.read と task.write にチェックを入れて保存するか、上記2つを付与した新しいキーを発行し、CLOUDCONVERT_API_KEY（Vercel 環境変数）を差し替えて再デプロイしてください。 " +
+            `[${j.code ?? "HTTP"}] ${msg}`
+        );
+      }
+    } catch {
+      /* 本文が JSON でない */
+    }
+  }
+  return text.slice(0, 800);
+}
+
 function findFinishedExportUrl(job: CloudConvertJobData): string | null {
   for (const t of job.tasks ?? []) {
     if (t.operation === "export/url" && t.status === "finished") {
@@ -186,7 +206,7 @@ async function convertBufferWithCloudConvert(pdfReadyBuffer: Buffer): Promise<Bu
 
   const text = await res.text();
   if (!res.ok) {
-    const detail = formatCloudConvertFailure(res.status, text);
+    const detail = formatCloudConvertHttpError(res.status, text);
     throw new Error(`CloudConvert API ${res.status}: ${detail}`);
   }
 

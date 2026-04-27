@@ -58,7 +58,11 @@ export default function ApproverPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status, confirmHubSpotDuplicate }),
       });
-      const data = await res.json().catch(() => ({}));
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        message?: string;
+        hubspotDuplicate?: unknown;
+      };
       if (res.ok) {
         await mutate(() => true, undefined, { revalidate: true });
         return data;
@@ -74,7 +78,15 @@ export default function ApproverPage() {
           throw new Error(HUBSPOT_DUPLICATE_CANCELLED);
         }
       }
-      throw new Error(typeof data?.error === "string" ? data.error : `HTTP ${res.status}`);
+      const errMsg =
+        data.error === "pdf_required"
+          ? l("admin.estimates.pdfRequiredBeforeAction")
+          : typeof data.message === "string" && data.message.trim() !== ""
+            ? data.message
+            : typeof data.error === "string"
+              ? data.error
+              : `HTTP ${res.status}`;
+      throw new Error(errMsg);
     }
     throw new Error(`HTTP retry exceeded`);
   }
@@ -153,15 +165,25 @@ export default function ApproverPage() {
                   <button type="button"
                     onClick={(ev) => {
                       ev.stopPropagation();
+                      if (!e.pdfUrl?.trim()) {
+                        alert(l("admin.estimates.pdfRequiredBeforeAction"));
+                        return;
+                      }
                       if (!confirm(l("admin.estimates.confirmReject"))) return;
                       void handleAction(e.id, "rejected").catch((err) => alert(String(err)));
                     }}
-                    className="rounded-lg border border-red-300 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400">
+                    disabled={!e.pdfUrl?.trim()}
+                    title={!e.pdfUrl?.trim() ? l("admin.estimates.approveRejectDisabledNoPdf") : undefined}
+                    className="rounded-lg border border-red-300 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-700 dark:text-red-400">
                     {l("admin.estimates.reject")}
                   </button>
                   <button type="button"
                     onClick={(ev) => {
                       ev.stopPropagation();
+                      if (!e.pdfUrl?.trim()) {
+                        alert(l("admin.estimates.pdfRequiredBeforeAction"));
+                        return;
+                      }
                       if (!confirm(l("admin.estimates.confirmApprove"))) return;
                       void handleAction(e.id, "approved")
                         .then((payload) => alertHubSpotSyncAfterApprove(locale, "approved", payload))
@@ -170,7 +192,9 @@ export default function ApproverPage() {
                           if (m !== HUBSPOT_DUPLICATE_CANCELLED) alert(m);
                         });
                     }}
-                    className="rounded-lg bg-[var(--color-brand)] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90">
+                    disabled={!e.pdfUrl?.trim()}
+                    title={!e.pdfUrl?.trim() ? l("admin.estimates.approveRejectDisabledNoPdf") : undefined}
+                    className="rounded-lg bg-[var(--color-brand)] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50">
                     {l("admin.estimates.approve")}
                   </button>
                 </div>

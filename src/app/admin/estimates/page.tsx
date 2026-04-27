@@ -118,7 +118,11 @@ export default function AdminEstimatesPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status, confirmHubSpotDuplicate }),
       });
-      const data = await res.json().catch(() => ({}));
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        message?: string;
+        hubspotDuplicate?: unknown;
+      };
       if (res.ok) {
         await mutate(() => true, undefined, { revalidate: true });
         return data;
@@ -134,7 +138,15 @@ export default function AdminEstimatesPage() {
           throw new Error(HUBSPOT_DUPLICATE_CANCELLED);
         }
       }
-      throw new Error(typeof data?.error === "string" ? data.error : `HTTP ${res.status}`);
+      const errMsg =
+        data.error === "pdf_required"
+          ? l("admin.estimates.pdfRequiredBeforeAction")
+          : typeof data.message === "string" && data.message.trim() !== ""
+            ? data.message
+            : typeof data.error === "string"
+              ? data.error
+              : `HTTP ${res.status}`;
+      throw new Error(errMsg);
     }
     throw new Error(`HTTP retry exceeded`);
   }

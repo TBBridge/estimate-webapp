@@ -178,7 +178,22 @@ async function resolvePipelineAndStage(
   config: HubSpotConfig
 ): Promise<{ pipelineId: string; stageId: string }> {
   if (config.pipelineId && config.dealStageId) {
-    return { pipelineId: config.pipelineId, stageId: config.dealStageId };
+    const pipelines = await fetchDealPipelines(config);
+    const pl = pipelines.find((p) => p.id === config.pipelineId);
+    if (pl) {
+      const st = pl.stages.find((s) => s.id === config.dealStageId);
+      if (st) {
+        return { pipelineId: config.pipelineId, stageId: config.dealStageId };
+      }
+      const valid = pl.stages.map((s) => `${s.label}(${s.id})`).join(", ");
+      throw new Error(
+        `HUBSPOT_DEAL_STAGE_ID がパイプライン「${pl.label}」に属するステージ ID ではありません。` +
+          `有効なステージ: ${valid || "なし"}。HUBSPOT_PIPELINE_ID / HUBSPOT_DEAL_STAGE_ID の組み合わせを修正するか、HUBSPOT_PIPELINE_LABEL と HUBSPOT_DEAL_STAGE_LABEL のみで指定してください。`
+      );
+    }
+    throw new Error(
+      `HUBSPOT_PIPELINE_ID「${config.pipelineId}」が HubSpot に見つかりません。ラベル指定（HUBSPOT_PIPELINE_LABEL）に切り替えてください。`
+    );
   }
 
   const pipelines = await fetchDealPipelines(config);
@@ -214,10 +229,36 @@ async function resolvePipelineAndStage(
   return cachedDefaultStage;
 }
 
-async function resolveDealOwnerId(config: HubSpotConfig): Promise<string | undefined> {
-  if (config.dealOwnerId?.trim()) return config.dealOwnerId.trim();
-  const search = config.dealOwnerSearchName?.trim();
-  if (!search) return undefined;
+/** Owners API をページングして email（小文字一致）で検索 */
+async function findOwnerIdByEmail(
+  config: HubSpotConfig,
+  email: string
+): Promise<string | undefined> {
+  const want = email.trim().toLowerCase();
+  if (!want) return undefined;
+  let after: string | undefined;
+  for (let i = 0; i < 30; i++) {
+    const qs = new URLSearchParams({ limit: "100" });
+    if (after) qs.set("after", after);
+    const data = await hubspotFetchJson<{
+      results?: Array<{ id: string | number; email?: string | null }>;
+      paging?: { next?: { after?: string } };
+    }>(config, "GET", `/crm/v3/owners?${qs.toString()}`);
+    for (const o of data.results ?? []) {
+      if (String(o.email ?? "").trim().toLowerCase() === want) {
+        return String(o.id);
+      }
+    }
+    after = data.paging?.next?.after;
+    if (!after) break;
+  }
+  return undefined;
+}
+
+async function resolveOwnerIdByFullName(
+  config: HubSpotConfig,
+  search: string
+): Promise<string | undefined> {
   const normalized = search.toLowerCase().replace(/\s+/g, " ").trim();
   const data = await hubspotFetchJson<{
     results?: Array<{ id: string | number; firstName?: string; lastName?: string }>;
@@ -229,10 +270,61 @@ async function resolveDealOwnerId(config: HubSpotConfig): Promise<string | undef
       .replace(/\s+/g, " ");
     if (full === normalized) return String(o.id);
   }
+  return undefined;
+}
+
+async function resolveDealOwnerId(config: HubSpotConfig): Promise<string | undefined> {
+  const raw = config.dealOwnerId?.trim();
+  if (raw) {
+    if (/^\d+$/.test(raw)) return raw;
+    if (raw.includes("@")) {
+      const id = await findOwnerIdByEmail(config, raw);
+      if (id) return id;
+      console.warn(
+        `[hubspot] HUBSPOT_DEAL_OWNER_ID がメールアドレスですが、HubSpot Owner を解決できませんでした: ${raw}`
+      );
+      return undefined;
+    }
+  }
+  const search = config.dealOwnerSearchName?.trim();
+  if (!search) return undefined;
+  const id = await resolveOwnerIdByFullName(config, search);
+  if (id) return id;
   console.warn(
-    `[hubspot] 取引担当者「${search}」に一致する Owner が見つかりません。HUBSPOT_DEAL_OWNER_ID を直接指定するか、Private App に crm.objects.owners.read を付与してください。`
+    `[hubspot] 取引担当者「${search}」に一致する Owner が見つかりません。HUBSPOT_DEAL_OWNER_ID に数値 ID かメールを指定するか、Private App に crm.objects.owners.read を付与してください。`
   );
   return undefined;
+}
+
+/** extraCreateProperties 等で hubspot_owner_id にメールが入った場合の後処理 */
+async function normalizeHubspotOwnerIdOnProperties(
+  config: HubSpotConfig,
+  properties: Record<string, string>
+): Promise<void> {
+  const v = properties.hubspot_owner_id;
+  if (v === undefined || String(v).trim() === "") return;
+  const s = String(v).trim();
+  if (/^\d+$/.test(s)) {
+    properties.hubspot_owner_id = s;
+    return;
+  }
+  if (s.includes("@")) {
+    const id = await findOwnerIdByEmail(config, s);
+    if (id) {
+      properties.hubspot_owner_id = id;
+      return;
+    }
+    delete properties.hubspot_owner_id;
+    console.warn("[hubspot] hubspot_owner_id（メール）を数値 ID に解決できませんでした。当該プロパティを送りません。");
+    return;
+  }
+  const id = await resolveOwnerIdByFullName(config, s);
+  if (id) {
+    properties.hubspot_owner_id = id;
+    return;
+  }
+  delete properties.hubspot_owner_id;
+  console.warn("[hubspot] hubspot_owner_id を有効な Owner ID に解決できませんでした。当該プロパティを送りません。");
 }
 
 /** テンプレ JSON のあと、会社名・都道府県・担当・商談区分を上書き設定 */
@@ -278,6 +370,8 @@ async function applyDealRequiredAndExtraFields(
   if (config.dealNegotiationProperty && input.contractType) {
     properties[config.dealNegotiationProperty] = contractTypeLabelJa(input.contractType);
   }
+
+  await normalizeHubspotOwnerIdOnProperties(config, properties);
 }
 
 export type FindOrCreateDealInput = {
