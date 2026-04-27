@@ -36,7 +36,7 @@
 
 import ExcelJS from "exceljs";
 import { PassThrough } from "stream";
-import { OPTION_ITEMS } from "@/lib/estimate-schema";
+import { OPTION_ITEMS, formatLicenseCountForExcel } from "@/lib/estimate-schema";
 
 export interface WriteEstimateParams {
   /** テンプレート Excel のバッファ（Node.js Buffer） */
@@ -164,7 +164,7 @@ export async function writeEstimateToTemplate(
 
   if (deliveryType === "onprem" && contractType === "new") {
     // tpl-1: ライセンス数・オプション①②
-    setCell(sheet, "C18", Number(formInputs.licenseCount) || formInputs.licenseCount);
+    setCell(sheet, "C18", formatLicenseCountForExcel(formInputs.licenseCount));
     const opt1 = firstOptionFromForm(formInputs);
     const opt2 = secondOptionFromForm(formInputs);
     setCell(sheet, "C21", opt1);
@@ -208,14 +208,14 @@ export async function writeEstimateToTemplate(
 
   } else if (deliveryType === "subscription" && contractType === "new") {
     // tpl-4: ライセンス数・契約月数・オプション①
-    setCell(sheet, "C18", Number(formInputs.licenseCount) || formInputs.licenseCount);
+    setCell(sheet, "C18", formatLicenseCountForExcel(formInputs.licenseCount));
     setCell(sheet, "C20", Number(formInputs.contractMonths) || formInputs.contractMonths);
     setCell(sheet, "C21", firstOptionFromForm(formInputs));
     console.log(`[excel-writer] subscription/new: C18=${formInputs.licenseCount} C20=${formInputs.contractMonths}`);
 
   } else if (deliveryType === "cloud" && contractType === "new") {
     // tpl-5(年額) / tpl-6(区切り): ライセンス数・契約月数・オプション①
-    setCell(sheet, "C18", Number(formInputs.licenseCount) || formInputs.licenseCount);
+    setCell(sheet, "C18", formatLicenseCountForExcel(formInputs.licenseCount));
     if (cloudBilling === "period") {
       setCell(sheet, "C20", Number(formInputs.contractMonths) || formInputs.contractMonths);
     }

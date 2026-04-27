@@ -63,11 +63,15 @@ export default function AdminEstimatesPage() {
     [filters],
   );
 
-  const pageSize = 20;
+  const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
+  const [pageSize, setPageSize] = useState<(typeof PAGE_SIZE_OPTIONS)[number]>(20);
   const [page, setPage] = useState(1);
   useEffect(() => {
     setPage(1);
   }, [activeFilters]);
+  useEffect(() => {
+    setPage(1);
+  }, [pageSize]);
 
   const { estimates, total, isLoading, error: estimatesError } = useEstimates({
     ...activeFilters,
@@ -77,7 +81,7 @@ export default function AdminEstimatesPage() {
   const [selectedEstimate, setSelectedEstimate] = useState<Estimate | null>(null);
 
   type EstimateSortKey = "no" | "agencyName" | "customerName" | "deliveryType" | "contractType" | "status" | "createdAt";
-  const [sortKey, setSortKey] = useState<EstimateSortKey>("createdAt");
+  const [sortKey, setSortKey] = useState<EstimateSortKey>("no");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const sortedEstimates = useMemo(() => {
@@ -263,9 +267,25 @@ export default function AdminEstimatesPage() {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-4 py-3 font-body text-sm text-[var(--color-ink-muted)]">
-        <span>
-          ページ {page} / {Math.max(1, Math.ceil(total / pageSize) || 1)}
-        </span>
+        <div className="flex flex-wrap items-center gap-3">
+          <span>
+            ページ {page} / {Math.max(1, Math.ceil(total / pageSize) || 1)}
+          </span>
+          <label className="inline-flex items-center gap-2">
+            <span className="shrink-0">{l("admin.estimates.pageSize")}</span>
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value) as (typeof PAGE_SIZE_OPTIONS)[number])}
+              className={selectCls}
+            >
+              {PAGE_SIZE_OPTIONS.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <div className="flex gap-2">
           <button
             type="button"

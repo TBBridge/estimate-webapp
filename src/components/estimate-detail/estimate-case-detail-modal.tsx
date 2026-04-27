@@ -621,7 +621,7 @@ export function EstimateCaseDetailModal({
           {onStatusChange && e.status === "pending" && (
             <div className="flex flex-col items-end gap-1">
               {!hasPdfReady && (
-                <p className="max-w-sm text-right font-body text-xs text-amber-700 dark:text-amber-200">
+                <p className="whitespace-nowrap text-right font-body text-xs text-amber-700 dark:text-amber-200">
                   {l("admin.estimates.approveRejectDisabledNoPdf")}
                 </p>
               )}

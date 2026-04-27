@@ -123,7 +123,7 @@ export default function AgencyEstimatesPage() {
   );
 
   type EstimateSortKey = "no" | "customerName" | "deliveryType" | "contractType" | "status" | "createdAt";
-  const [sortKey, setSortKey] = useState<EstimateSortKey>("createdAt");
+  const [sortKey, setSortKey] = useState<EstimateSortKey>("no");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const sortedEstimates = useMemo(() => {

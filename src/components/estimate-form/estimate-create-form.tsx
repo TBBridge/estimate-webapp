@@ -12,7 +12,7 @@ import {
   END_USER_COMPANY_FIELDS,
   SALES_AGENCY_CONTACT_FIELDS,
   APPLICATION_DETAIL_EXTRA_FIELDS,
-  ALLOWED_I_REPORTER_LICENSE_COUNTS,
+  isValidLicenseCountValue,
   resolveCustomerDisplayName,
   SALES_AGENCY_PRESERVED_KEYS,
   type DeliveryType,
@@ -336,12 +336,12 @@ export default function EstimateCreateForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // ライセンス数バリデーション
+    // ライセンス数バリデーション（プルダウン値＋「500以上に個別連絡」）
     const licenseCount = values.licenseCount;
     if (
       licenseCount !== undefined &&
       licenseCount !== "" &&
-      !(ALLOWED_I_REPORTER_LICENSE_COUNTS as readonly number[]).includes(Number(licenseCount))
+      !isValidLicenseCountValue(licenseCount)
     ) {
       return;
     }

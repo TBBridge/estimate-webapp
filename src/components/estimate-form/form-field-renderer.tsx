@@ -5,6 +5,8 @@ import type { Locale } from "@/lib/translations";
 import {
   ALLOWED_I_REPORTER_LICENSE_COUNTS,
   isFormFieldVisible,
+  LICENSE_COUNT_OVER_500_VALUE,
+  isValidLicenseCountValue,
   OPTION_ITEMS,
   type FormFieldDef,
 } from "@/lib/estimate-schema";
@@ -109,14 +111,53 @@ export function FormFieldRenderer({ field, value, formValues, onChange, locale }
     );
   }
 
-  if (kind === "number") {
-    const isLicenseCount = id === "licenseCount";
-    const numValue = value === undefined || value === "" ? undefined : Number(value);
-    const showLicenseCountError =
-      isLicenseCount &&
-      numValue !== undefined &&
-      !(ALLOWED_I_REPORTER_LICENSE_COUNTS as readonly number[]).includes(numValue);
+  if (kind === "number" && id === "licenseCount") {
+    const strVal =
+      value === undefined || value === null || value === ""
+        ? ""
+        : value === LICENSE_COUNT_OVER_500_VALUE
+          ? LICENSE_COUNT_OVER_500_VALUE
+          : String(value);
+    const showLicenseCountError = strVal !== "" && !isValidLicenseCountValue(value);
+    return (
+      <div>
+        <label className="block font-body text-sm text-[var(--color-ink-muted)]">
+          {label}
+          {required && " *"}
+        </label>
+        <select
+          value={strVal}
+          onChange={(e) => {
+            const raw = e.target.value;
+            if (raw === "") onChange(id, undefined);
+            else if (raw === LICENSE_COUNT_OVER_500_VALUE) onChange(id, LICENSE_COUNT_OVER_500_VALUE);
+            else onChange(id, Number(raw));
+          }}
+          required={required}
+          className={`mt-1 w-full max-w-xs rounded-lg border px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 dark:bg-stone-800 ${
+            showLicenseCountError
+              ? "border-red-500 bg-red-50 focus:ring-red-500/40 dark:bg-red-950/20"
+              : "border-stone-300 bg-white focus:ring-[var(--color-brand)]/40 dark:border-stone-600"
+          }`}
+        >
+          <option value="">{t(locale, "common.selectPlaceholder")}</option>
+          {ALLOWED_I_REPORTER_LICENSE_COUNTS.map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+          <option value={LICENSE_COUNT_OVER_500_VALUE}>{t(locale, "estimate.licenseCountOver500")}</option>
+        </select>
+        {showLicenseCountError && (
+          <p className="mt-1.5 font-body text-sm text-red-600 dark:text-red-400" role="alert">
+            {t(locale, "estimate.licenseCountError", { list: ALLOWED_I_REPORTER_LICENSE_COUNTS.join(", ") })}
+          </p>
+        )}
+      </div>
+    );
+  }
 
+  if (kind === "number") {
     return (
       <div>
         <label className="block font-body text-sm text-[var(--color-ink-muted)]">
@@ -125,21 +166,12 @@ export function FormFieldRenderer({ field, value, formValues, onChange, locale }
         </label>
         <input
           type="number"
-          min={isLicenseCount ? Math.min(...ALLOWED_I_REPORTER_LICENSE_COUNTS) : 0}
+          min={0}
           value={(value as number) ?? ""}
           onChange={(e) => onChange(id, e.target.value === "" ? undefined : Number(e.target.value))}
           required={required}
-          className={`mt-1 w-full max-w-[160px] rounded-lg border px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 dark:bg-stone-800 ${
-            showLicenseCountError
-              ? "border-red-500 bg-red-50 focus:ring-red-500/40 dark:bg-red-950/20"
-              : "border-stone-300 bg-white focus:ring-[var(--color-brand)]/40 dark:border-stone-600"
-          }`}
+          className="mt-1 w-full max-w-[160px] rounded-lg border border-stone-300 bg-white px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40 dark:border-stone-600 dark:bg-stone-800"
         />
-        {showLicenseCountError && (
-          <p className="mt-1.5 font-body text-sm text-red-600 dark:text-red-400" role="alert">
-            {t(locale, "estimate.licenseCountError", { list: ALLOWED_I_REPORTER_LICENSE_COUNTS.join(", ") })}
-          </p>
-        )}
       </div>
     );
   }
