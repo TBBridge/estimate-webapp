@@ -3,7 +3,7 @@ import { t } from "@/lib/translations";
 
 /** PUT /api/estimates/[id] approved の HubSpot 同期結果 DTO */
 export type HubSpotSyncResultDto =
-  | { ok: true; action: "created" | "existing"; dealId: string; excelUpdated: boolean }
+  | { ok: true; action: "created" | "existing"; dealId: string; excelUpdated: boolean; pdfRegenerated?: boolean }
   | { ok: true; skipped: true; reason: string }
   | { ok: false; error: string };
 

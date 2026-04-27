@@ -13,6 +13,7 @@ import {
   createDealByCompanyName,
 } from "@/lib/hubspot-deals";
 import { updateExcelHubSpotNo } from "@/lib/excel-writer";
+import { generateEstimatePdfAndSave } from "@/lib/estimate-pdf-generate";
 import type { HubSpotSyncResultDto } from "@/lib/hubspot-approve-feedback";
 import type { Locale } from "@/lib/translations";
 import { parseExcelFileHistory } from "@/lib/excel-file-history";
@@ -399,6 +400,17 @@ export async function PUT(req: Request, { params }: Params) {
         } catch (excelErr) {
           const exMsg = excelErr instanceof Error ? excelErr.message : String(excelErr);
           console.error("[estimates/id PUT] Excel C11 更新失敗（承認は完了）:", exMsg);
+        }
+      }
+
+      if (hubspotSync && "excelUpdated" in hubspotSync && hubspotSync.excelUpdated) {
+        try {
+          const { pdfUrl: newPdfUrl } = await generateEstimatePdfAndSave(sql, id);
+          hubspotSync = { ...hubspotSync, pdfRegenerated: true };
+          console.log("[estimates/id PUT] PDF 再生成完了:", newPdfUrl);
+        } catch (pdfErr) {
+          const pdfMsg = pdfErr instanceof Error ? pdfErr.message : String(pdfErr);
+          console.error("[estimates/id PUT] PDF 再生成失敗（承認・Excel 更新は完了）:", pdfMsg);
         }
       }
     }

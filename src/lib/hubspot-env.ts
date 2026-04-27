@@ -13,6 +13,10 @@
  *   - いずれも無ければ API で先頭パイプラインの先頭ステージを使用
  *
  * 取引の必須カスタム項目は内部名を環境変数で指定（会社名・都道府県・商談区分・取引担当者など）
+ *
+ * 取引担当者: メール・氏名で解決する場合は Owners API のため crm.objects.owners.read が必要。数値IDのみ
+ *   の HUBSPOT_DEAL_OWNER_ID なら同 API を使わない。HubSpot 403 に requiredGranularScopes が
+ *   automation / crm.objects.owners.read なら Private App に同スコープを付与しトークンを更新する。
  */
 
 export type HubSpotDedupeSingle = {
