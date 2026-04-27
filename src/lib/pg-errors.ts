@@ -19,6 +19,11 @@ export function isUniqueViolation(e: unknown): boolean {
   return collectPostgresCodes(e).includes("23505");
 }
 
+/** 外部キー参照により削除・更新できない（23503） */
+export function isForeignKeyViolation(e: unknown): boolean {
+  return collectPostgresCodes(e).includes("23503");
+}
+
 /** ログ・管理者向けに短いメッセージを取り出す */
 export function getErrorChainMessage(e: unknown): string {
   if (e instanceof Error) return e.message;

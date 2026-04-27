@@ -112,7 +112,18 @@ export default function AdminAgentsPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm(t(locale, "admin.agents.deleteConfirm"))) return;
-    await deleteAgency(id);
+    try {
+      await deleteAgency(id);
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e);
+      if (m === "delete_blocked_estimates") {
+        alert(t(locale, "admin.agents.deleteBlockedEstimates"));
+      } else if (m === "agency_delete_failed") {
+        alert(t(locale, "admin.agents.deleteFailed"));
+      } else {
+        alert(m);
+      }
+    }
   };
 
   const handleCsvImport = async (e: React.ChangeEvent<HTMLInputElement>) => {

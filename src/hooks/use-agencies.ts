@@ -52,6 +52,7 @@ export async function updateAgency(id: string, body: Omit<Agency, "id" | "create
 
 export async function deleteAgency(id: string): Promise<void> {
   const res = await fetch(`${KEY}/${id}`, { method: "DELETE" });
-  if (!res.ok && res.status !== 204) throw new Error(await res.text());
+  const text = await res.text();
+  if (!res.ok) throw new Error(messageFromErrorBody(text, res.status));
   await mutate(KEY);
 }

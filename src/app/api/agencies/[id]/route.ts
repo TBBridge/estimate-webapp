@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { agencyMutationErrorResponse } from "@/app/api/agencies/agency-mutation-errors";
+import { isForeignKeyViolation } from "@/lib/pg-errors";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -100,7 +101,10 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     await sql`DELETE FROM agencies WHERE id = ${id}`;
     return new NextResponse(null, { status: 204 });
   } catch (e) {
-    console.error(e);
-    return NextResponse.json({ error: "Failed to delete agency" }, { status: 500 });
+    console.error("[agencies DELETE]", e);
+    if (isForeignKeyViolation(e)) {
+      return NextResponse.json({ error: "delete_blocked_estimates" }, { status: 409 });
+    }
+    return NextResponse.json({ error: "agency_delete_failed" }, { status: 500 });
   }
 }
