@@ -12,8 +12,10 @@ import {
   searchDealsByCompanyName,
   createDealByCompanyName,
 } from "@/lib/hubspot-deals";
+import { randomBytes } from "crypto";
 import { updateExcelHubSpotNo } from "@/lib/excel-writer";
 import { generateEstimatePdfAndSave } from "@/lib/estimate-pdf-generate";
+import { sanitizeEstimateNoForBlobPath } from "@/lib/excel-file-history";
 import type { HubSpotSyncResultDto } from "@/lib/hubspot-approve-feedback";
 import type { Locale } from "@/lib/translations";
 import { parseExcelFileHistory } from "@/lib/excel-file-history";
@@ -379,7 +381,7 @@ export async function PUT(req: Request, { params }: Params) {
       const existingExcelUrl = String(r.excel_url ?? "").trim();
       if (existingExcelUrl && process.env.BLOB_READ_WRITE_TOKEN) {
         try {
-          const tplRes = await fetch(existingExcelUrl);
+          const tplRes = await fetch(existingExcelUrl, { cache: "no-store" });
           if (!tplRes.ok) {
             throw new Error(`Excel fetch failed: HTTP ${tplRes.status}`);
           }
@@ -388,12 +390,17 @@ export async function PUT(req: Request, { params }: Params) {
             Buffer.from(new Uint8Array(ab)),
             finalDealId
           );
+          console.log("[estimates/id PUT] Excel C13 書き込み完了, dealId=", finalDealId);
+          const safeNo = sanitizeEstimateNoForBlobPath(r.no);
+          const unique = `${Date.now()}_${randomBytes(4).toString("hex")}`;
+          const excelBlobPath = `estimates/${r.id}/${safeNo}_${unique}.xlsx`;
           const { url: newUrl } = await put(
-            `estimates/${r.id}/${r.no}.xlsx`,
+            excelBlobPath,
             updatedBuf,
             { access: "public", addRandomSuffix: false }
           );
           await sql`UPDATE estimates SET excel_url = ${newUrl} WHERE id = ${id}`;
+          console.log("[estimates/id PUT] Excel Blob 更新完了:", newUrl);
           if (hubspotSync && hubspotSync.ok && "action" in hubspotSync) {
             hubspotSync = { ...hubspotSync, excelUpdated: true };
           }

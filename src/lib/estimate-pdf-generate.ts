@@ -25,7 +25,7 @@ export async function generateEstimatePdfAndSave(sql: Sql, estimateId: string): 
     throw new Error("Excel ファイルが存在しません");
   }
 
-  const excelRes = await fetch(est.excel_url);
+  const excelRes = await fetch(est.excel_url, { cache: "no-store" });
   if (!excelRes.ok) {
     throw new Error(`Excel ファイルの取得に失敗しました: ${excelRes.status}`);
   }
