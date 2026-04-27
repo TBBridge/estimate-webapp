@@ -137,15 +137,6 @@ export const END_USER_COMPANY_FIELDS: FormFieldDef[] = [
     required: false,
   },
   {
-    id: "userFax",
-    labelJa: "FAX番号",
-    labelEn: "FAX number",
-    kind: "phone_country",
-    dialField: "userFaxDial",
-    localField: "userFaxLocal",
-    required: false,
-  },
-  {
     id: "userReleaseSubscription",
     labelJa: "リリース配信登録（ユーザー）",
     labelEn: "Release notification registration (end user)",
@@ -184,15 +175,6 @@ export const SALES_AGENCY_CONTACT_FIELDS: FormFieldDef[] = [
     kind: "phone_country",
     dialField: "salesAgencyPhoneDial",
     localField: "salesAgencyPhoneLocal",
-    required: false,
-  },
-  {
-    id: "salesAgencyFax",
-    labelJa: "FAX番号",
-    labelEn: "FAX number",
-    kind: "phone_country",
-    dialField: "salesAgencyFaxDial",
-    localField: "salesAgencyFaxLocal",
     required: false,
   },
   {

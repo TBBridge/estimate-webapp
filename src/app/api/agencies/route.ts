@@ -7,7 +7,7 @@ export async function GET() {
     const sql = getDb();
     const rows = await sql`
       SELECT id, name, email, login_password, agency_type, contact_name, department,
-             phone_country_code, phone_local, fax_country_code, fax_local,
+             phone_country_code, phone_local,
              approver_name, approver_email,
              TO_CHAR(created_at, 'YYYY-MM-DD') AS created_at
       FROM agencies
@@ -23,8 +23,6 @@ export async function GET() {
       department: r.department ?? "",
       phoneCountryCode: r.phone_country_code ?? "+81",
       phoneLocal: r.phone_local ?? "",
-      faxCountryCode: r.fax_country_code ?? "+81",
-      faxLocal: r.fax_local ?? "",
       approverName: r.approver_name,
       approverEmail: r.approver_email,
       createdAt: r.created_at,
@@ -50,8 +48,6 @@ export async function POST(req: Request) {
     const department = String(body.department ?? "");
     const phoneCountryCode = String(body.phoneCountryCode ?? "+81");
     const phoneLocal = String(body.phoneLocal ?? "");
-    const faxCountryCode = String(body.faxCountryCode ?? "+81");
-    const faxLocal = String(body.faxLocal ?? "");
     const approverName = String(body.approverName ?? "");
     const approverEmail = String(body.approverEmail ?? "");
     const rows = await sql`
@@ -64,7 +60,7 @@ export async function POST(req: Request) {
         ${name}, ${email}, ${loginPassword}, ${agencyType},
         ${contactName}, ${department},
         ${phoneCountryCode}, ${phoneLocal},
-        ${faxCountryCode}, ${faxLocal},
+        ${"+81"}, ${""},
         ${approverName}, ${approverEmail}
       )
       RETURNING id, name, email, login_password, agency_type, contact_name, department,
@@ -83,8 +79,6 @@ export async function POST(req: Request) {
       department: r.department ?? "",
       phoneCountryCode: r.phone_country_code ?? "+81",
       phoneLocal: r.phone_local ?? "",
-      faxCountryCode: r.fax_country_code ?? "+81",
-      faxLocal: r.fax_local ?? "",
       approverName: r.approver_name,
       approverEmail: r.approver_email,
       createdAt: r.created_at,

@@ -118,8 +118,6 @@ export default function EstimateCreateForm() {
           email?: string;
           phoneCountryCode?: string;
           phoneLocal?: string;
-          faxCountryCode?: string;
-          faxLocal?: string;
         };
         setValues((prev) => {
           const next = { ...prev };
@@ -129,8 +127,6 @@ export default function EstimateCreateForm() {
           if (prev.salesAgencyEmail === undefined) next.salesAgencyEmail = ag.email ?? "";
           if (prev.salesAgencyPhoneDial === undefined) next.salesAgencyPhoneDial = ag.phoneCountryCode ?? DEFAULT_DIAL_CODE;
           if (prev.salesAgencyPhoneLocal === undefined) next.salesAgencyPhoneLocal = ag.phoneLocal ?? "";
-          if (prev.salesAgencyFaxDial === undefined) next.salesAgencyFaxDial = ag.faxCountryCode ?? DEFAULT_DIAL_CODE;
-          if (prev.salesAgencyFaxLocal === undefined) next.salesAgencyFaxLocal = ag.faxLocal ?? "";
           return next;
         });
       } catch {

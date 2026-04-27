@@ -17,8 +17,6 @@ const emptyForm = (): Omit<Agency, "id" | "createdAt"> => ({
   department: "",
   phoneCountryCode: DEFAULT_DIAL_CODE,
   phoneLocal: "",
-  faxCountryCode: DEFAULT_DIAL_CODE,
-  faxLocal: "",
   approverName: "",
   approverEmail: "",
 });
@@ -81,8 +79,6 @@ export default function AdminAgentsPage() {
       department: ag.department ?? "",
       phoneCountryCode: ag.phoneCountryCode ?? DEFAULT_DIAL_CODE,
       phoneLocal: ag.phoneLocal ?? "",
-      faxCountryCode: ag.faxCountryCode ?? DEFAULT_DIAL_CODE,
-      faxLocal: ag.faxLocal ?? "",
       approverName: ag.approverName,
       approverEmail: ag.approverEmail,
     });
@@ -288,27 +284,6 @@ export default function AdminAgentsPage() {
                     onChange={(e) => setForm((p) => ({ ...p, phoneLocal: e.target.value }))}
                     className={localPhoneCls}
                     placeholder="3-1234-5678"
-                  />
-                </div>
-              </div>
-              <div className="min-w-0">
-                <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.fax")}</label>
-                <div className="flex min-w-0 flex-wrap gap-2">
-                  <select
-                    value={form.faxCountryCode ?? DEFAULT_DIAL_CODE}
-                    onChange={(e) => setForm((p) => ({ ...p, faxCountryCode: e.target.value }))}
-                    className={dialSelectCls}
-                    aria-label={t(locale, "admin.agents.fax")}
-                  >
-                    {COUNTRY_DIAL_CODES.map((o) => (
-                      <option key={o.value} value={o.value}>{isEn ? o.labelEn : o.labelJa}</option>
-                    ))}
-                  </select>
-                  <input
-                    type="text"
-                    value={form.faxLocal ?? ""}
-                    onChange={(e) => setForm((p) => ({ ...p, faxLocal: e.target.value }))}
-                    className={localPhoneCls}
                   />
                 </div>
               </div>

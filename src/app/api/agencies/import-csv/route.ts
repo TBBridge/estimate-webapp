@@ -17,8 +17,8 @@ function pick(row: Record<string, string>, ...keys: string[]): string {
 
 /**
  * CSV ヘッダ例（いずれかの列名）:
- * name,email,loginPassword,agencyType,contactName,department,phoneCountryCode,phoneLocal,faxCountryCode,faxLocal,approverName,approverEmail
- * 日本語: 代理店名,メール,ログインパスワード,代理店種別,担当者名,部署,電話国番号,電話,FAX国番号,FAX,承認者名,承認者メール
+ * name,email,loginPassword,agencyType,contactName,department,phoneCountryCode,phoneLocal,approverName,approverEmail
+ * 日本語: 代理店名,メール,ログインパスワード,代理店種別,担当者名,部署,電話国番号,電話,承認者名,承認者メール
  */
 export async function POST(req: Request) {
   try {
@@ -56,8 +56,6 @@ export async function POST(req: Request) {
       const department = pick(row, "department", "部署");
       const phoneCountryCode = pick(row, "phonecountrycode", "phone_country_code", "電話国番号") || "+81";
       const phoneLocal = pick(row, "phonelocal", "phone_local", "電話");
-      const faxCountryCode = pick(row, "faxcountrycode", "fax_country_code", "fax国番号", "fax国") || "+81";
-      const faxLocal = pick(row, "faxlocal", "fax_local", "fax");
       const approverName = pick(row, "approvername", "approver_name", "承認者名");
       const approverEmail = pick(row, "approveremail", "approver_email", "承認者メール");
 
@@ -72,7 +70,7 @@ export async function POST(req: Request) {
             ${name}, ${email}, ${loginPassword}, ${agencyType},
             ${contactName}, ${department},
             ${phoneCountryCode}, ${phoneLocal},
-            ${faxCountryCode}, ${faxLocal},
+            ${"+81"}, ${""},
             ${approverName}, ${approverEmail}
           )
         `;

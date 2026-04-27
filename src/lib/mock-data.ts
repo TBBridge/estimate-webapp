@@ -19,8 +19,6 @@ export type Agency = {
   department?: string;
   phoneCountryCode?: string;
   phoneLocal?: string;
-  faxCountryCode?: string;
-  faxLocal?: string;
   approverName: string;
   approverEmail: string;
   createdAt: string;

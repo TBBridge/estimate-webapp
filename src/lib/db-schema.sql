@@ -23,6 +23,7 @@ ALTER TABLE agencies ADD COLUMN IF NOT EXISTS contact_name         TEXT NOT NULL
 ALTER TABLE agencies ADD COLUMN IF NOT EXISTS department           TEXT NOT NULL DEFAULT '';
 ALTER TABLE agencies ADD COLUMN IF NOT EXISTS phone_country_code   TEXT NOT NULL DEFAULT '+81';
 ALTER TABLE agencies ADD COLUMN IF NOT EXISTS phone_local          TEXT NOT NULL DEFAULT '';
+-- FAX 列はアプリから未使用（互換のため残す。API では常に +81 / 空を書き込み）
 ALTER TABLE agencies ADD COLUMN IF NOT EXISTS fax_country_code    TEXT NOT NULL DEFAULT '+81';
 ALTER TABLE agencies ADD COLUMN IF NOT EXISTS fax_local            TEXT NOT NULL DEFAULT '';
 

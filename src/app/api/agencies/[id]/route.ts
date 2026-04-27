@@ -8,7 +8,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const { id } = await params;
     const rows = await sql`
       SELECT id, name, email, agency_type, contact_name, department,
-             phone_country_code, phone_local, fax_country_code, fax_local,
+             phone_country_code, phone_local,
              approver_name, approver_email,
              TO_CHAR(created_at, 'YYYY-MM-DD') AS created_at
       FROM agencies
@@ -25,8 +25,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       department: r.department ?? "",
       phoneCountryCode: r.phone_country_code ?? "+81",
       phoneLocal: r.phone_local ?? "",
-      faxCountryCode: r.fax_country_code ?? "+81",
-      faxLocal: r.fax_local ?? "",
       approverName: r.approver_name,
       approverEmail: r.approver_email,
       createdAt: r.created_at,
@@ -51,8 +49,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     const department = String(b.department ?? "");
     const phoneCountryCode = String(b.phoneCountryCode ?? "+81");
     const phoneLocal = String(b.phoneLocal ?? "");
-    const faxCountryCode = String(b.faxCountryCode ?? "+81");
-    const faxLocal = String(b.faxLocal ?? "");
     const approverName = String(b.approverName ?? "");
     const approverEmail = String(b.approverEmail ?? "");
     if (!name || !email) {
@@ -67,12 +63,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           department = ${department},
           phone_country_code = ${phoneCountryCode},
           phone_local = ${phoneLocal},
-          fax_country_code = ${faxCountryCode},
-          fax_local = ${faxLocal},
+          fax_country_code = ${"+81"},
+          fax_local = ${""},
           approver_name = ${approverName}, approver_email = ${approverEmail}
       WHERE id = ${id}
       RETURNING id, name, email, login_password, agency_type, contact_name, department,
-                phone_country_code, phone_local, fax_country_code, fax_local,
+                phone_country_code, phone_local,
                 approver_name, approver_email,
                 TO_CHAR(created_at, 'YYYY-MM-DD') AS created_at
     `;
@@ -88,8 +84,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       department: r.department ?? "",
       phoneCountryCode: r.phone_country_code ?? "+81",
       phoneLocal: r.phone_local ?? "",
-      faxCountryCode: r.fax_country_code ?? "+81",
-      faxLocal: r.fax_local ?? "",
       approverName: r.approver_name,
       approverEmail: r.approver_email,
       createdAt: r.created_at,
