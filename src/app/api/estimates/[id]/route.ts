@@ -399,7 +399,7 @@ export async function PUT(req: Request, { params }: Params) {
           }
         } catch (excelErr) {
           const exMsg = excelErr instanceof Error ? excelErr.message : String(excelErr);
-          console.error("[estimates/id PUT] Excel C11 更新失敗（承認は完了）:", exMsg);
+          console.error("[estimates/id PUT] Excel C13 更新失敗（承認は完了）:", exMsg);
         }
       }
 

@@ -8,7 +8,7 @@
  *   C7: 代理店種別（仕切り率 VLOOKUP のキー = 代理店名）
  *   C8: 本製品（i-Reporter 等）の仕切り率（小数 0〜1）
  *   C9: 保守の仕切り率（小数 0〜1）
- *   C11: Hubspot NO（承認時に HubSpot 取引 ID を書き込む）
+ *   C13: Hubspot NO（承認時に HubSpot 取引 ID を書き込む）
  *
  * オンプレ 新規（tpl-1）:
  *   C18: ライセンス数 / C21: オプション① / C24: オプション②
@@ -55,7 +55,7 @@ export interface WriteEstimateParams {
   productMarginRate?: number;
   /** 保守仕切り率 */
   maintenanceMarginRate?: number;
-  /** HubSpot 取引ID（C11 セル「Hubspot NO」。未設定なら書き込まない） */
+  /** HubSpot 取引ID（C13 セル「Hubspot NO」。未設定なら書き込まない） */
   hubspotNo?: string;
 }
 
@@ -155,9 +155,9 @@ export async function writeEstimateToTemplate(
     setCell(sheet, "C9", maintenanceMarginRate);
   }
   if (hubspotNo && String(hubspotNo).trim() !== "") {
-    setCell(sheet, "C11", String(hubspotNo).trim());
+    setCell(sheet, "C13", String(hubspotNo).trim());
   }
-  console.log(`[excel-writer] 共通: C3=${createdAt} C4=To:${agencyName} C5=For:${customerName} C7=${agencyType} C8=${productMarginRate ?? "-"} C9=${maintenanceMarginRate ?? "-"} C11=${hubspotNo ?? "-"}`);
+  console.log(`[excel-writer] 共通: C3=${createdAt} C4=To:${agencyName} C5=For:${customerName} C7=${agencyType} C8=${productMarginRate ?? "-"} C9=${maintenanceMarginRate ?? "-"} C13=${hubspotNo ?? "-"}`);
   console.log(`[excel-writer] formInputs: ${JSON.stringify(formInputs)}`);
 
   // ── パターン別フィールド ────────────────────────────
@@ -241,7 +241,7 @@ export async function writeEstimateToTemplate(
 }
 
 /**
- * 既存の Excel ファイルの「設定情報」シート C11 セルだけ HubSpot 取引 ID を書き込み、
+ * 既存の Excel ファイルの「設定情報」シート C13 セルだけ HubSpot 取引 ID を書き込み、
  * 上書き用の Buffer を返す。承認時に既存テンプレートを再利用するためのユーティリティ。
  */
 export async function updateExcelHubSpotNo(
@@ -258,7 +258,7 @@ export async function updateExcelHubSpotNo(
   if (!sheet) {
     throw new Error("「設定情報」シートが見つかりません（HubSpot NO 書き込み）。");
   }
-  setCell(sheet, "C11", String(hubspotNo).trim());
+  setCell(sheet, "C13", String(hubspotNo).trim());
 
   const buf = await workbook.xlsx.writeBuffer();
   return Buffer.from(buf);

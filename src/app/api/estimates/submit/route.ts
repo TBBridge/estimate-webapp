@@ -116,7 +116,7 @@ export async function POST(req: Request) {
 
     // ── Excel 生成 & Blob 保存 ────────────────────────────
     // HubSpot 連携は承認時（PUT /api/estimates/[id] status=approved）に行うため、
-    // submit 時点では C11 セル（Hubspot NO）は空のままとする
+    // submit 時点では C13 セル（Hubspot NO）は空のままとする
     let hubspotDealId = "";
     let excelUrl = "";
 
