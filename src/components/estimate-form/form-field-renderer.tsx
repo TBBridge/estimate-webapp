@@ -5,7 +5,6 @@ import type { Locale } from "@/lib/translations";
 import {
   ALLOWED_I_REPORTER_LICENSE_COUNTS,
   isFormFieldVisible,
-  LICENSE_COUNT_OVER_500_VALUE,
   isValidLicenseCountValue,
   OPTION_ITEMS,
   type FormFieldDef,
@@ -112,13 +111,21 @@ export function FormFieldRenderer({ field, value, formValues, onChange, locale }
   }
 
   if (kind === "number" && id === "licenseCount") {
+    const allowed = ALLOWED_I_REPORTER_LICENSE_COUNTS as readonly number[];
+    const n =
+      value !== undefined && value !== null && value !== "" && typeof value === "number"
+        ? value
+        : value !== undefined && value !== null && value !== "" && typeof value === "string"
+          ? Number(value)
+          : NaN;
     const strVal =
       value === undefined || value === null || value === ""
         ? ""
-        : value === LICENSE_COUNT_OVER_500_VALUE
-          ? LICENSE_COUNT_OVER_500_VALUE
-          : String(value);
-    const showLicenseCountError = strVal !== "" && !isValidLicenseCountValue(value);
+        : Number.isInteger(n) && allowed.includes(n)
+          ? String(n)
+          : "";
+    const showLicenseCountError =
+      value !== undefined && value !== null && value !== "" && !isValidLicenseCountValue(value);
     return (
       <div>
         <label className="block font-body text-sm text-[var(--color-ink-muted)]">
@@ -130,7 +137,6 @@ export function FormFieldRenderer({ field, value, formValues, onChange, locale }
           onChange={(e) => {
             const raw = e.target.value;
             if (raw === "") onChange(id, undefined);
-            else if (raw === LICENSE_COUNT_OVER_500_VALUE) onChange(id, LICENSE_COUNT_OVER_500_VALUE);
             else onChange(id, Number(raw));
           }}
           required={required}
@@ -141,16 +147,18 @@ export function FormFieldRenderer({ field, value, formValues, onChange, locale }
           }`}
         >
           <option value="">{t(locale, "common.selectPlaceholder")}</option>
-          {ALLOWED_I_REPORTER_LICENSE_COUNTS.map((n) => (
-            <option key={n} value={n}>
-              {n}
+          {allowed.map((c) => (
+            <option key={c} value={c}>
+              {c}
             </option>
           ))}
-          <option value={LICENSE_COUNT_OVER_500_VALUE}>{t(locale, "estimate.licenseCountOver500")}</option>
         </select>
+        <p className="mt-1.5 font-body text-xs text-[var(--color-ink-muted)]">
+          {t(locale, "estimate.licenseCountOver500Note")}
+        </p>
         {showLicenseCountError && (
           <p className="mt-1.5 font-body text-sm text-red-600 dark:text-red-400" role="alert">
-            {t(locale, "estimate.licenseCountError", { list: ALLOWED_I_REPORTER_LICENSE_COUNTS.join(", ") })}
+            {t(locale, "estimate.licenseCountError", { list: allowed.join(", ") })}
           </p>
         )}
       </div>

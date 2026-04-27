@@ -6,18 +6,16 @@
 export type DeliveryType = "onprem" | "subscription" | "cloud";
 export type ContractType = "new" | "license_add" | "option_add";
 
-/** i-Reporter ライセンス数で選択可能な値（プルダウン用。最後に「500以上に個別連絡」オプションを別途付与） */
+/** i-Reporter ライセンス数で選択可能な値（プルダウン）。500超は画面注意書きのうえ営業へ連絡 */
 export const ALLOWED_I_REPORTER_LICENSE_COUNTS = [
   5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100,
   150, 200, 250, 300, 350, 400, 450, 500,
 ] as const;
 
-/** プルダウン最終項。JSON にはこの定数を保存し、Excel には日本語ラベルを出力する */
+/** 旧申請データ互換用（Excel 出力のみ）。新規申請では選択不可 */
 export const LICENSE_COUNT_OVER_500_VALUE = "over_500_contact" as const;
 
 export const LICENSE_COUNT_OVER_500_LABEL_JA = "500以上に個別連絡";
-
-export const LICENSE_COUNT_OVER_500_LABEL_EN = "500+ (contact separately)";
 
 /** Excel「設定情報」C18 等に書く表示用（数値 or 特記文字列） */
 export function formatLicenseCountForExcel(v: unknown): string | number {
@@ -33,7 +31,6 @@ export function formatLicenseCountForExcel(v: unknown): string | number {
 
 export function isValidLicenseCountValue(v: unknown): boolean {
   if (v === undefined || v === null || v === "") return true;
-  if (v === LICENSE_COUNT_OVER_500_VALUE) return true;
   const n = Number(v);
   return Number.isInteger(n) && (ALLOWED_I_REPORTER_LICENSE_COUNTS as readonly number[]).includes(n);
 }
