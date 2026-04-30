@@ -24,6 +24,11 @@ export function isForeignKeyViolation(e: unknown): boolean {
   return collectPostgresCodes(e).includes("23503");
 }
 
+/** リレーション未定義（42P01）。マイグレーション未適用など */
+export function isUndefinedTable(e: unknown): boolean {
+  return collectPostgresCodes(e).includes("42P01");
+}
+
 /** ログ・管理者向けに短いメッセージを取り出す */
 export function getErrorChainMessage(e: unknown): string {
   if (e instanceof Error) return e.message;

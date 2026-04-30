@@ -51,7 +51,7 @@ import {
 
 import {
   signSession,
-  SESSION_COOKIE_NAME,
+  getSessionCookieName,
 } from "../session";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -78,7 +78,7 @@ async function signValidCookie(
   payload: Parameters<typeof signSession>[0]
 ): Promise<string> {
   const { token } = await signSession(payload);
-  return `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}`;
+  return `${getSessionCookieName()}=${encodeURIComponent(token)}`;
 }
 
 // ─── setup / teardown ───────────────────────────────────────────────────────
@@ -122,7 +122,7 @@ describe("getSession", () => {
   });
 
   it("returns null when the cookie value is malformed", async () => {
-    const req = makeRequest({ cookie: `${SESSION_COOKIE_NAME}=not-a-jwt-at-all` });
+    const req = makeRequest({ cookie: `${getSessionCookieName()}=not-a-jwt-at-all` });
     expect(await getSession(req)).toBeNull();
   });
 
@@ -451,7 +451,7 @@ describe("getSession — malformed percent-encoded cookie value", () => {
   it("returns null when the cookie value contains an invalid percent-escape", async () => {
     // %ZZ is not valid percent-encoding and causes decodeURIComponent to throw
     const req = makeRequest({
-      cookie: `${SESSION_COOKIE_NAME}=%ZZ`,
+      cookie: `${getSessionCookieName()}=%ZZ`,
     });
     expect(await getSession(req)).toBeNull();
   });

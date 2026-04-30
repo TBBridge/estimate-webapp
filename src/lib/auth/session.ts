@@ -20,15 +20,13 @@ import { SignJWT, jwtVerify, type JWTPayload } from "jose";
 import type { Role } from "@/lib/constants";
 
 /**
- * Cookie 名。`__Host-` prefix は Secure / Path=/ / Domain なし を強制する。
- *
- * 開発環境メモ:
- * 本 Cookie は `Secure` 属性必須（`__Host-` の制約）。
- * `http://localhost` ではブラウザが Cookie をサイレントに拒否するため、
- * ローカル開発では `next dev --experimental-https` などで HTTPS を有効化するか、
- * Vercel preview デプロイで動作確認すること。
+ * Cookie 名（呼び出しごとに評価。テストで NODE_ENV を差し替え可能）
+ * - 本番: `__Host-` + Secure
+ * - 非本番（開発・test）: `http://localhost` でも保存できるよう Secure なし・通常名
  */
-export const SESSION_COOKIE_NAME = "__Host-est_session";
+export function getSessionCookieName(): string {
+  return process.env.NODE_ENV === "production" ? "__Host-est_session" : "est_session";
+}
 
 /** スライディング・タイムアウト（idle expiry）。再延長時の新トークンの exp に使う */
 export const SESSION_IDLE_TTL_SEC = 8 * 60 * 60; // 8h
@@ -194,26 +192,29 @@ export async function verifySessionToken(token: string): Promise<Session | null>
  */
 export function buildSessionCookie(token: string, expiresAt: Date): string {
   const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
-  // __Host- prefix のため Domain 属性は付けない / Path=/ 必須 / Secure 必須
-  return [
-    `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}`,
+  const secure = process.env.NODE_ENV === "production";
+  const parts = [
+    `${getSessionCookieName()}=${encodeURIComponent(token)}`,
     "Path=/",
     "HttpOnly",
-    "Secure",
     "SameSite=Lax",
     `Max-Age=${maxAge}`,
-  ].join("; ");
+  ];
+  if (secure) parts.push("Secure");
+  return parts.join("; ");
 }
 
 export function buildClearSessionCookie(): string {
-  return [
-    `${SESSION_COOKIE_NAME}=`,
+  const secure = process.env.NODE_ENV === "production";
+  const parts = [
+    `${getSessionCookieName()}=`,
     "Path=/",
     "HttpOnly",
-    "Secure",
     "SameSite=Lax",
     "Max-Age=0",
     // 古いプロキシ・非標準クライアント対策で Expires も併記
     "Expires=Thu, 01 Jan 1970 00:00:00 GMT",
-  ].join("; ");
+  ];
+  if (secure) parts.push("Secure");
+  return parts.join("; ");
 }

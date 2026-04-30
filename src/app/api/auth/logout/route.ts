@@ -12,7 +12,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import {
   buildClearSessionCookie,
-  SESSION_COOKIE_NAME,
+  getSessionCookieName,
   verifySessionToken,
 } from "@/lib/auth/session";
 import { AuthError, authErrorToResponse, ensureSameOrigin } from "@/lib/auth/guards";
@@ -26,7 +26,7 @@ function readSessionCookie(req: Request): string | null {
     const eq = part.indexOf("=");
     if (eq < 0) continue;
     const name = part.slice(0, eq).trim();
-    if (name !== SESSION_COOKIE_NAME) continue;
+    if (name !== getSessionCookieName()) continue;
     const value = part.slice(eq + 1).trim();
     if (!value) return null;
     try {

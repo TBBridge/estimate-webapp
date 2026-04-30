@@ -15,7 +15,7 @@ import {
   shouldRenewSession,
   buildSessionCookie,
   buildClearSessionCookie,
-  SESSION_COOKIE_NAME,
+  getSessionCookieName,
   SESSION_IDLE_TTL_SEC,
   SESSION_ABSOLUTE_TTL_SEC,
   SESSION_RENEW_THRESHOLD_RATIO,
@@ -320,19 +320,31 @@ describe("shouldRenewSession", () => {
 // ─── buildSessionCookie / buildClearSessionCookie ────────────────────────────
 
 describe("buildSessionCookie", () => {
-  it("produces a __Host- prefixed Set-Cookie string with all required attributes", async () => {
+  it("production: __Host- prefix, Secure, required attributes", async () => {
+    vi.stubEnv("NODE_ENV", "production");
     const { token, expiresAt } = await signSession({ sub: "u", role: "admin" });
     const header = buildSessionCookie(token, expiresAt);
 
-    expect(header).toContain(`${SESSION_COOKIE_NAME}=`);
+    expect(header).toContain(`${getSessionCookieName()}=`);
     expect(header).toContain("Path=/");
     expect(header).toContain("HttpOnly");
     expect(header).toContain("Secure");
     expect(header).toContain("SameSite=Lax");
     expect(header).toContain("Max-Age=");
     expect(header.startsWith("__Host-")).toBe(true);
-    // Must NOT include Domain
     expect(header).not.toContain("Domain=");
+  });
+
+  it("non-production: est_session without Secure (localhost dev)", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    const { token, expiresAt } = await signSession({ sub: "u", role: "admin" });
+    const header = buildSessionCookie(token, expiresAt);
+
+    expect(header).toContain("est_session=");
+    expect(header).toContain("Path=/");
+    expect(header).toContain("HttpOnly");
+    expect(header).not.toContain("Secure");
+    expect(header).toContain("SameSite=Lax");
   });
 
   it("sets Max-Age > 0 for a fresh token", async () => {
@@ -345,16 +357,24 @@ describe("buildSessionCookie", () => {
 });
 
 describe("buildClearSessionCookie", () => {
-  it("produces a __Host- prefixed cookie with Max-Age=0 and empty value", () => {
+  it("production: __Host- prefix + Secure + Max-Age=0", () => {
+    vi.stubEnv("NODE_ENV", "production");
     const header = buildClearSessionCookie();
 
-    expect(header).toContain(`${SESSION_COOKIE_NAME}=`);
+    expect(header).toContain(`${getSessionCookieName()}=`);
     expect(header).toContain("Path=/");
     expect(header).toContain("HttpOnly");
     expect(header).toContain("Secure");
     expect(header).toContain("SameSite=Lax");
     expect(header).toContain("Max-Age=0");
     expect(header.startsWith("__Host-")).toBe(true);
+  });
+
+  it("non-production: no Secure", () => {
+    vi.stubEnv("NODE_ENV", "test");
+    const header = buildClearSessionCookie();
+    expect(header).toContain("est_session=");
+    expect(header).not.toContain("Secure");
   });
 });
 

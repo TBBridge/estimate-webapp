@@ -13,7 +13,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import {
-  SESSION_COOKIE_NAME,
+  getSessionCookieName,
   buildClearSessionCookie,
   buildSessionCookie,
   renewSession,
@@ -74,7 +74,7 @@ export async function middleware(req: NextRequest) {
   const isApi = isApiPath(pathname);
   const isProtectedPage = isProtectedPagePath(pathname);
 
-  const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
+  const token = req.cookies.get(getSessionCookieName())?.value;
 
   // 公開パス: Cookie の維持・更新のみ（認証は要求しない）
   if (isPublic) {

@@ -16,9 +16,10 @@ import { NextResponse } from "next/server";
 
 import { getDb } from "@/lib/db";
 import type { Role } from "@/lib/constants";
+import { isUndefinedTable } from "@/lib/pg-errors";
 
 import {
-  SESSION_COOKIE_NAME,
+  getSessionCookieName,
   verifySessionToken,
   type Session,
 } from "./session";
@@ -54,7 +55,7 @@ function extractTokenFromRequest(req: Request): string | null {
   if (!cookieHeader) return null;
   for (const part of cookieHeader.split(";")) {
     const [rawName, ...rest] = part.split("=");
-    if (rawName?.trim() === SESSION_COOKIE_NAME) {
+    if (rawName?.trim() === getSessionCookieName()) {
       const value = rest.join("=").trim();
       if (!value) return null;
       try {
@@ -76,7 +77,13 @@ async function isRevoked(jti: string): Promise<boolean> {
     `;
     return rows.length > 0;
   } catch (e) {
-    // DB エラーは握りつぶさず「失効扱い」にして安全側に倒す
+    // テーブル未作成（004 未適用）のみ「未失効」とみなす。それ以外の DB 障害は拒否。
+    if (isUndefinedTable(e)) {
+      console.warn(
+        "[auth/guards] session_revocations が無いか未作成です。004_auth.sql を適用してください。失効チェックをスキップします。"
+      );
+      return false;
+    }
     console.error("[auth/guards] revocation check failed:", e);
     return true;
   }
@@ -122,9 +129,14 @@ export function ensureSameOrigin(req: Request): void {
   }
 
   try {
-    const a = new URL(allowed).origin;
+    const allowedOrigins = new Set<string>();
+    allowedOrigins.add(new URL(allowed).origin);
+    const vercelHost = process.env.VERCEL_URL?.trim();
+    if (vercelHost) {
+      allowedOrigins.add(new URL(`https://${vercelHost}`).origin);
+    }
     const b = new URL(origin).origin;
-    if (a !== b) {
+    if (!allowedOrigins.has(b)) {
       throw new AuthError(403, "csrf_origin_mismatch");
     }
   } catch (e) {
