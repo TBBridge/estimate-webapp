@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { DELIVERY_TYPES, CONTRACT_TYPES } from "@/lib/constants";
+import { handleAuthError, requireAdminOrApprover } from "@/lib/auth/guards";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    await requireAdminOrApprover(req);
     const sql = getDb();
 
     // ── KPI ──────────────────────────────────────────────────
@@ -12,13 +14,7 @@ export async function GET() {
         COUNT(*) AS total,
         COUNT(*) FILTER (WHERE status = 'approved') AS approved,
         COUNT(*) FILTER (WHERE status = 'pending') AS pending,
-        COALESCE(SUM(
-          CASE
-            WHEN status = 'approved' AND approved_amount_at_approval IS NOT NULL THEN
-              approved_amount_at_approval + COALESCE(approved_maintenance_fee_at_approval, 0)
-            ELSE amount + maintenance_fee
-          END
-        ), 0) AS total_amount
+        COALESCE(SUM(amount + maintenance_fee) FILTER (WHERE status = 'approved'), 0) AS total_amount
       FROM estimates
     `;
 
@@ -36,13 +32,7 @@ export async function GET() {
       SELECT
         TO_CHAR(DATE_TRUNC('month', created_at AT TIME ZONE 'Asia/Tokyo'), 'YYYY/MM') AS month,
         COUNT(*) AS count,
-        COALESCE(SUM(
-          CASE
-            WHEN status = 'approved' AND approved_amount_at_approval IS NOT NULL THEN
-              approved_amount_at_approval + COALESCE(approved_maintenance_fee_at_approval, 0)
-            ELSE amount + maintenance_fee
-          END
-        ), 0) AS amount
+        COALESCE(SUM(amount + maintenance_fee) FILTER (WHERE status = 'approved'), 0) AS amount
       FROM estimates
       WHERE created_at >= NOW() - INTERVAL '12 months'
       GROUP BY DATE_TRUNC('month', created_at AT TIME ZONE 'Asia/Tokyo')
@@ -85,6 +75,8 @@ export async function GET() {
       byContract,
     });
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error("[dashboard/stats]", e);
     return NextResponse.json({ error: "Failed to fetch dashboard stats" }, { status: 500 });
   }

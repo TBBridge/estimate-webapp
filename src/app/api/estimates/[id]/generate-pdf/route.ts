@@ -17,18 +17,22 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { generateEstimatePdfAndSave } from "@/lib/estimate-pdf-generate";
+import { handleAuthError, requireEstimateAccess } from "@/lib/auth/guards";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 type Params = { params: Promise<{ id: string }> };
 
-export async function POST(_req: Request, { params }: Params) {
+export async function POST(req: Request, { params }: Params) {
   try {
     const { id } = await params;
+    await requireEstimateAccess(req, id);
     const sql = getDb();
 
-    // 見積レコードを取得
+    const body = await req.json().catch(() => ({})) as { force?: unknown };
+    const force = body.force === true;
+
     const rows = await sql`
       SELECT id, no, agency_name, customer_name,
              delivery_type, contract_type, cloud_billing,
@@ -41,8 +45,8 @@ export async function POST(_req: Request, { params }: Params) {
     }
     const est = rows[0];
 
-    // 既に PDF が存在する場合はそのまま返す
-    if (est.pdf_url) {
+    // 既に PDF が存在し再生成指定がなければ既存 URL を返す
+    if (est.pdf_url && !force) {
       return NextResponse.json({ pdfUrl: est.pdf_url });
     }
 
@@ -53,7 +57,6 @@ export async function POST(_req: Request, { params }: Params) {
       );
     }
 
-    // Excel が存在しない場合はエラー
     if (!est.excel_url) {
       return NextResponse.json(
         { error: "Excel ファイルが存在しません。先に見積を申請してください。" },
@@ -65,8 +68,13 @@ export async function POST(_req: Request, { params }: Params) {
     return NextResponse.json({ pdfUrl });
 
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[generate-pdf] Error:", msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json(
+      { error: "PDF 生成に失敗しました。時間をおいて再度お試しください。" },
+      { status: 500 }
+    );
   }
 }

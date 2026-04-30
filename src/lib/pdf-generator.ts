@@ -81,14 +81,87 @@ function formatCloudConvertHttpError(status: number, text: string): string {
   return text.slice(0, 800);
 }
 
-function findFinishedExportUrl(job: CloudConvertJobData): string | null {
+/**
+ * CloudConvert が返すダウンロード URL のホストを検証する。
+ * ジョブ応答が改ざんされた場合の SSRF 的悪用を防ぐ防御層。
+ */
+function isAllowedCloudConvertUrl(rawUrl: string): boolean {
+  try {
+    const u = new URL(rawUrl);
+    if (u.protocol !== "https:") return false;
+    const host = u.hostname.toLowerCase();
+    return host === "cloudconvert.com" || host.endsWith(".cloudconvert.com");
+  } catch {
+    return false;
+  }
+}
+
+function findFinishedExportUrl(job: CloudConvertJobData, taskName?: string): string | null {
   for (const t of job.tasks ?? []) {
     if (t.operation === "export/url" && t.status === "finished") {
+      if (taskName && t.name !== taskName) continue;
       const url = t.result?.files?.[0]?.url;
-      if (url) return url;
+      if (url && isAllowedCloudConvertUrl(url)) return url;
     }
   }
   return null;
+}
+
+function findAllFinishedExportUrls(job: CloudConvertJobData, taskName: string): string[] {
+  for (const t of job.tasks ?? []) {
+    if (t.name === taskName && t.operation === "export/url" && t.status === "finished") {
+      return (t.result?.files ?? [])
+        .map((f) => f.url)
+        .filter((u): u is string => !!u && isAllowedCloudConvertUrl(u));
+    }
+  }
+  return [];
+}
+
+export type ConvertResult = {
+  pdf: Buffer;
+  amounts: { amount: number; maintenanceFee: number } | null;
+};
+
+/**
+ * CloudConvert が出力した表紙 CSV から見積金額を抽出する。
+ * 「御見積金額」「見積金額」「合計」等のキーワード行にある最大の数値を取る。
+ */
+export function extractAmountsFromCsv(csv: string): { amount: number; maintenanceFee: number } {
+  const lines = csv.split(/\r?\n/);
+
+  const extractNums = (line: string): number[] => {
+    const nums: number[] = [];
+    for (const cell of line.split(",")) {
+      const cleaned = cell.replace(/[""¥￥,、\s]/g, "");
+      const n = Number(cleaned);
+      if (Number.isFinite(n) && n > 0) nums.push(n);
+    }
+    return nums;
+  };
+
+  let amount = 0;
+  let maintenanceFee = 0;
+
+  const amountKeywords = ["御見積金額", "見積金額", "お見積金額"];
+  const maintenanceKeywords = ["保守", "年額保守", "保守料"];
+  const totalKeywords = ["合計", "税抜合計"];
+
+  for (const line of lines) {
+    const nums = extractNums(line);
+    if (nums.length === 0) continue;
+    const maxNum = Math.max(...nums);
+
+    if (amountKeywords.some((kw) => line.includes(kw))) {
+      amount = Math.max(amount, maxNum);
+    } else if (maintenanceKeywords.some((kw) => line.includes(kw)) && !amountKeywords.some((kw) => line.includes(kw))) {
+      maintenanceFee = Math.max(maintenanceFee, maxNum);
+    } else if (amount === 0 && totalKeywords.some((kw) => line.includes(kw))) {
+      amount = Math.max(amount, maxNum);
+    }
+  }
+
+  return { amount: Math.floor(amount), maintenanceFee: Math.floor(maintenanceFee) };
 }
 
 /**
@@ -145,7 +218,7 @@ async function prepareExcelForPdf(excelBuffer: Buffer): Promise<Buffer> {
   return Buffer.from(buf);
 }
 
-async function convertBufferWithCloudConvert(pdfReadyBuffer: Buffer): Promise<Buffer> {
+async function convertBufferWithCloudConvert(pdfReadyBuffer: Buffer): Promise<ConvertResult> {
   const apiKey = process.env.CLOUDCONVERT_API_KEY?.trim();
   if (!apiKey) {
     throw new Error(
@@ -178,6 +251,14 @@ async function convertBufferWithCloudConvert(pdfReadyBuffer: Buffer): Promise<Bu
   };
   if (useEngine) convertTask.engine = useEngine;
 
+  const convertCsvTask: Record<string, unknown> = {
+    operation: "convert",
+    input: "import_xlsx",
+    input_format: "xlsx",
+    output_format: "csv",
+  };
+  if (useEngine) convertCsvTask.engine = useEngine;
+
   const body = {
     tasks: {
       import_xlsx: {
@@ -186,9 +267,14 @@ async function convertBufferWithCloudConvert(pdfReadyBuffer: Buffer): Promise<Bu
         filename: "estimate.xlsx",
       },
       convert_pdf: convertTask,
-      export_url: {
+      export_pdf: {
         operation: "export/url",
         input: "convert_pdf",
+      },
+      convert_csv: convertCsvTask,
+      export_csv: {
+        operation: "export/url",
+        input: "convert_csv",
       },
     },
     tag: "estimate-webapp-excel-pdf",
@@ -224,19 +310,38 @@ async function convertBufferWithCloudConvert(pdfReadyBuffer: Buffer): Promise<Bu
     throw new Error(`CloudConvert: ジョブが完了しませんでした (status=${job.status ?? "?"})`);
   }
 
-  const fileUrl = findFinishedExportUrl(job);
-  if (!fileUrl) {
-    throw new Error("CloudConvert: export/url にダウンロード URL がありません");
+  const pdfUrl = findFinishedExportUrl(job, "export_pdf");
+  if (!pdfUrl) {
+    throw new Error("CloudConvert: export_pdf にダウンロード URL がありません");
   }
 
-  const dlRes = await fetch(fileUrl);
+  const dlRes = await fetch(pdfUrl);
   if (!dlRes.ok) {
     throw new Error(`CloudConvert PDF ダウンロード失敗: HTTP ${dlRes.status}`);
   }
-  return Buffer.from(await dlRes.arrayBuffer());
+  const pdf = Buffer.from(await dlRes.arrayBuffer());
+
+  let amounts: ConvertResult["amounts"] = null;
+  try {
+    const csvUrls = findAllFinishedExportUrls(job, "export_csv");
+    if (csvUrls.length > 0) {
+      const parts: string[] = [];
+      for (const url of csvUrls) {
+        const csvRes = await fetch(url);
+        if (csvRes.ok) parts.push(await csvRes.text());
+      }
+      if (parts.length > 0) {
+        amounts = extractAmountsFromCsv(parts.join("\n"));
+      }
+    }
+  } catch (csvErr) {
+    console.error("[pdf-generator] CSV 金額抽出失敗（PDF 生成は継続）:", csvErr);
+  }
+
+  return { pdf, amounts };
 }
 
-export async function convertExcelToPdf(excelBuffer: Buffer): Promise<Buffer> {
+export async function convertExcelToPdf(excelBuffer: Buffer): Promise<ConvertResult> {
   const pdfReadyBuffer = await prepareExcelForPdf(excelBuffer);
   return convertBufferWithCloudConvert(pdfReadyBuffer);
 }
