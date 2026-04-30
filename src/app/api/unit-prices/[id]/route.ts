@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { handleAuthError, requireAdmin } from "@/lib/auth/guards";
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    await requireAdmin(req);
     const sql = getDb();
     const { id } = await params;
     const { tiers } = await req.json();
@@ -17,6 +19,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       deliveryType: r.delivery_type, tiers: r.tiers,
     });
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error(e);
     return NextResponse.json({ error: "Failed to update unit price" }, { status: 500 });
   }

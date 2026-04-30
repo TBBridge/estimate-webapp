@@ -14,11 +14,12 @@ export function AuthGuard({
   children: React.ReactNode;
   allowedRoles: Role[];
 }) {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, loading } = useAuth();
   const { locale } = useLocale();
   const router = useRouter();
 
   useEffect(() => {
+    if (loading) return; // セッション再水和中はリダイレクトしない
     if (!isAuthenticated || !user) {
       router.replace("/login");
       return;
@@ -27,9 +28,9 @@ export function AuthGuard({
       router.replace("/");
       return;
     }
-  }, [isAuthenticated, user, allowedRoles, router]);
+  }, [loading, isAuthenticated, user, allowedRoles, router]);
 
-  if (!user || !allowedRoles.includes(user.role)) {
+  if (loading || !user || !allowedRoles.includes(user.role)) {
     return (
       <div className="grid min-h-screen place-items-center">
         <p className="font-body text-[var(--color-ink-muted)]">{t(locale, "common.loading")}</p>

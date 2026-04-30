@@ -20,13 +20,20 @@ import { sanitizeEstimateNoForBlobPath } from "@/lib/excel-file-history";
 import type { HubSpotSyncResultDto } from "@/lib/hubspot-approve-feedback";
 import type { Locale } from "@/lib/translations";
 import { parseExcelFileHistory } from "@/lib/excel-file-history";
+import {
+  handleAuthError,
+  requireAdmin,
+  requireAdminOrApprover,
+  requireEstimateAccess,
+} from "@/lib/auth/guards";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(req: Request, { params }: Params) {
   try {
-    const sql = getDb();
     const { id } = await params;
+    await requireEstimateAccess(req, id);
+    const sql = getDb();
     const { searchParams } = new URL(req.url);
     const includeHubSpotDeals =
       searchParams.get("includeHubSpotDeals") === "1" ||
@@ -80,8 +87,10 @@ export async function GET(req: Request, { params }: Params) {
       ...(hubspotDeals ? { hubspotDeals } : {}),
     });
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error("[estimates/id GET]", e);
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return NextResponse.json({ error: "server_error" }, { status: 500 });
   }
 }
 
@@ -116,6 +125,7 @@ function jsonEstimateRow(r: Record<string, unknown>) {
 
 export async function PATCH(req: Request, { params }: Params) {
   try {
+    await requireAdminOrApprover(req);
     const sql = getDb();
     const { id } = await params;
     const body = (await req.json()) as {
@@ -190,13 +200,16 @@ export async function PATCH(req: Request, { params }: Params) {
     const r = updated[0] as Record<string, unknown>;
     return NextResponse.json(jsonEstimateRow(r));
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error("[estimates/id PATCH]", e);
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return NextResponse.json({ error: "server_error" }, { status: 500 });
   }
 }
 
 export async function PUT(req: Request, { params }: Params) {
   try {
+    await requireAdminOrApprover(req);
     const sql = getDb();
     const { id } = await params;
     const body = (await req.json()) as {
@@ -432,13 +445,16 @@ export async function PUT(req: Request, { params }: Params) {
       ...(hubspotSync ? { hubspotSync } : {}),
     });
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error("[estimates/id PUT]", e);
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return NextResponse.json({ error: "server_error" }, { status: 500 });
   }
 }
 
-export async function DELETE(_req: Request, { params }: Params) {
+export async function DELETE(req: Request, { params }: Params) {
   try {
+    await requireAdmin(req);
     const sql = getDb();
     const { id } = await params;
 
@@ -476,7 +492,9 @@ export async function DELETE(_req: Request, { params }: Params) {
 
     return new NextResponse(null, { status: 204 });
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error("[estimates/id DELETE]", e);
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return NextResponse.json({ error: "server_error" }, { status: 500 });
   }
 }

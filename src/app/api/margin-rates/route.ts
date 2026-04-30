@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { handleAuthError, requireAdmin } from "@/lib/auth/guards";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    await requireAdmin(req);
     const sql = getDb();
     const rows = await sql`
       SELECT id, agency_id, agency_name, product_id, delivery_type,
@@ -15,6 +17,8 @@ export async function GET() {
       productId: r.product_id, deliveryType: r.delivery_type, rate: Number(r.rate),
     })));
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error(e);
     return NextResponse.json({ error: "Failed to fetch margin rates" }, { status: 500 });
   }
@@ -22,6 +26,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
+    await requireAdmin(req);
     const sql = getDb();
     const { agencyId, agencyName, productId, deliveryType, rate } = await req.json();
     const rows = await sql`
@@ -38,6 +43,8 @@ export async function POST(req: Request) {
       productId: r.product_id, deliveryType: r.delivery_type, rate: Number(r.rate),
     }, { status: 201 });
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error(e);
     return NextResponse.json({ error: "Failed to create margin rate" }, { status: 500 });
   }
@@ -45,6 +52,7 @@ export async function POST(req: Request) {
 
 export async function PUT(req: Request) {
   try {
+    await requireAdmin(req);
     const sql = getDb();
     const { id, rate } = await req.json();
     const rows = await sql`
@@ -59,6 +67,8 @@ export async function PUT(req: Request) {
       productId: r.product_id, deliveryType: r.delivery_type, rate: Number(r.rate),
     });
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error(e);
     return NextResponse.json({ error: "Failed to update margin rate" }, { status: 500 });
   }
@@ -66,11 +76,14 @@ export async function PUT(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
+    await requireAdmin(req);
     const sql = getDb();
     const { id } = await req.json();
     await sql`DELETE FROM margin_rates WHERE id = ${id}`;
     return NextResponse.json({ ok: true });
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error(e);
     return NextResponse.json({ error: "Failed to delete margin rate" }, { status: 500 });
   }

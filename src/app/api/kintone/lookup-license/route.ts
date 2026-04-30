@@ -18,6 +18,7 @@ import {
   type KintoneRecord,
 } from "@/lib/kintone";
 import { getKintoneLicenseAppConfig, kintoneConfigErrorMessage } from "@/lib/kintone-env";
+import { handleAuthError, requireAuth } from "@/lib/auth/guards";
 
 export const runtime = "nodejs";
 
@@ -59,6 +60,7 @@ function mapRecordToCandidate(
 
 export async function POST(req: Request) {
   try {
+    const session = await requireAuth(req);
     const kc = getKintoneLicenseAppConfig();
     if (!kc) {
       return NextResponse.json(
@@ -76,7 +78,17 @@ export async function POST(req: Request) {
       deliveryType?: DeliveryType;
     };
 
-    const { agencyId, userCompanyNameJa, userCompanyNameZh, contractType, deliveryType } = body;
+    const { userCompanyNameJa, userCompanyNameZh, contractType, deliveryType } = body;
+    // agency ロールはセッションの agencyId を強制（他社の kintone 情報を覗き見できないように）
+    let agencyId: string | undefined;
+    if (session.role === "agency") {
+      if (!session.agencyId) {
+        return NextResponse.json({ error: "forbidden" }, { status: 403 });
+      }
+      agencyId = session.agencyId;
+    } else {
+      agencyId = body.agencyId;
+    }
 
     if (contractType !== "license_add" && contractType !== "option_add") {
       return NextResponse.json({ error: "この契約形態では検索できません" }, { status: 400 });
@@ -185,6 +197,8 @@ export async function POST(req: Request) {
       existingMaintenanceEnd: first.existingMaintenanceEnd,
     });
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error("[kintone/lookup-license]", e);
     const msg = e instanceof Error ? e.message : String(e);
     const isFieldMissing =

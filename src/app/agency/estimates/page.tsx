@@ -2,7 +2,6 @@
 
 import { useState, useMemo } from "react";
 import { useLocale } from "@/lib/locale-context";
-import { useAuth } from "@/lib/auth-context";
 import { t } from "@/lib/translations";
 import EstimateCreateForm from "@/components/estimate-form/estimate-create-form";
 import { useEstimates } from "@/hooks/use-estimates";
@@ -113,14 +112,13 @@ function PdfCell({ estimate }: { estimate: Estimate }) {
 
 export default function AgencyEstimatesPage() {
   const { locale } = useLocale();
-  const { user } = useAuth();
   const l = (k: string) => t(locale, k);
   const [tab, setTab] = useState<Tab>("new");
 
-  // 自分の代理店IDでフィルタ
-  const { estimates, isLoading, error } = useEstimates(
-    user?.agencyId ? { agencyId: user.agencyId } : {},
-  );
+  // GET /api/estimates は agency ロールのセッションから agency_id を
+  // 強制的にスコープするため、クライアントからフィルタを渡さなくても
+  // 自分の代理店分だけが返る。
+  const { estimates, isLoading, error } = useEstimates({});
 
   type EstimateSortKey = "no" | "customerName" | "deliveryType" | "contractType" | "status" | "createdAt";
   const [sortKey, setSortKey] = useState<EstimateSortKey>("no");

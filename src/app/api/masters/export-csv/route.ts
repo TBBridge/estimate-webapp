@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { buildCsv } from "@/lib/csv";
+import { handleAuthError, requireAdmin } from "@/lib/auth/guards";
 
 export const runtime = "nodejs";
 
@@ -12,6 +13,7 @@ export const runtime = "nodejs";
  */
 export async function GET(req: Request) {
   try {
+    await requireAdmin(req);
     const { searchParams } = new URL(req.url);
     const kind = (searchParams.get("kind") ?? "").trim();
     if (kind !== "margin" && kind !== "maintenance" && kind !== "unitPrices") {
@@ -86,6 +88,8 @@ export async function GET(req: Request) {
       },
     });
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error("[masters export-csv]", e);
     return NextResponse.json({ error: "Failed to export CSV" }, { status: 500 });
   }

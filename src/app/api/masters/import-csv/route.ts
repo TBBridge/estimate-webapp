@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { parseCsv } from "@/lib/csv";
 import { parseMarginRateFromCsv } from "@/lib/import-rate";
+import { handleAuthError, requireAdmin } from "@/lib/auth/guards";
 
 export const runtime = "nodejs";
 
@@ -24,6 +25,7 @@ function pick(row: Record<string, string>, ...keys: string[]): string {
  */
 export async function POST(req: Request) {
   try {
+    await requireAdmin(req);
     const ct = req.headers.get("content-type") ?? "";
     if (!ct.includes("multipart/form-data")) {
       return NextResponse.json({ error: "multipart/form-data で file と kind を送ってください" }, { status: 400 });
@@ -167,6 +169,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ kind, upserted, errors, totalRows: rows.length });
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error("[masters import-csv]", e);
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }

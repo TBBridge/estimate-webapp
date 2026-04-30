@@ -1,18 +1,24 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { buildCsv } from "@/lib/csv";
+import { handleAuthError, requireAdmin } from "@/lib/auth/guards";
 
 export const runtime = "nodejs";
 
 /**
- * インポート（import-csv）と同じ列名・順序:
- * name,email,loginPassword,agencyType,contactName,department,phoneCountryCode,phoneLocal,approverName,approverEmail
+ * セキュリティ要件: パスワード列はエクスポートしない（平文流出防止）。
+ * 再インポートでは loginPassword 列が空の場合は更新しない方針なので、
+ * 列自体を出力しないことで運用上の事故を防ぐ。
+ *
+ * 出力列:
+ * name,email,agencyType,contactName,department,phoneCountryCode,phoneLocal,approverName,approverEmail
  */
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    await requireAdmin(req);
     const sql = getDb();
     const rows = await sql`
-      SELECT name, email, login_password, agency_type, contact_name, department,
+      SELECT name, email, agency_type, contact_name, department,
              phone_country_code, phone_local, approver_name, approver_email
       FROM agencies
       ORDER BY created_at ASC
@@ -20,7 +26,6 @@ export async function GET() {
     const header: string[] = [
       "name",
       "email",
-      "loginPassword",
       "agencyType",
       "contactName",
       "department",
@@ -34,7 +39,6 @@ export async function GET() {
       ...rows.map((r) => [
         String(r.name ?? ""),
         String(r.email ?? ""),
-        String(r.login_password ?? ""),
         String(r.agency_type ?? ""),
         String(r.contact_name ?? ""),
         String(r.department ?? ""),
@@ -44,7 +48,7 @@ export async function GET() {
         String(r.approver_email ?? ""),
       ]),
     ];
-    const body = "\uFEFF" + buildCsv(data);
+    const body = "﻿" + buildCsv(data);
     return new NextResponse(body, {
       status: 200,
       headers: {
@@ -54,6 +58,8 @@ export async function GET() {
       },
     });
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error("[agencies export-csv]", e);
     return NextResponse.json({ error: "Failed to export CSV" }, { status: 500 });
   }

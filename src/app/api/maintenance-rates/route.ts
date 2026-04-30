@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { handleAuthError, requireAdmin } from "@/lib/auth/guards";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    await requireAdmin(req);
     const sql = getDb();
     const rows = await sql`
       SELECT id, agency_id, agency_name, product_id, CAST(rate AS FLOAT) AS rate
@@ -17,6 +19,8 @@ export async function GET() {
       rate: Number(r.rate),
     })));
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error(e);
     return NextResponse.json({ error: "Failed to fetch maintenance rates" }, { status: 500 });
   }
@@ -24,6 +28,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
+    await requireAdmin(req);
     const sql = getDb();
     const { agencyId, agencyName, productId, rate } = await req.json();
     const rows = await sql`
@@ -42,6 +47,8 @@ export async function POST(req: Request) {
       rate: Number(r.rate),
     }, { status: 201 });
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error(e);
     return NextResponse.json({ error: "Failed to create maintenance rate" }, { status: 500 });
   }
@@ -49,6 +56,7 @@ export async function POST(req: Request) {
 
 export async function PUT(req: Request) {
   try {
+    await requireAdmin(req);
     const sql = getDb();
     const { id, rate } = await req.json();
     const rows = await sql`
@@ -65,6 +73,8 @@ export async function PUT(req: Request) {
       rate: Number(r.rate),
     });
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error(e);
     return NextResponse.json({ error: "Failed to update maintenance rate" }, { status: 500 });
   }
@@ -72,11 +82,14 @@ export async function PUT(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
+    await requireAdmin(req);
     const sql = getDb();
     const { id } = await req.json();
     await sql`DELETE FROM maintenance_rates WHERE id = ${id}`;
     return NextResponse.json({ ok: true });
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error(e);
     return NextResponse.json({ error: "Failed to delete maintenance rate" }, { status: 500 });
   }

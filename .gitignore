@@ -4,3 +4,17 @@ node_modules/
 .env.local
 .env*.local
 *.log
+
+# Claude / local tooling
+.claude/
+
+# TypeScript incremental build state
+*.tsbuildinfo
+
+# Vitest coverage output
+/coverage/
+
+# ローカル検証用スクリプトと出力（リポジトリにはコミットしない）
+/check-pdf-prep.mjs
+/check-pdf-prep-output*.xlsx
+/get-excel-url.mjs

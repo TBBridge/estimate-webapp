@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useLocale } from "@/lib/locale-context";
-import { useAuth } from "@/lib/auth-context";
 import { t } from "@/lib/translations";
 import { useEstimates } from "@/hooks/use-estimates";
 import type { Estimate } from "@/lib/mock-data";
@@ -35,13 +34,11 @@ function contractLabel(v: string) {
 // ── メインページ ─────────────────────────────────────────────
 export default function ApproverPage() {
   const { locale } = useLocale();
-  const { user } = useAuth();
   const l = (k: string) => t(locale, k);
 
-  // 承認者は自分の agencyId に紐づく見積のみ表示
-  const { estimates, isLoading, error } = useEstimates(
-    user?.agencyId ? { agencyId: user.agencyId } : {},
-  );
+  // 承認者は全代理店の見積を閲覧可能（サーバ側 GET /api/estimates が
+  // admin/approver にはスコープを掛けない）。
+  const { estimates, isLoading, error } = useEstimates({});
 
   const [tab, setTab] = useState<"pending" | "all">("pending");
   const [selected, setSelected] = useState<Estimate | null>(null);

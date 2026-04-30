@@ -11,6 +11,7 @@ import {
   normalizeKintoneDomain,
 } from "@/lib/kintone";
 import { getKintoneLicenseAppConfig, kintoneConfigErrorMessage } from "@/lib/kintone-env";
+import { handleAuthError, requireAdmin } from "@/lib/auth/guards";
 
 export const runtime = "nodejs";
 
@@ -18,8 +19,9 @@ function env(name: string, fallback = ""): string {
   return process.env[name]?.trim() ?? fallback;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    await requireAdmin(req);
     const kc = getKintoneLicenseAppConfig();
     if (!kc) {
       return NextResponse.json(
@@ -59,6 +61,8 @@ export async function GET() {
       fields,
     });
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error("[kintone/app-fields]", e);
     const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ error: msg }, { status: 500 });

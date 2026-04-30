@@ -16,6 +16,7 @@ import { sendApprovalNotification } from "@/lib/notify";
 import { writeEstimateToTemplate } from "@/lib/excel-writer";
 import { DELIVERY_TYPES, CONTRACT_TYPES } from "@/lib/constants";
 import { resolveCustomerDisplayName } from "@/lib/estimate-schema";
+import { handleAuthError, requireAuth } from "@/lib/auth/guards";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -40,12 +41,13 @@ function resolveTemplateId(
 
 export async function POST(req: Request) {
   try {
+    const session = await requireAuth(req);
     const sql = getDb();
     const body = await req.json();
 
     const {
-      agencyId,
-      agencyName,
+      agencyId: bodyAgencyId,
+      agencyName: bodyAgencyName,
       customerName,
       deliveryType,
       contractType,
@@ -61,8 +63,30 @@ export async function POST(req: Request) {
       formInputs: Record<string, unknown>;
     };
 
-    // ── 代理店種別を取得（Excel C7 セルへの VLOOKUP キー）────
-    const agencyRows = await sql`SELECT agency_type FROM agencies WHERE id = ${agencyId}`;
+    // agency ロールでは agencyId を強制的にセッション値で上書き、
+    // agencyName/agency_type も DB から取得（クライアント送信値は信用しない）。
+    let agencyId = bodyAgencyId;
+    let agencyName = bodyAgencyName;
+
+    if (session.role === "agency") {
+      if (!session.agencyId) {
+        return NextResponse.json({ error: "forbidden" }, { status: 403 });
+      }
+      agencyId = session.agencyId;
+    }
+
+    // ── 代理店情報を 1 クエリで取得（TOCTOU 防止）────
+    const agencyRows = await sql`
+      SELECT name, agency_type FROM agencies WHERE id = ${agencyId} LIMIT 1
+    `;
+    if (session.role === "agency" && agencyRows.length === 0) {
+      return NextResponse.json({ error: "agency_not_found" }, { status: 403 });
+    }
+    if (agencyRows.length > 0) {
+      if (session.role === "agency") {
+        agencyName = String(agencyRows[0].name ?? "");
+      }
+    }
     const agencyType = (agencyRows[0]?.agency_type as string | undefined) ?? agencyName;
 
     const mainProductId = "ireporter";
@@ -165,14 +189,13 @@ export async function POST(req: Request) {
           }
         }
       } catch (excelErr) {
-        const errMsg = excelErr instanceof Error ? `${excelErr.message}\n${excelErr.stack}` : String(excelErr);
-        console.error("[submit] Excel generation error:", errMsg);
-        // excelError をレスポンスに含めてデバッグを容易にする（申請自体は成功）
+        // 詳細エラーはサーバログにのみ残し、レスポンスには含めない（スタック漏洩防止）
+        console.error("[submit] Excel generation error:", excelErr);
         return NextResponse.json({
           id: record.id, no: record.no, status: record.status,
           createdAt: record.created_at, excelUrl: "", pdfUrl: "",
           hubspotDealId: hubspotDealId || undefined,
-          excelError: errMsg,
+          excelError: "excel_generation_failed",
         }, { status: 201 });
       }
     }
@@ -207,9 +230,9 @@ export async function POST(req: Request) {
     }, { status: 201 });
 
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    const stack = e instanceof Error ? e.stack : undefined;
-    console.error("[submit] Error:", msg, stack);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
+    console.error("[submit] Error:", e);
+    return NextResponse.json({ error: "server_error" }, { status: 500 });
   }
 }

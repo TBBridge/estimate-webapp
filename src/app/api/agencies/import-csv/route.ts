@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { parseCsv } from "@/lib/csv";
 import { agencyMutationErrorResponse } from "@/app/api/agencies/agency-mutation-errors";
+import { handleAuthError, requireAdmin } from "@/lib/auth/guards";
+import { hashPassword } from "@/lib/auth/password";
 
 export const runtime = "nodejs";
 
@@ -22,6 +24,7 @@ function pick(row: Record<string, string>, ...keys: string[]): string {
  */
 export async function POST(req: Request) {
   try {
+    await requireAdmin(req);
     const ct = req.headers.get("content-type") ?? "";
     if (!ct.includes("multipart/form-data")) {
       return NextResponse.json({ error: "multipart/form-data で file を送ってください" }, { status: 400 });
@@ -60,14 +63,27 @@ export async function POST(req: Request) {
       const approverEmail = pick(row, "approveremail", "approver_email", "承認者メール");
 
       try {
+        // パスワード列が CSV に含まれていればハッシュ化して書き込む（平文は保存しない）。
+        // 空のままだと password_hash が NULL のまま登録され、当該代理店はログイン不可になる。
+        // オペレータが見落とさないように警告として errors にも残す。
+        const passwordHash = loginPassword ? await hashPassword(loginPassword) : null;
+        const migratedAt = passwordHash ? new Date().toISOString() : null;
+        if (!passwordHash) {
+          errors.push({
+            line,
+            message: "loginPassword が空のため、この代理店はログインできません（要再設定）",
+          });
+        }
         await sql`
           INSERT INTO agencies (
-            name, email, login_password, agency_type, contact_name, department,
+            name, email, login_password, password_hash, password_migrated_at,
+            agency_type, contact_name, department,
             phone_country_code, phone_local, fax_country_code, fax_local,
             approver_name, approver_email
           )
           VALUES (
-            ${name}, ${email}, ${loginPassword}, ${agencyType},
+            ${name}, ${email}, '', ${passwordHash}, ${migratedAt},
+            ${agencyType},
             ${contactName}, ${department},
             ${phoneCountryCode}, ${phoneLocal},
             ${"+81"}, ${""},
@@ -83,6 +99,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ created, errors, totalRows: rows.length });
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     return agencyMutationErrorResponse(e, "[agencies import-csv]");
   }
 }

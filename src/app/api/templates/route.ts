@@ -3,9 +3,11 @@
  */
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { handleAuthError, requireAdmin } from "@/lib/auth/guards";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    await requireAdmin(req);
     const sql = getDb();
     const rows = await sql`
       SELECT id, delivery_type, contract_type, sub_type,
@@ -24,6 +26,8 @@ export async function GET() {
       uploadedAt: r.uploaded_at,
     })));
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error("[templates GET]", e);
     return NextResponse.json({ error: "Failed to fetch templates" }, { status: 500 });
   }

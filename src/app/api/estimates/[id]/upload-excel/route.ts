@@ -12,6 +12,7 @@ import {
   sanitizeEstimateNoForBlobPath,
   type ExcelFileHistoryEntry,
 } from "@/lib/excel-file-history";
+import { handleAuthError, requireEstimateAccess } from "@/lib/auth/guards";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -23,6 +24,7 @@ const MAX_BYTES = 25 * 1024 * 1024;
 export async function POST(req: Request, { params }: Params) {
   try {
     const { id } = await params;
+    await requireEstimateAccess(req, id);
     const sql = getDb();
 
     const rows = await sql`
@@ -102,6 +104,8 @@ export async function POST(req: Request, { params }: Params) {
       });
     }
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[upload-excel]", msg);
     return NextResponse.json({ error: msg }, { status: 500 });

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { parseExcelFileHistory } from "@/lib/excel-file-history";
+import { handleAuthError, requireAuth } from "@/lib/auth/guards";
 
 function mapEstimateListRow(r: Record<string, unknown>) {
   return {
@@ -33,9 +34,14 @@ function mapEstimateListRow(r: Record<string, unknown>) {
 
 export async function GET(req: Request) {
   try {
+    const session = await requireAuth(req);
     const sql = getDb();
     const { searchParams } = new URL(req.url);
-    const agencyId = searchParams.get("agencyId") ?? "";
+    // agency ロールはセッションの agencyId に強制（クライアント指定値は無視）
+    const agencyId =
+      session.role === "agency"
+        ? (session.agencyId ?? "__no_agency__")
+        : (searchParams.get("agencyId") ?? "");
     const deliveryType = searchParams.get("deliveryType") ?? "";
     const contractType = searchParams.get("contractType") ?? "";
     const status = searchParams.get("status") ?? "";
@@ -107,6 +113,8 @@ export async function GET(req: Request) {
     `;
     return NextResponse.json(rows.map((r) => mapEstimateListRow(r as Record<string, unknown>)));
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error(e);
     return NextResponse.json({ error: "Failed to fetch estimates" }, { status: 500 });
   }
@@ -114,8 +122,37 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    const session = await requireAuth(req);
     const sql = getDb();
-    const { no, agencyId, agencyName, customerName, deliveryType, contractType, amount, maintenanceFee } = await req.json();
+    const body = (await req.json()) as {
+      no: string;
+      agencyId: string;
+      agencyName: string;
+      customerName: string;
+      deliveryType: string;
+      contractType: string;
+      amount: number;
+      maintenanceFee: number;
+    };
+    // agency ロールは自分の代理店IDを強制（セッションに agencyId が無ければ拒否）。
+    // agencyName もクライアント送信値を信用せず DB から取得する。
+    let agencyId: string;
+    let agencyName: string;
+    if (session.role === "agency") {
+      if (!session.agencyId) {
+        return NextResponse.json({ error: "forbidden" }, { status: 403 });
+      }
+      agencyId = session.agencyId;
+      const agRows = await sql`SELECT name FROM agencies WHERE id = ${agencyId} LIMIT 1`;
+      if (agRows.length === 0) {
+        return NextResponse.json({ error: "agency_not_found" }, { status: 403 });
+      }
+      agencyName = String(agRows[0].name ?? "");
+    } else {
+      agencyId = body.agencyId;
+      agencyName = body.agencyName;
+    }
+    const { no, customerName, deliveryType, contractType, amount, maintenanceFee } = body;
     const rows = await sql`
       INSERT INTO estimates (no, agency_id, agency_name, customer_name, delivery_type, contract_type, amount, maintenance_fee)
       VALUES (${no}, ${agencyId}, ${agencyName}, ${customerName}, ${deliveryType}, ${contractType}, ${amount}, ${maintenanceFee})
@@ -131,6 +168,8 @@ export async function POST(req: Request) {
       status: r.status, createdAt: r.created_at,
     }, { status: 201 });
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error(e);
     return NextResponse.json({ error: "Failed to create estimate" }, { status: 500 });
   }

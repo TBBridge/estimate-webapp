@@ -5,6 +5,7 @@
 import { NextResponse } from "next/server";
 import { put, del } from "@vercel/blob";
 import { getDb } from "@/lib/db";
+import { handleAuthError, requireAdmin } from "@/lib/auth/guards";
 
 export const runtime = "nodejs";
 
@@ -12,6 +13,7 @@ type Params = { params: Promise<{ id: string }> };
 
 export async function POST(req: Request, { params }: Params) {
   try {
+    await requireAdmin(req);
     if (!process.env.BLOB_READ_WRITE_TOKEN) {
       return NextResponse.json(
         { error: "BLOB_READ_WRITE_TOKEN が設定されていません。Vercel ダッシュボード > Storage > Blob でトークンを取得し、環境変数に設定してください。" },
@@ -61,13 +63,16 @@ export async function POST(req: Request, { params }: Params) {
 
     return NextResponse.json({ id, fileName: file.name, blobUrl: url, uploadedAt: today });
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error("[templates/id POST]", e);
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }
 }
 
-export async function DELETE(_req: Request, { params }: Params) {
+export async function DELETE(req: Request, { params }: Params) {
   try {
+    await requireAdmin(req);
     const { id } = await params;
     const sql = getDb();
     const existing = await sql`SELECT blob_url FROM templates WHERE id = ${id}`;
@@ -88,6 +93,8 @@ export async function DELETE(_req: Request, { params }: Params) {
 
     return NextResponse.json({ ok: true });
   } catch (e) {
+    const authRes = handleAuthError(e);
+    if (authRes) return authRes;
     console.error("[templates/id DELETE]", e);
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }

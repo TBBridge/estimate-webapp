@@ -190,8 +190,8 @@ export default function DashboardLayout({
   const navItems = getNav(role);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  function handleLogout() {
-    logout();
+  async function handleLogout() {
+    await logout();
     router.push("/login");
   }
 
