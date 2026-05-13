@@ -2,16 +2,19 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { agencyMutationErrorResponse } from "@/app/api/agencies/agency-mutation-errors";
 import { isForeignKeyViolation } from "@/lib/pg-errors";
-import { handleAuthError, requireAdmin } from "@/lib/auth/guards";
+import { AuthError, handleAuthError, requireAdmin, requireAuth } from "@/lib/auth/guards";
 import { hashPassword } from "@/lib/auth/password";
 
 export const runtime = "nodejs";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireAdmin(req);
-    const sql = getDb();
     const { id } = await params;
+    const session = await requireAuth(req);
+    if (session.role !== "admin" && (session.role !== "agency" || session.agencyId !== id)) {
+      throw new AuthError(403, "forbidden");
+    }
+    const sql = getDb();
     const rows = await sql`
       SELECT id, name, email, agency_type, contact_name, department,
              phone_country_code, phone_local,
