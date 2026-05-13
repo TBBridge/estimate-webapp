@@ -9,7 +9,7 @@ import LanguageSwitcher from "@/components/language-switcher";
 import ThemeToggle from "@/components/theme-toggle";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
+  const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -21,7 +21,7 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
     setLoading(true);
-    const ok = await login(email, password);
+    const ok = await login(loginId, password);
     setLoading(false);
     if (!ok) {
       setError(t(locale, "login.error"));
@@ -72,13 +72,14 @@ export default function LoginPage() {
               {t(locale, "login.email")}
             </label>
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              type="text"
+              value={loginId}
+              onChange={(e) => setLoginId(e.target.value)}
               required
-              autoComplete="email"
+              pattern="[!-~]+"
+              autoComplete="username"
               className={inputCls}
-              placeholder="your@email.com"
+              placeholder="admin#01"
             />
           </div>
 

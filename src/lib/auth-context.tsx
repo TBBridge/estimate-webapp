@@ -12,6 +12,7 @@ import type { Role } from "./constants";
 
 export type User = {
   id: string;
+  loginId?: string;
   email: string;
   name: string;
   role: Role;
@@ -22,7 +23,7 @@ type AuthContextValue = {
   user: User | null;
   /** 初回マウント時の /api/auth/me 呼び出し中は true */
   loading: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (loginId: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
   isAuthenticated: boolean;
 };
@@ -65,13 +66,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (loginId: string, password: string) => {
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ loginId, password }),
       });
       if (!res.ok) return false;
       const data = (await res.json()) as User;

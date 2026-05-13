@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { handleAuthError, requireAdmin } from "@/lib/auth/guards";
 import { hashPassword } from "@/lib/auth/password";
+import { isValidLoginId, normalizeLoginId } from "@/lib/login-id";
 
 export const runtime = "nodejs";
 
@@ -10,13 +11,13 @@ export async function GET(req: Request) {
     await requireAdmin(req);
     const sql = getDb();
     const rows = await sql`
-      SELECT id, name, email, role,
+      SELECT id, login_id, name, email, role,
              TO_CHAR(created_at, 'YYYY-MM-DD') AS created_at
       FROM system_users
       ORDER BY role ASC, created_at ASC
     `;
     return NextResponse.json(rows.map((r) => ({
-      id: r.id, name: r.name, email: r.email,
+      id: r.id, loginId: r.login_id, name: r.name, email: r.email,
       role: r.role, createdAt: r.created_at,
     })));
   } catch (e) {
@@ -31,28 +32,33 @@ export async function POST(req: Request) {
   try {
     await requireAdmin(req);
     const sql = getDb();
-    const { name, email, password, role } = (await req.json()) as {
+    const { name, loginId: rawLoginId, email, password, role } = (await req.json()) as {
       name: string;
+      loginId: string;
       email: string;
       password: string;
       role: string;
     };
+    const loginId = normalizeLoginId(rawLoginId);
     if (!["admin", "approver"].includes(role)) {
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
+    }
+    if (!name || !isValidLoginId(loginId) || !email) {
+      return NextResponse.json({ error: "name_login_id_email_required" }, { status: 400 });
     }
     if (!password || typeof password !== "string" || password.length < 1) {
       return NextResponse.json({ error: "password_required" }, { status: 400 });
     }
     const hash = await hashPassword(password);
     const rows = await sql`
-      INSERT INTO system_users (name, email, password, password_hash, password_migrated_at, role)
-      VALUES (${name}, ${email}, '', ${hash}, NOW(), ${role})
-      RETURNING id, name, email, role,
+      INSERT INTO system_users (name, login_id, email, password, password_hash, password_migrated_at, role)
+      VALUES (${name}, ${loginId}, ${email}, '', ${hash}, NOW(), ${role})
+      RETURNING id, login_id, name, email, role,
                 TO_CHAR(created_at, 'YYYY-MM-DD') AS created_at
     `;
     const r = rows[0];
     return NextResponse.json({
-      id: r.id, name: r.name, email: r.email,
+      id: r.id, loginId: r.login_id, name: r.name, email: r.email,
       role: r.role, createdAt: r.created_at,
     }, { status: 201 });
   } catch (e) {

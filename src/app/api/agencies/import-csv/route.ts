@@ -4,6 +4,7 @@ import { parseCsv } from "@/lib/csv";
 import { agencyMutationErrorResponse } from "@/app/api/agencies/agency-mutation-errors";
 import { handleAuthError, requireAdmin } from "@/lib/auth/guards";
 import { hashPassword } from "@/lib/auth/password";
+import { isValidLoginId, normalizeLoginId } from "@/lib/login-id";
 
 export const runtime = "nodejs";
 
@@ -19,8 +20,8 @@ function pick(row: Record<string, string>, ...keys: string[]): string {
 
 /**
  * CSV ヘッダ例（いずれかの列名）:
- * name,email,loginPassword,agencyType,contactName,department,phoneCountryCode,phoneLocal,approverName,approverEmail
- * 日本語: 代理店名,メール,ログインパスワード,代理店種別,担当者名,部署,電話国番号,電話,承認者名,承認者メール
+ * name,loginId,email,loginPassword,agencyType,contactName,department,phoneCountryCode,phoneLocal,approverName,approverEmail
+ * 日本語: 代理店名,ログインID,メール,ログインパスワード,代理店種別,担当者名,部署,電話国番号,電話,承認者名,承認者メール
  */
 export async function POST(req: Request) {
   try {
@@ -48,9 +49,10 @@ export async function POST(req: Request) {
       const row = rows[i];
       const line = i + 2;
       const name = pick(row, "name", "代理店名", "agency_name").trim();
+      const loginId = normalizeLoginId(pick(row, "loginid", "login_id", "ログインid", "ログインID"));
       const email = pick(row, "email", "メール", "e-mail").trim();
-      if (!name || !email) {
-        errors.push({ line, message: "name と email は必須です" });
+      if (!name || !isValidLoginId(loginId) || !email) {
+        errors.push({ line, message: "name, loginId, email は必須です" });
         continue;
       }
       const loginPassword = pick(row, "loginpassword", "login_password", "ログインパスワード");
@@ -76,13 +78,13 @@ export async function POST(req: Request) {
         }
         await sql`
           INSERT INTO agencies (
-            name, email, login_password, password_hash, password_migrated_at,
+            name, login_id, email, login_password, password_hash, password_migrated_at,
             agency_type, contact_name, department,
             phone_country_code, phone_local, fax_country_code, fax_local,
             approver_name, approver_email
           )
           VALUES (
-            ${name}, ${email}, '', ${passwordHash}, ${migratedAt},
+            ${name}, ${loginId}, ${email}, '', ${passwordHash}, ${migratedAt},
             ${agencyType},
             ${contactName}, ${department},
             ${phoneCountryCode}, ${phoneLocal},

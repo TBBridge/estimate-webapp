@@ -46,6 +46,7 @@ function responseBody(res: unknown): Record<string, unknown> {
 const agencyRow = {
   id: "ag-1",
   name: "Agency One",
+  login_id: "agency-one",
   email: "agency@example.com",
   agency_type: "partner",
   contact_name: "Taro Agency",
@@ -93,6 +94,7 @@ describe("GET /api/agencies/[id]", () => {
     expect(responseBody(res)).toMatchObject({
       id: "ag-1",
       name: "Agency One",
+      loginId: "agency-one",
       email: "agency@example.com",
       contactName: "Taro Agency",
       department: "Sales",

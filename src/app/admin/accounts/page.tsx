@@ -7,6 +7,7 @@ import { t } from "@/lib/translations";
 
 type SystemUser = {
   id: string;
+  loginId: string;
   name: string;
   email: string;
   role: "admin" | "approver";
@@ -15,6 +16,7 @@ type SystemUser = {
 
 type FormData = {
   name: string;
+  loginId: string;
   email: string;
   password: string;
   role: "admin" | "approver";
@@ -23,7 +25,7 @@ type FormData = {
 const KEY = "/api/system-users";
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-const emptyForm = (): FormData => ({ name: "", email: "", password: "", role: "approver" });
+const emptyForm = (): FormData => ({ name: "", loginId: "", email: "", password: "", role: "approver" });
 
 export default function AdminAccountsPage() {
   const { locale } = useLocale();
@@ -33,7 +35,7 @@ export default function AdminAccountsPage() {
   const [form, setForm] = useState<FormData>(emptyForm());
   const [saving, setSaving] = useState(false);
 
-  type UserSortKey = "name" | "email" | "role" | "createdAt";
+  type UserSortKey = "name" | "loginId" | "email" | "role" | "createdAt";
   const [sortKey, setSortKey] = useState<UserSortKey>("createdAt");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
@@ -67,7 +69,7 @@ export default function AdminAccountsPage() {
   const openAdd = () => { setEditId(null); setForm(emptyForm()); setShowModal(true); };
   const openEdit = (u: SystemUser) => {
     setEditId(u.id);
-    setForm({ name: u.name, email: u.email, password: "", role: u.role });
+    setForm({ name: u.name, loginId: u.loginId, email: u.email, password: "", role: u.role });
     setShowModal(true);
   };
 
@@ -138,6 +140,7 @@ export default function AdminAccountsPage() {
             <thead>
               <tr className="border-b border-stone-200/80 dark:border-stone-700/80">
                 <SortTh colKey="name" labelKey="admin.accounts.name" />
+                <SortTh colKey="loginId" labelKey="admin.accounts.loginId" />
                 <SortTh colKey="email" labelKey="admin.accounts.email" />
                 <SortTh colKey="role" labelKey="admin.accounts.role" />
                 <SortTh colKey="createdAt" labelKey="admin.accounts.createdAt" />
@@ -148,6 +151,7 @@ export default function AdminAccountsPage() {
               {sortedUsers.map((u) => (
                 <tr key={u.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-800/40">
                   <td className="px-4 py-3 font-medium text-[var(--color-ink)]">{u.name}</td>
+                  <td className="px-4 py-3 text-[var(--color-ink-muted)]">{u.loginId}</td>
                   <td className="px-4 py-3 text-[var(--color-ink-muted)]">{u.email}</td>
                   <td className="px-4 py-3">
                     <span className={roleBadgeCls(u.role)}>{roleLabel(u.role)}</span>
@@ -169,7 +173,7 @@ export default function AdminAccountsPage() {
               ))}
               {sortedUsers.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-[var(--color-ink-muted)]">
+                  <td colSpan={6} className="px-4 py-8 text-center text-[var(--color-ink-muted)]">
                     アカウントがありません
                   </td>
                 </tr>
@@ -193,6 +197,16 @@ export default function AdminAccountsPage() {
                 </label>
                 <input type="text" value={form.name}
                   onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                  className={inputCls} />
+              </div>
+              {/* ログインID */}
+              <div>
+                <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">
+                  {t(locale, "admin.accounts.loginId")}
+                </label>
+                <input type="text" value={form.loginId}
+                  onChange={(e) => setForm((p) => ({ ...p, loginId: e.target.value }))}
+                  pattern="[!-~]+"
                   className={inputCls} />
               </div>
               {/* メールアドレス */}

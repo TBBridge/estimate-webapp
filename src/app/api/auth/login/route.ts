@@ -24,17 +24,25 @@ import { getDb } from "@/lib/db";
 import { signSession, buildSessionCookie } from "@/lib/auth/session";
 import { hashPassword, verifyLoginPassword } from "@/lib/auth/password";
 import { AuthError, authErrorToResponse, ensureSameOrigin } from "@/lib/auth/guards";
+import { isValidLoginId, normalizeLoginId } from "@/lib/login-id";
 
 export const runtime = "nodejs";
 
 const LoginSchema = z.object({
-  email: z.string().email().max(254),
+  loginId: z.string().optional(),
+  email: z.string().optional(),
   password: z.string().min(1).max(200),
+}).transform((value) => ({
+  loginId: normalizeLoginId(value.loginId ?? value.email),
+  password: value.password,
+})).refine((value) => isValidLoginId(value.loginId), {
+  path: ["loginId"],
 });
 
 type SystemUserRow = {
   id: string;
   name: string;
+  login_id: string;
   email: string;
   role: "admin" | "approver";
   password: string | null;
@@ -44,6 +52,7 @@ type SystemUserRow = {
 type AgencyRow = {
   id: string;
   name: string;
+  login_id: string;
   email: string;
   login_password: string | null;
   password_hash: string | null;
@@ -62,7 +71,7 @@ function getClientIp(req: Request): string | null {
 }
 
 async function logAttempt(
-  email: string | null,
+  loginId: string | null,
   ip: string | null,
   success: boolean
 ): Promise<void> {
@@ -70,7 +79,7 @@ async function logAttempt(
     const sql = getDb();
     await sql`
       INSERT INTO login_attempts (email, ip, success)
-      VALUES (${email}, ${ip}, ${success})
+      VALUES (${loginId}, ${ip}, ${success})
     `;
   } catch (e) {
     // ログ失敗は認証フローを止めない
@@ -98,24 +107,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
   }
 
-  const { email, password } = parsed;
+  const { loginId, password } = parsed;
   const sql = getDb();
 
   try {
     // ── 両テーブルを並列クエリ + 両方の bcrypt 比較を必ず実行 ─────────────
-    // タイミング攻撃により「どちらのテーブルにメールアドレスがあるか」を
+    // タイミング攻撃により「どちらのテーブルにログインIDがあるか」を
     // 検出されるのを防ぐため、ヒット有無に関わらず常に一定の処理を行う。
     const [sysRowsRaw, agRowsRaw] = await Promise.all([
       sql`
-        SELECT id, name, email, role, password, password_hash
+        SELECT id, name, login_id, email, role, password, password_hash
         FROM system_users
-        WHERE email = ${email}
+        WHERE login_id = ${loginId}
         LIMIT 1
       `,
       sql`
-        SELECT id, name, email, login_password, password_hash
+        SELECT id, name, login_id, email, login_password, password_hash
         FROM agencies
-        WHERE email = ${email}
+        WHERE login_id = ${loginId}
         LIMIT 1
       `,
     ]);
@@ -149,6 +158,7 @@ export async function POST(req: Request) {
       return await issueSessionResponse({
         id: sysRow.id,
         name: sysRow.name,
+        loginId: sysRow.login_id,
         email: sysRow.email,
         role: sysRow.role,
       });
@@ -168,17 +178,18 @@ export async function POST(req: Request) {
       return await issueSessionResponse({
         id: agRow.id,
         name: agRow.name,
+        loginId: agRow.login_id,
         email: agRow.email,
         role: "agency",
         agencyId: agRow.id,
       });
     }
 
-    await logAttempt(email, ip, false);
+    await logAttempt(loginId, ip, false);
     return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
   } catch (e) {
     console.error("[auth/login]", e);
-    await logAttempt(email, ip, false);
+    await logAttempt(loginId, ip, false);
     return NextResponse.json({ error: "server_error" }, { status: 500 });
   }
 
@@ -186,6 +197,7 @@ export async function POST(req: Request) {
   async function issueSessionResponse(user: {
     id: string;
     name: string;
+    loginId: string;
     email: string;
     role: "admin" | "approver" | "agency";
     agencyId?: string;
@@ -201,6 +213,7 @@ export async function POST(req: Request) {
     const res = NextResponse.json({
       id: user.id,
       name: user.name,
+      loginId: user.loginId,
       email: user.email,
       role: user.role,
       ...(user.agencyId ? { agencyId: user.agencyId } : {}),

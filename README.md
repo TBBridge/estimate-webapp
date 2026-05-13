@@ -12,11 +12,11 @@
 
 ## 開発用ログイン
 
-| ロール     | メール              | パスワード |
+| ロール     | ログインID | パスワード |
 |------------|---------------------|------------|
-| 自社管理者 | admin@example.com   | admin      |
-| 代理店     | agency@example.com  | agency     |
-| 承認者     | approver@example.com| approver   |
+| 自社管理者 | admin    | admin      |
+| 代理店     | agency   | agency     |
+| 承認者     | approver | approver   |
 
 ## ディレクトリ構成（概要）
 

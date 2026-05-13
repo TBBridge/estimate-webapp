@@ -8,6 +8,7 @@
 CREATE TABLE IF NOT EXISTS agencies (
   id             TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
   name           TEXT NOT NULL,
+  login_id       TEXT NOT NULL UNIQUE,
   email          TEXT NOT NULL UNIQUE,
   login_password TEXT NOT NULL DEFAULT '',   -- 代理店ログインパスワード（平文: 運用上簡易認証）
   agency_type    TEXT NOT NULL DEFAULT '',   -- 代理店種別（Excelテンプレート C7 セルに入力）
@@ -18,6 +19,10 @@ CREATE TABLE IF NOT EXISTS agencies (
 
 -- スキーマ追加（既存テーブルへの ALTER）
 ALTER TABLE agencies ADD COLUMN IF NOT EXISTS login_password TEXT NOT NULL DEFAULT '';
+ALTER TABLE agencies ADD COLUMN IF NOT EXISTS login_id TEXT;
+UPDATE agencies SET login_id = email WHERE login_id IS NULL OR BTRIM(login_id) = '';
+ALTER TABLE agencies ALTER COLUMN login_id SET NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS agencies_login_id_key ON agencies(login_id);
 ALTER TABLE agencies ADD COLUMN IF NOT EXISTS agency_type    TEXT NOT NULL DEFAULT '';
 ALTER TABLE agencies ADD COLUMN IF NOT EXISTS contact_name         TEXT NOT NULL DEFAULT '';
 ALTER TABLE agencies ADD COLUMN IF NOT EXISTS department           TEXT NOT NULL DEFAULT '';
@@ -121,6 +126,7 @@ CREATE TABLE IF NOT EXISTS templates (
 CREATE TABLE IF NOT EXISTS system_users (
   id         TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
   name       TEXT NOT NULL,
+  login_id   TEXT NOT NULL UNIQUE,
   email      TEXT NOT NULL UNIQUE,
   password   TEXT NOT NULL DEFAULT '',
   role       TEXT NOT NULL CHECK (role IN ('admin','approver')),
@@ -130,11 +136,15 @@ CREATE TABLE IF NOT EXISTS system_users (
 -- スキーマ追加（既存テーブルへの ALTER）
 -- ※ 初回実行時は CREATE TABLE が走るため ALTER は不要だが、既存 DB 向けに記載
 -- ALTER TABLE system_users ... （カラム追加が必要な場合に追記）
+ALTER TABLE system_users ADD COLUMN IF NOT EXISTS login_id TEXT;
+UPDATE system_users SET login_id = email WHERE login_id IS NULL OR BTRIM(login_id) = '';
+ALTER TABLE system_users ALTER COLUMN login_id SET NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS system_users_login_id_key ON system_users(login_id);
 
 -- 初期データ（初回のみ）
-INSERT INTO system_users (id, name, email, password, role) VALUES
-  ('sys-admin',    '自社管理者', 'admin@example.com',    'admin',    'admin'),
-  ('sys-approver', '承認者',     'approver@example.com', 'approver', 'approver')
+INSERT INTO system_users (id, name, login_id, email, password, role) VALUES
+  ('sys-admin',    '自社管理者', 'admin',    'admin@example.com',    'admin',    'admin'),
+  ('sys-approver', '承認者',     'approver', 'approver@example.com', 'approver', 'approver')
 ON CONFLICT (id) DO NOTHING;
 
 -- 通知設定
@@ -156,13 +166,13 @@ ON CONFLICT (key) DO NOTHING;
 -- =====================================================
 
 -- 代理店
-INSERT INTO agencies (id, name, email, approver_name, approver_email, created_at)
+INSERT INTO agencies (id, name, login_id, email, approver_name, approver_email, created_at)
 VALUES
-  ('ag-1','株式会社アルファ','alpha@example.com','田中 太郎','tanaka@alpha.example.com','2024-04-01'),
-  ('ag-2','ベータ商事','beta@example.com','鈴木 花子','suzuki@beta.example.com','2024-05-15'),
-  ('ag-3','ガンマテック株式会社','gamma@example.com','佐藤 一郎','sato@gamma.example.com','2024-06-01'),
-  ('ag-4','デルタソリューションズ','delta@example.com','山田 次郎','yamada@delta.example.com','2024-07-20'),
-  ('ag-5','イプシロン情報','epsilon@example.com','中村 三郎','nakamura@epsilon.example.com','2024-09-01')
+  ('ag-1','株式会社アルファ','agency','alpha@example.com','田中 太郎','tanaka@alpha.example.com','2024-04-01'),
+  ('ag-2','ベータ商事','agency-beta','beta@example.com','鈴木 花子','suzuki@beta.example.com','2024-05-15'),
+  ('ag-3','ガンマテック株式会社','agency-gamma','gamma@example.com','佐藤 一郎','sato@gamma.example.com','2024-06-01'),
+  ('ag-4','デルタソリューションズ','agency-delta','delta@example.com','山田 次郎','yamada@delta.example.com','2024-07-20'),
+  ('ag-5','イプシロン情報','agency-epsilon','epsilon@example.com','中村 三郎','nakamura@epsilon.example.com','2024-09-01')
 ON CONFLICT (id) DO NOTHING;
 
 -- 製品単価

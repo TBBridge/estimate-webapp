@@ -10,6 +10,7 @@ import { COUNTRY_DIAL_CODES, DEFAULT_DIAL_CODE } from "@/lib/phone-codes";
 
 const emptyForm = (): Omit<Agency, "id" | "createdAt"> => ({
   name: "",
+  loginId: "",
   email: "",
   loginPassword: "",
   agencyType: "",
@@ -34,7 +35,7 @@ export default function AdminAgentsPage() {
   const [importBusy, setImportBusy] = useState(false);
   const [downloadBusy, setDownloadBusy] = useState(false);
 
-  type AgentSortKey = "name" | "agencyType" | "email" | "approverName" | "approverEmail" | "createdAt";
+  type AgentSortKey = "name" | "agencyType" | "loginId" | "email" | "approverName" | "approverEmail" | "createdAt";
   const [sortKey, setSortKey] = useState<AgentSortKey>("createdAt");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -73,6 +74,7 @@ export default function AdminAgentsPage() {
     setEditId(ag.id);
     setForm({
       name: ag.name,
+      loginId: ag.loginId ?? "",
       email: ag.email,
       loginPassword: ag.loginPassword ?? "",
       agencyType: ag.agencyType ?? "",
@@ -90,17 +92,18 @@ export default function AdminAgentsPage() {
   const handleSave = async () => {
     setSaveError("");
     const name = form.name.trim();
+    const loginId = String(form.loginId ?? "").trim();
     const email = form.email.trim();
-    if (!name || !email) {
+    if (!name || !loginId || !email) {
       setSaveError(t(locale, "admin.agents.validationRequired"));
       return;
     }
     setSaving(true);
     try {
       if (editId) {
-        await updateAgency(editId, { ...form, name, email });
+        await updateAgency(editId, { ...form, name, loginId, email });
       } else {
-        await createAgency({ ...form, name, email });
+        await createAgency({ ...form, name, loginId, email });
       }
       setShowModal(false);
     } catch (e) {
@@ -236,6 +239,7 @@ export default function AdminAgentsPage() {
               <tr className="border-b border-stone-200/80 dark:border-stone-700/80">
                 <SortTh colKey="name" labelKey="admin.agents.name" />
                 <SortTh colKey="agencyType" labelKey="admin.agents.agencyType" />
+                <SortTh colKey="loginId" labelKey="admin.agents.loginId" />
                 <SortTh colKey="email" labelKey="admin.agents.email" />
                 <SortTh colKey="approverName" labelKey="admin.agents.approver" />
                 <SortTh colKey="approverEmail" labelKey="admin.agents.approverEmail" />
@@ -248,6 +252,7 @@ export default function AdminAgentsPage() {
                 <tr key={ag.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-800/40">
                   <td className="px-4 py-3 font-medium text-[var(--color-ink)]">{ag.name}</td>
                   <td className="px-4 py-3 text-[var(--color-ink-muted)]">{ag.agencyType ?? ""}</td>
+                  <td className="px-4 py-3 text-[var(--color-ink-muted)]">{ag.loginId ?? ""}</td>
                   <td className="px-4 py-3 text-[var(--color-ink-muted)]">{ag.email}</td>
                   <td className="px-4 py-3 text-[var(--color-ink)]">{ag.approverName}</td>
                   <td className="px-4 py-3 text-[var(--color-ink-muted)]">{ag.approverEmail}</td>
@@ -283,7 +288,12 @@ export default function AdminAgentsPage() {
                 <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.name")}</label>
                 <input type="text" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} className={inputCls} />
               </div>
-              {/* ログインメール */}
+              {/* ログインID */}
+              <div>
+                <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.loginId")}</label>
+                <input type="text" value={form.loginId ?? ""} onChange={(e) => setForm((p) => ({ ...p, loginId: e.target.value }))} pattern="[!-~]+" className={inputCls} />
+              </div>
+              {/* メールアドレス */}
               <div>
                 <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.email")}</label>
                 <input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} className={inputCls} />

@@ -11,6 +11,7 @@ import type { ExcelFileHistoryEntry } from "./excel-file-history";
 export type Agency = {
   id: string;
   name: string;
+  loginId?: string;
   email: string;
   loginPassword?: string;
   agencyType?: string;

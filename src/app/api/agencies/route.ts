@@ -3,6 +3,7 @@ import { getDb } from "@/lib/db";
 import { agencyMutationErrorResponse } from "@/app/api/agencies/agency-mutation-errors";
 import { handleAuthError, requireAdmin } from "@/lib/auth/guards";
 import { hashPassword } from "@/lib/auth/password";
+import { isValidLoginId, normalizeLoginId } from "@/lib/login-id";
 
 export const runtime = "nodejs";
 
@@ -11,7 +12,7 @@ export async function GET(req: Request) {
     await requireAdmin(req);
     const sql = getDb();
     const rows = await sql`
-      SELECT id, name, email, agency_type, contact_name, department,
+      SELECT id, name, login_id, email, agency_type, contact_name, department,
              phone_country_code, phone_local,
              approver_name, approver_email,
              TO_CHAR(created_at, 'YYYY-MM-DD') AS created_at
@@ -22,6 +23,7 @@ export async function GET(req: Request) {
     return NextResponse.json(rows.map((r) => ({
       id: r.id,
       name: r.name,
+      loginId: r.login_id,
       email: r.email,
       agencyType: r.agency_type ?? "",
       contactName: r.contact_name ?? "",
@@ -46,9 +48,10 @@ export async function POST(req: Request) {
     const sql = getDb();
     const body = (await req.json()) as Record<string, unknown>;
     const name = String(body.name ?? "").trim();
+    const loginId = normalizeLoginId(body.loginId);
     const email = String(body.email ?? "").trim();
-    if (!name || !email) {
-      return NextResponse.json({ error: "代理店名とログインメールは必須です" }, { status: 400 });
+    if (!name || !isValidLoginId(loginId) || !email) {
+      return NextResponse.json({ error: "代理店名、ログインID、メールアドレスは必須です" }, { status: 400 });
     }
     const loginPasswordPlain = String(body.loginPassword ?? "");
     if (!loginPasswordPlain) {
@@ -64,20 +67,20 @@ export async function POST(req: Request) {
     const approverEmail = String(body.approverEmail ?? "");
     const rows = await sql`
       INSERT INTO agencies (
-        name, email, login_password, password_hash, password_migrated_at,
+        name, login_id, email, login_password, password_hash, password_migrated_at,
         agency_type, contact_name, department,
         phone_country_code, phone_local, fax_country_code, fax_local,
         approver_name, approver_email
       )
       VALUES (
-        ${name}, ${email}, '', ${passwordHash}, NOW(),
+        ${name}, ${loginId}, ${email}, '', ${passwordHash}, NOW(),
         ${agencyType},
         ${contactName}, ${department},
         ${phoneCountryCode}, ${phoneLocal},
         ${"+81"}, ${""},
         ${approverName}, ${approverEmail}
       )
-      RETURNING id, name, email, agency_type, contact_name, department,
+      RETURNING id, name, login_id, email, agency_type, contact_name, department,
                 phone_country_code, phone_local,
                 approver_name, approver_email,
                 TO_CHAR(created_at, 'YYYY-MM-DD') AS created_at
@@ -86,6 +89,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       id: r.id,
       name: r.name,
+      loginId: r.login_id,
       email: r.email,
       agencyType: r.agency_type ?? "",
       contactName: r.contact_name ?? "",

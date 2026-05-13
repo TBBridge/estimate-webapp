@@ -15,7 +15,7 @@ export function agencyMutationErrorResponse(e: unknown, logLabel: string): NextR
     );
   }
   if (isUniqueViolation(e)) {
-    return NextResponse.json({ error: "このログインメールは既に登録されています" }, { status: 409 });
+    return NextResponse.json({ error: "このログインIDまたはメールアドレスは既に登録されています" }, { status: 409 });
   }
   const schemaHint = /column .* does not exist|relation .* does not exist/i.test(chain);
   const hint = schemaHint

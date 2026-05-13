@@ -11,20 +11,21 @@ export const runtime = "nodejs";
  * 列自体を出力しないことで運用上の事故を防ぐ。
  *
  * 出力列:
- * name,email,agencyType,contactName,department,phoneCountryCode,phoneLocal,approverName,approverEmail
+ * name,loginId,email,agencyType,contactName,department,phoneCountryCode,phoneLocal,approverName,approverEmail
  */
 export async function GET(req: Request) {
   try {
     await requireAdmin(req);
     const sql = getDb();
     const rows = await sql`
-      SELECT name, email, agency_type, contact_name, department,
+      SELECT name, login_id, email, agency_type, contact_name, department,
              phone_country_code, phone_local, approver_name, approver_email
       FROM agencies
       ORDER BY created_at ASC
     `;
     const header: string[] = [
       "name",
+      "loginId",
       "email",
       "agencyType",
       "contactName",
@@ -38,6 +39,7 @@ export async function GET(req: Request) {
       header,
       ...rows.map((r) => [
         String(r.name ?? ""),
+        String(r.login_id ?? ""),
         String(r.email ?? ""),
         String(r.agency_type ?? ""),
         String(r.contact_name ?? ""),

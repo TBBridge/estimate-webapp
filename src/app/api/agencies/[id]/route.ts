@@ -4,6 +4,7 @@ import { agencyMutationErrorResponse } from "@/app/api/agencies/agency-mutation-
 import { isForeignKeyViolation } from "@/lib/pg-errors";
 import { AuthError, handleAuthError, requireAdmin, requireAuth } from "@/lib/auth/guards";
 import { hashPassword } from "@/lib/auth/password";
+import { isValidLoginId, normalizeLoginId } from "@/lib/login-id";
 
 export const runtime = "nodejs";
 
@@ -16,7 +17,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     }
     const sql = getDb();
     const rows = await sql`
-      SELECT id, name, email, agency_type, contact_name, department,
+      SELECT id, name, login_id, email, agency_type, contact_name, department,
              phone_country_code, phone_local,
              approver_name, approver_email,
              TO_CHAR(created_at, 'YYYY-MM-DD') AS created_at
@@ -28,6 +29,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({
       id: r.id,
       name: r.name,
+      loginId: r.login_id,
       email: r.email,
       agencyType: r.agency_type ?? "",
       contactName: r.contact_name ?? "",
@@ -54,6 +56,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     const body = await req.json();
     const b = body as Record<string, unknown>;
     const name = String(b.name ?? "").trim();
+    const loginId = normalizeLoginId(b.loginId);
     const email = String(b.email ?? "").trim();
     const loginPasswordPlain = String(b.loginPassword ?? "");
     const agencyType = String(b.agencyType ?? "");
@@ -63,15 +66,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     const phoneLocal = String(b.phoneLocal ?? "");
     const approverName = String(b.approverName ?? "");
     const approverEmail = String(b.approverEmail ?? "");
-    if (!name || !email) {
-      return NextResponse.json({ error: "代理店名とログインメールは必須です" }, { status: 400 });
+    if (!name || !isValidLoginId(loginId) || !email) {
+      return NextResponse.json({ error: "代理店名、ログインID、メールアドレスは必須です" }, { status: 400 });
     }
 
     // パスワードが空のときはパスワード関連列を変更しない
     const rows = loginPasswordPlain
       ? await sql`
           UPDATE agencies
-          SET name = ${name}, email = ${email},
+          SET name = ${name}, login_id = ${loginId}, email = ${email},
               login_password = '',
               password_hash = ${await hashPassword(loginPasswordPlain)},
               password_migrated_at = NOW(),
@@ -84,14 +87,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               fax_local = ${""},
               approver_name = ${approverName}, approver_email = ${approverEmail}
           WHERE id = ${id}
-          RETURNING id, name, email, agency_type, contact_name, department,
+          RETURNING id, name, login_id, email, agency_type, contact_name, department,
                     phone_country_code, phone_local,
                     approver_name, approver_email,
                     TO_CHAR(created_at, 'YYYY-MM-DD') AS created_at
         `
       : await sql`
           UPDATE agencies
-          SET name = ${name}, email = ${email},
+          SET name = ${name}, login_id = ${loginId}, email = ${email},
               agency_type = ${agencyType},
               contact_name = ${contactName},
               department = ${department},
@@ -101,7 +104,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               fax_local = ${""},
               approver_name = ${approverName}, approver_email = ${approverEmail}
           WHERE id = ${id}
-          RETURNING id, name, email, agency_type, contact_name, department,
+          RETURNING id, name, login_id, email, agency_type, contact_name, department,
                     phone_country_code, phone_local,
                     approver_name, approver_email,
                     TO_CHAR(created_at, 'YYYY-MM-DD') AS created_at
@@ -111,6 +114,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({
       id: r.id,
       name: r.name,
+      loginId: r.login_id,
       email: r.email,
       agencyType: r.agency_type ?? "",
       contactName: r.contact_name ?? "",

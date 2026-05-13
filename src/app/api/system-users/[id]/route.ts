@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { handleAuthError, requireAdmin } from "@/lib/auth/guards";
 import { hashPassword } from "@/lib/auth/password";
+import { isValidLoginId, normalizeLoginId } from "@/lib/login-id";
 
 export const runtime = "nodejs";
 
@@ -10,39 +11,44 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     await requireAdmin(req);
     const sql = getDb();
     const { id } = await params;
-    const { name, email, password, role } = (await req.json()) as {
+    const { name, loginId: rawLoginId, email, password, role } = (await req.json()) as {
       name: string;
+      loginId: string;
       email: string;
       password?: string;
       role: string;
     };
+    const loginId = normalizeLoginId(rawLoginId);
     if (!["admin", "approver"].includes(role)) {
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
+    }
+    if (!name || !isValidLoginId(loginId) || !email) {
+      return NextResponse.json({ error: "name_login_id_email_required" }, { status: 400 });
     }
     // パスワードが空の場合は更新しない
     const rows = password
       ? await sql`
           UPDATE system_users
-          SET name = ${name}, email = ${email},
+          SET name = ${name}, login_id = ${loginId}, email = ${email},
               password = '',
               password_hash = ${await hashPassword(password)},
               password_migrated_at = NOW(),
               role = ${role}
           WHERE id = ${id}
-          RETURNING id, name, email, role,
+          RETURNING id, login_id, name, email, role,
                     TO_CHAR(created_at, 'YYYY-MM-DD') AS created_at
         `
       : await sql`
           UPDATE system_users
-          SET name = ${name}, email = ${email}, role = ${role}
+          SET name = ${name}, login_id = ${loginId}, email = ${email}, role = ${role}
           WHERE id = ${id}
-          RETURNING id, name, email, role,
+          RETURNING id, login_id, name, email, role,
                     TO_CHAR(created_at, 'YYYY-MM-DD') AS created_at
         `;
     if (rows.length === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const r = rows[0];
     return NextResponse.json({
-      id: r.id, name: r.name, email: r.email,
+      id: r.id, loginId: r.login_id, name: r.name, email: r.email,
       role: r.role, createdAt: r.created_at,
     });
   } catch (e) {

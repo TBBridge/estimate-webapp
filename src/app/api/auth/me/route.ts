@@ -28,14 +28,15 @@ export async function GET(req: Request) {
       // TODO(future): agencies テーブルに role 列が追加された場合は
       // session.role と一致するかチェックする（system_users と同様）。
       const rows = (await sql`
-        SELECT id, name, email FROM agencies WHERE id = ${session.sub} LIMIT 1
-      `) as Array<{ id: string; name: string; email: string }>;
+        SELECT id, login_id, name, email FROM agencies WHERE id = ${session.sub} LIMIT 1
+      `) as Array<{ id: string; login_id: string; name: string; email: string }>;
       if (rows.length === 0) {
         return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
       }
       const ag = rows[0];
       return NextResponse.json({
         id: ag.id,
+        loginId: ag.login_id,
         name: ag.name,
         email: ag.email,
         role: "agency",
@@ -45,11 +46,12 @@ export async function GET(req: Request) {
 
     // admin / approver
     const rows = (await sql`
-      SELECT id, name, email, role
+      SELECT id, login_id, name, email, role
       FROM system_users
       WHERE id = ${session.sub} LIMIT 1
     `) as Array<{
       id: string;
+      login_id: string;
       name: string;
       email: string;
       role: "admin" | "approver";
@@ -64,6 +66,7 @@ export async function GET(req: Request) {
     }
     return NextResponse.json({
       id: u.id,
+      loginId: u.login_id,
       name: u.name,
       email: u.email,
       role: u.role,
