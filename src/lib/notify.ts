@@ -16,6 +16,9 @@ import {
   getApprovalSubject,
   getApprovalBody,
   getApprovalShortTitle,
+  getAgencyDecisionSubject,
+  getAgencyDecisionBody,
+  type AgencyDecisionNotificationVars,
   type NotificationVars,
 } from "./notification-templates";
 
@@ -77,6 +80,29 @@ export async function sendApprovalNotification(vars: NotificationVars): Promise<
     }
   } catch (e) {
     console.error("[notify] Failed to send notification:", e);
+    return { ok: false, error: String(e) };
+  }
+}
+
+export async function sendAgencyDecisionGmailNotification(
+  vars: AgencyDecisionNotificationVars & { recipientEmail: string }
+): Promise<NotifyResult> {
+  const recipientEmail = vars.recipientEmail.trim();
+  if (!recipientEmail) return { ok: true };
+
+  const cfg = await loadSettings();
+  if (!cfg.gmail_from || !cfg.gmail_password) return { ok: true };
+
+  try {
+    return await sendGmailMessage({
+      from: cfg.gmail_from,
+      password: cfg.gmail_password,
+      to: recipientEmail,
+      subject: getAgencyDecisionSubject(vars),
+      text: getAgencyDecisionBody(vars),
+    });
+  } catch (e) {
+    console.error("[notify] Failed to send agency decision notification:", e);
     return { ok: false, error: String(e) };
   }
 }
@@ -152,17 +178,33 @@ async function sendGmail(
   cfg: Pick<NotifySettings, "gmail_target" | "gmail_from" | "gmail_password">,
   vars: NotificationVars,
 ): Promise<NotifyResult> {
-  const { default: nm } = await import("nodemailer");
-  const transporter = nm.createTransport({
-    service: "gmail",
-    auth: { user: cfg.gmail_from, pass: cfg.gmail_password },
-  });
-
-  await transporter.sendMail({
+  return sendGmailMessage({
     from: cfg.gmail_from,
+    password: cfg.gmail_password,
     to: cfg.gmail_target,
     subject: getApprovalSubject(vars),
     text: getApprovalBody(vars),
+  });
+}
+
+async function sendGmailMessage(input: {
+  from: string;
+  password: string;
+  to: string;
+  subject: string;
+  text: string;
+}): Promise<NotifyResult> {
+  const { default: nm } = await import("nodemailer");
+  const transporter = nm.createTransport({
+    service: "gmail",
+    auth: { user: input.from, pass: input.password },
+  });
+
+  await transporter.sendMail({
+    from: input.from,
+    to: input.to,
+    subject: input.subject,
+    text: input.text,
   });
   return { ok: true };
 }

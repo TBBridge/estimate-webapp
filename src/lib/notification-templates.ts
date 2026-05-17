@@ -13,6 +13,21 @@ export type NotificationVars = {
   approvalUrl: string;
 };
 
+export type EstimateDecisionStatus = "approved" | "rejected";
+
+export type AgencyDecisionNotificationVars = {
+  recipientEmail?: string;
+  status: EstimateDecisionStatus;
+  estimateNo: string;
+  customerName: string;
+  agencyName: string;
+  decidedAt: string;
+};
+
+function decisionLabel(status: EstimateDecisionStatus): string {
+  return status === "approved" ? "承認" : "差し戻し";
+}
+
 export function getApprovalSubject(v: NotificationVars): string {
   return `【見積承認依頼】見積番号：${v.estimateNo} - ${v.customerName}`;
 }
@@ -37,4 +52,23 @@ ${v.approvalUrl}
 /** Slack / Teams 用短いタイトル */
 export function getApprovalShortTitle(v: NotificationVars): string {
   return `見積承認依頼：${v.estimateNo} - ${v.customerName}`;
+}
+
+export function getAgencyDecisionSubject(v: AgencyDecisionNotificationVars): string {
+  return `【見積依頼 ${decisionLabel(v.status)}】見積番号：${v.estimateNo} - ${v.customerName}`;
+}
+
+export function getAgencyDecisionBody(v: AgencyDecisionNotificationVars): string {
+  const label = decisionLabel(v.status);
+  return `見積依頼が${label}されました。
+
+■ 見積番号：${v.estimateNo}
+■ 顧客名：${v.customerName}
+■ 代理店：${v.agencyName}
+■ 結果：${label}
+■ 処理日時：${v.decidedAt}
+
+代理店画面で見積内容をご確認ください。
+
+※ 本メッセージは見積自動作成システムから自動送信されています。`;
 }

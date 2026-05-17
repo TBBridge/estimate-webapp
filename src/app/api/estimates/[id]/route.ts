@@ -20,6 +20,7 @@ import { sanitizeEstimateNoForBlobPath } from "@/lib/excel-file-history";
 import type { HubSpotSyncResultDto } from "@/lib/hubspot-approve-feedback";
 import type { Locale } from "@/lib/translations";
 import { parseExcelFileHistory } from "@/lib/excel-file-history";
+import { sendAgencyDecisionGmailNotification } from "@/lib/notify";
 import {
   handleAuthError,
   requireAdmin,
@@ -121,6 +122,18 @@ function jsonEstimateRow(r: Record<string, unknown>) {
     approvedAt: r.approved_at ?? undefined,
     hubspotDealId: String((r as { hubspot_deal_id?: unknown }).hubspot_deal_id ?? "") || undefined,
   };
+}
+
+function formatTokyoDateTime(date: Date): string {
+  return new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
 }
 
 export async function PATCH(req: Request, { params }: Params) {
@@ -436,6 +449,31 @@ export async function PUT(req: Request, { params }: Params) {
       }
     }
 
+    let agencyNotification: { ok: boolean; error?: string } | undefined;
+    try {
+      const agencyRows = await sql`
+        SELECT email FROM agencies WHERE id = ${r.agency_id} LIMIT 1
+      `;
+      const recipientEmail = String(
+        (agencyRows[0] as { email?: unknown } | undefined)?.email ?? ""
+      ).trim();
+
+      if (recipientEmail) {
+        agencyNotification = await sendAgencyDecisionGmailNotification({
+          recipientEmail,
+          status,
+          estimateNo: r.no,
+          customerName: r.customer_name,
+          agencyName: r.agency_name,
+          decidedAt: formatTokyoDateTime(new Date()),
+        });
+      }
+    } catch (notifyErr) {
+      const message = notifyErr instanceof Error ? notifyErr.message : String(notifyErr);
+      console.error("[estimates/id PUT] agency decision notification failed", notifyErr);
+      agencyNotification = { ok: false, error: message };
+    }
+
     return NextResponse.json({
       id: r.id,
       no: r.no,
@@ -443,6 +481,7 @@ export async function PUT(req: Request, { params }: Params) {
       approved_at: r.approved_at,
       hubspotDealId: finalDealId || undefined,
       ...(hubspotSync ? { hubspotSync } : {}),
+      ...(agencyNotification ? { agencyNotification } : {}),
     });
   } catch (e) {
     const authRes = handleAuthError(e);
