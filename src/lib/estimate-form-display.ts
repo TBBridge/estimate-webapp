@@ -7,6 +7,7 @@ import {
   APPLICATION_DETAIL_EXTRA_FIELDS,
   CLOUD_NEW_BILLING,
   END_USER_COMPANY_FIELDS,
+  ESTIMATE_REQUESTER_FIELDS,
   SALES_AGENCY_CONTACT_FIELDS,
   getFormFields,
   isFormFieldVisible,
@@ -182,6 +183,7 @@ export function buildEstimateApplicationSections(
 ): EstimateFormDisplaySection[] {
   const titles = {
     meta: t(locale, "admin.estimates.sectionMeta"),
+    requester: t(locale, "admin.estimates.sectionRequester"),
     endUser: t(locale, "admin.estimates.sectionEndUser"),
     estimateContent: t(locale, "admin.estimates.sectionEstimateContent"),
     salesAgency: t(locale, "admin.estimates.sectionSalesAgency"),
@@ -226,12 +228,14 @@ export function buildEstimateApplicationSections(
   }
 
   const allFieldGroups: FormFieldDef[][] = [
+    ESTIMATE_REQUESTER_FIELDS,
     END_USER_COMPANY_FIELDS,
     getFormFields(e.deliveryType, e.contractType),
     SALES_AGENCY_CONTACT_FIELDS,
     APPLICATION_DETAIL_EXTRA_FIELDS,
   ];
 
+  sections.push(sectionFromFields(titles.requester, ESTIMATE_REQUESTER_FIELDS, values, locale));
   sections.push(sectionFromFields(titles.endUser, END_USER_COMPANY_FIELDS, values, locale));
 
   const dynamicFields = getFormFields(e.deliveryType, e.contractType);

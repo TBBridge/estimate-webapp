@@ -10,11 +10,14 @@ import {
   getFormFields,
   CLOUD_NEW_BILLING,
   END_USER_COMPANY_FIELDS,
+  ESTIMATE_REQUESTER_FIELDS,
+  ESTIMATE_REQUESTER_PRESERVED_KEYS,
   SALES_AGENCY_CONTACT_FIELDS,
   APPLICATION_DETAIL_EXTRA_FIELDS,
   isValidLicenseCountValue,
   resolveCustomerDisplayName,
   SALES_AGENCY_PRESERVED_KEYS,
+  validateEstimateRequesterContact,
   type DeliveryType,
   type ContractType,
 } from "@/lib/estimate-schema";
@@ -36,6 +39,10 @@ type KintoneLicenseCandidate = {
 };
 
 const KINTONE_LOOKUP_DEBOUNCE_MS = 600;
+const PRESERVED_CONTACT_KEYS = [
+  ...ESTIMATE_REQUESTER_PRESERVED_KEYS,
+  ...SALES_AGENCY_PRESERVED_KEYS,
+];
 
 function stripKintoneFilledFields(prev: FormValues): FormValues {
   const next = { ...prev };
@@ -121,6 +128,8 @@ export default function EstimateCreateForm() {
         };
         setValues((prev) => {
           const next = { ...prev };
+          if (prev.estimateRequesterName === undefined) next.estimateRequesterName = ag.contactName ?? "";
+          if (prev.estimateRequesterEmail === undefined) next.estimateRequesterEmail = ag.email ?? "";
           if (prev.salesAgencyName === undefined) next.salesAgencyName = ag.name ?? "";
           if (prev.salesAgencyContactName === undefined) next.salesAgencyContactName = ag.contactName ?? "";
           if (prev.salesAgencyDepartment === undefined) next.salesAgencyDepartment = ag.department ?? "";
@@ -277,7 +286,7 @@ export default function EstimateCreateForm() {
     setCloudBilling("");
     setValues((prev) => {
       const next: FormValues = {};
-      for (const key of SALES_AGENCY_PRESERVED_KEYS) {
+      for (const key of PRESERVED_CONTACT_KEYS) {
         if (key in prev && prev[key] !== undefined) {
           next[key] = prev[key];
         }
@@ -292,7 +301,7 @@ export default function EstimateCreateForm() {
     // 見積内容だけリセットし、ログイン代理店から入った販売代理店欄は維持する
     setValues((prev) => {
       const next: FormValues = {};
-      for (const key of SALES_AGENCY_PRESERVED_KEYS) {
+      for (const key of PRESERVED_CONTACT_KEYS) {
         if (key in prev && prev[key] !== undefined) {
           next[key] = prev[key];
         }
@@ -342,7 +351,18 @@ export default function EstimateCreateForm() {
       return;
     }
 
+    const requesterContact = validateEstimateRequesterContact(values);
+    if (!requesterContact.ok) {
+      setErrorMsg(
+        requesterContact.error === "estimate_requester_email_invalid"
+          ? t(locale, "estimate.emailInvalid")
+          : t(locale, "estimate.requesterRequired")
+      );
+      return;
+    }
+
     const emailsToCheck = [
+      String(values.estimateRequesterEmail ?? "").trim(),
       String(values.userEmail ?? "").trim(),
       String(values.salesAgencyEmail ?? "").trim(),
     ].filter(Boolean);
@@ -484,6 +504,25 @@ export default function EstimateCreateForm() {
         {/* 顧客情報 + 動的項目 */}
         {showMainForm && (
           <>
+            <div className="space-y-4 rounded-lg border border-stone-200/80 bg-[var(--color-surface-elevated)] p-4 dark:border-stone-700/80">
+              <h3 className="font-body text-sm font-medium text-[var(--color-ink)]">
+                {t(locale, "estimate.sectionRequester")}
+              </h3>
+              <p className="font-body text-xs text-[var(--color-ink-muted)]">
+                {t(locale, "estimate.sectionRequesterHint")}
+              </p>
+              {ESTIMATE_REQUESTER_FIELDS.map((f) => (
+                <FormFieldRenderer
+                  key={f.id}
+                  field={f}
+                  value={values[f.id]}
+                  formValues={values}
+                  onChange={(id, v) => update(id, v)}
+                  locale={locale}
+                />
+              ))}
+            </div>
+
             <div className="space-y-4 rounded-lg border border-stone-200/80 bg-[var(--color-surface-elevated)] p-4 dark:border-stone-700/80">
               <h3 className="font-body text-sm font-medium text-[var(--color-ink)]">
                 {t(locale, "estimate.sectionEndUserCompany")}

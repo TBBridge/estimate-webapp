@@ -70,7 +70,10 @@ const currentEstimateRow = {
   excel_url: "",
   amount: 1000,
   maintenance_fee: 100,
-  form_inputs: {},
+  form_inputs: {
+    estimateRequesterName: "Request Owner",
+    estimateRequesterEmail: "requester@example.com",
+  },
 };
 
 describe("PUT /api/estimates/[id]", () => {
@@ -80,7 +83,7 @@ describe("PUT /api/estimates/[id]", () => {
   });
 
   it.each(["approved", "rejected"] as const)(
-    "sends a Gmail notification to the estimate agency contact when an approver marks it %s",
+    "sends a Gmail notification to the estimate requester when an approver marks it %s",
     async (status) => {
       mocks.sendAgencyDecisionGmailNotification.mockResolvedValue({ ok: true });
       sqlQueue.push([currentEstimateRow]);
@@ -105,7 +108,8 @@ describe("PUT /api/estimates/[id]", () => {
         agencyNotification: { ok: true },
       });
       expect(mocks.sendAgencyDecisionGmailNotification).toHaveBeenCalledWith({
-        recipientEmail: "agency@example.com",
+        recipientEmail: "requester@example.com",
+        recipientName: "Request Owner",
         status,
         estimateNo: "EST-0001",
         customerName: "Sample Customer",

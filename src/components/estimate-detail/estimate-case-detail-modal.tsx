@@ -14,9 +14,11 @@ import { FormFieldRenderer, type FormFieldValues } from "@/components/estimate-f
 import {
   APPLICATION_DETAIL_EXTRA_FIELDS,
   END_USER_COMPANY_FIELDS,
+  ESTIMATE_REQUESTER_FIELDS,
   getFormFields,
   needsCloudBillingChoice,
   SALES_AGENCY_CONTACT_FIELDS,
+  validateEstimateRequesterContact,
 } from "@/lib/estimate-schema";
 import { isValidEmail } from "@/lib/validation";
 import type { ExcelFileHistoryEntry } from "@/lib/excel-file-history";
@@ -191,7 +193,18 @@ export function EstimateCaseDetailModal({
       return;
     }
 
+    const requesterContact = validateEstimateRequesterContact(formValues);
+    if (!requesterContact.ok) {
+      setEditError(
+        requesterContact.error === "estimate_requester_email_invalid"
+          ? t(locale, "estimate.emailInvalid")
+          : t(locale, "estimate.requesterRequired")
+      );
+      return;
+    }
+
     const emailsToCheck = [
+      String(formValues.estimateRequesterEmail ?? "").trim(),
       String(formValues.userEmail ?? "").trim(),
       String(formValues.salesAgencyEmail ?? "").trim(),
     ].filter(Boolean);
@@ -363,6 +376,25 @@ export function EstimateCaseDetailModal({
                     />
                   </label>
                 </div>
+              </div>
+
+              <div className="space-y-3 border-t border-[var(--color-border)] pt-4">
+                <h4 className="font-body text-sm font-medium text-[var(--color-ink)]">
+                  {t(locale, "estimate.sectionRequester")}
+                </h4>
+                <p className="font-body text-xs text-[var(--color-ink-muted)]">
+                  {t(locale, "estimate.sectionRequesterHint")}
+                </p>
+                {ESTIMATE_REQUESTER_FIELDS.map((f) => (
+                  <FormFieldRenderer
+                    key={f.id}
+                    field={f}
+                    value={formValues[f.id]}
+                    formValues={formValues}
+                    onChange={updateFormField}
+                    locale={locale}
+                  />
+                ))}
               </div>
 
               <div className="space-y-3 border-t border-[var(--color-border)] pt-4">

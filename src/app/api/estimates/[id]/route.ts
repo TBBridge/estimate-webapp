@@ -19,6 +19,7 @@ import { generateEstimatePdfAndSave } from "@/lib/estimate-pdf-generate";
 import { sanitizeEstimateNoForBlobPath } from "@/lib/excel-file-history";
 import type { HubSpotSyncResultDto } from "@/lib/hubspot-approve-feedback";
 import type { Locale } from "@/lib/translations";
+import { getEstimateRequesterContact } from "@/lib/estimate-schema";
 import { parseExcelFileHistory } from "@/lib/excel-file-history";
 import { sendAgencyDecisionGmailNotification } from "@/lib/notify";
 import {
@@ -451,16 +452,23 @@ export async function PUT(req: Request, { params }: Params) {
 
     let agencyNotification: { ok: boolean; error?: string } | undefined;
     try {
-      const agencyRows = await sql`
-        SELECT email FROM agencies WHERE id = ${r.agency_id} LIMIT 1
-      `;
-      const recipientEmail = String(
-        (agencyRows[0] as { email?: unknown } | undefined)?.email ?? ""
-      ).trim();
+      const requesterContact = getEstimateRequesterContact(r.form_inputs);
+      let recipientEmail = requesterContact?.email ?? "";
+      const recipientName = requesterContact?.name ?? "";
+
+      if (!recipientEmail) {
+        const agencyRows = await sql`
+          SELECT email FROM agencies WHERE id = ${r.agency_id} LIMIT 1
+        `;
+        recipientEmail = String(
+          (agencyRows[0] as { email?: unknown } | undefined)?.email ?? ""
+        ).trim();
+      }
 
       if (recipientEmail) {
         agencyNotification = await sendAgencyDecisionGmailNotification({
           recipientEmail,
+          ...(recipientName ? { recipientName } : {}),
           status,
           estimateNo: r.no,
           customerName: r.customer_name,

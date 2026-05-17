@@ -17,6 +17,7 @@ export type EstimateDecisionStatus = "approved" | "rejected";
 
 export type AgencyDecisionNotificationVars = {
   recipientEmail?: string;
+  recipientName?: string;
   status: EstimateDecisionStatus;
   estimateNo: string;
   customerName: string;
@@ -60,7 +61,10 @@ export function getAgencyDecisionSubject(v: AgencyDecisionNotificationVars): str
 
 export function getAgencyDecisionBody(v: AgencyDecisionNotificationVars): string {
   const label = decisionLabel(v.status);
-  return `見積依頼が${label}されました。
+  const greeting = v.recipientName?.trim() ? `${v.recipientName.trim()} 様
+
+` : "";
+  return `${greeting}見積依頼が${label}されました。
 
 ■ 見積番号：${v.estimateNo}
 ■ 顧客名：${v.customerName}

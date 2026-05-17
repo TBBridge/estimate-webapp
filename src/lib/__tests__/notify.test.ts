@@ -34,6 +34,7 @@ describe("sendAgencyDecisionGmailNotification", () => {
 
     const result = await sendAgencyDecisionGmailNotification({
       recipientEmail: "agency@example.com",
+      recipientName: "Request Owner",
       status: "rejected",
       estimateNo: "EST-0001",
       customerName: "Sample Customer",
@@ -52,6 +53,11 @@ describe("sendAgencyDecisionGmailNotification", () => {
         to: "agency@example.com",
         subject: expect.stringContaining("差し戻し"),
         text: expect.stringContaining("EST-0001"),
+      })
+    );
+    expect(mockSendMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining("Request Owner"),
       })
     );
   });

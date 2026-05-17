@@ -15,7 +15,10 @@ import { getDb } from "@/lib/db";
 import { sendApprovalNotification } from "@/lib/notify";
 import { writeEstimateToTemplate } from "@/lib/excel-writer";
 import { DELIVERY_TYPES, CONTRACT_TYPES } from "@/lib/constants";
-import { resolveCustomerDisplayName } from "@/lib/estimate-schema";
+import {
+  resolveCustomerDisplayName,
+  validateEstimateRequesterContact,
+} from "@/lib/estimate-schema";
 import { handleAuthError, requireAuth } from "@/lib/auth/guards";
 
 export const runtime = "nodejs";
@@ -42,7 +45,6 @@ function resolveTemplateId(
 export async function POST(req: Request) {
   try {
     const session = await requireAuth(req);
-    const sql = getDb();
     const body = await req.json();
 
     const {
@@ -62,6 +64,17 @@ export async function POST(req: Request) {
       cloudBilling?: string;
       formInputs: Record<string, unknown>;
     };
+    const normalizedFormInputs: Record<string, unknown> =
+      formInputs && typeof formInputs === "object" && !Array.isArray(formInputs)
+        ? formInputs
+        : {};
+
+    const requesterContact = validateEstimateRequesterContact(normalizedFormInputs);
+    if (!requesterContact.ok) {
+      return NextResponse.json({ error: requesterContact.error }, { status: 400 });
+    }
+
+    const sql = getDb();
 
     // agency ロールでは agencyId を強制的にセッション値で上書き、
     // agencyName/agency_type も DB から取得（クライアント送信値は信用しない）。
@@ -111,7 +124,7 @@ export async function POST(req: Request) {
 
     const resolvedCustomerName =
       String(customerName ?? "").trim() ||
-      resolveCustomerDisplayName((formInputs ?? {}) as Record<string, unknown>) ||
+      resolveCustomerDisplayName(normalizedFormInputs) ||
       "（未入力）";
 
     // ── 見積番号生成 ─────────────────────────────────────
@@ -132,7 +145,7 @@ export async function POST(req: Request) {
       VALUES
         (${estimateNo}, ${agencyId}, ${agencyName}, ${resolvedCustomerName},
          ${deliveryType}, ${contractType}, ${cloudBilling ?? null},
-         ${JSON.stringify(formInputs)}::JSONB)
+         ${JSON.stringify(normalizedFormInputs)}::JSONB)
       RETURNING id, no, status,
                 TO_CHAR(created_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS created_at
     `;
@@ -165,7 +178,7 @@ export async function POST(req: Request) {
                 deliveryType,
                 contractType,
                 cloudBilling,
-                formInputs,
+                formInputs: normalizedFormInputs,
                 createdAt,
                 productMarginRate,
                 maintenanceMarginRate,

@@ -1,3 +1,5 @@
+import { isValidEmail } from "@/lib/validation";
+
 /**
  * 提供形態×契約形態ごとの入力項目定義
  * Web アプリ画面には計算式・内訳は表示しない
@@ -161,6 +163,67 @@ export const END_USER_COMPANY_FIELDS: FormFieldDef[] = [
     ],
   },
 ];
+
+/** 見積依頼担当者情報（承認・差し戻し時の通知先） */
+export const ESTIMATE_REQUESTER_FIELDS: FormFieldDef[] = [
+  {
+    id: "estimateRequesterName",
+    labelJa: "担当者名",
+    labelEn: "Requester name",
+    kind: "text",
+    required: true,
+  },
+  {
+    id: "estimateRequesterEmail",
+    labelJa: "連絡先メールアドレス",
+    labelEn: "Contact email address",
+    kind: "email",
+    required: true,
+  },
+];
+
+export const ESTIMATE_REQUESTER_PRESERVED_KEYS: readonly string[] =
+  ESTIMATE_REQUESTER_FIELDS.map((f) => f.id);
+
+export type EstimateRequesterContactDetails = {
+  name: string;
+  email: string;
+};
+
+export type EstimateRequesterContact =
+  | {
+      ok: true;
+      contact: EstimateRequesterContactDetails;
+    }
+  | {
+      ok: false;
+      error: "estimate_requester_required" | "estimate_requester_email_invalid";
+    };
+
+export function validateEstimateRequesterContact(
+  formInputs: Record<string, unknown>
+): EstimateRequesterContact {
+  const name = String(formInputs.estimateRequesterName ?? "").trim();
+  const email = String(formInputs.estimateRequesterEmail ?? "").trim();
+
+  if (!name || !email) {
+    return { ok: false, error: "estimate_requester_required" };
+  }
+  if (!isValidEmail(email)) {
+    return { ok: false, error: "estimate_requester_email_invalid" };
+  }
+  return { ok: true, contact: { name, email } };
+}
+
+export function getEstimateRequesterContact(
+  formInputs: unknown
+): EstimateRequesterContactDetails | null {
+  if (!formInputs || typeof formInputs !== "object" || Array.isArray(formInputs)) {
+    return null;
+  }
+  const result = validateEstimateRequesterContact(formInputs as Record<string, unknown>);
+  return result.ok ? result.contact : null;
+}
 
 /** 販売代理店情報（申請書面上の連絡先） */
 export const SALES_AGENCY_CONTACT_FIELDS: FormFieldDef[] = [
