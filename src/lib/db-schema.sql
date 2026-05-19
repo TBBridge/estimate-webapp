@@ -153,12 +153,18 @@ CREATE TABLE IF NOT EXISTS app_settings (
   value TEXT NOT NULL
 );
 INSERT INTO app_settings (key, value) VALUES
-  ('active_channel',  'slack'),          -- 有効チャネル: 'slack' | 'teams' | 'gmail'
-  ('slack_target',    ''),               -- Slack Incoming Webhook URL
-  ('teams_target',    ''),               -- Teams Incoming Webhook URL
-  ('gmail_target',    ''),               -- Gmail 送信先メールアドレス
-  ('gmail_from',      ''),               -- Gmail 送信元アドレス
-  ('gmail_password',  '')                -- Gmail アプリパスワード
+  -- 申請通知（active_channel に従う）
+  ('active_channel',           'slack'),  -- 有効チャネル: 'slack' | 'teams' | 'gmail'
+  ('slack_target',             ''),       -- Slack Incoming Webhook URL
+  ('teams_target',             ''),       -- Teams Incoming Webhook URL
+  ('gmail_target',             ''),       -- 申請通知の送信先メールアドレス
+  ('gmail_from',               ''),       -- 申請通知の送信元アドレス
+  ('gmail_password',           ''),       -- 申請通知の Gmail アプリパスワード
+  -- 承認通知（常に Gmail。送信先は見積申請者の連絡先 / agency.email）
+  ('decision_gmail_from',      ''),       -- 例: overseas@cimtops.co.jp
+  ('decision_gmail_password',  ''),       -- 承認通知用 Gmail アプリパスワード
+  ('decision_subject_template', ''),      -- 件名テンプレート（空なら既定文を使用）
+  ('decision_body_template',    '')       -- 本文テンプレート（空なら既定文を使用）
 ON CONFLICT (key) DO NOTHING;
 
 -- =====================================================

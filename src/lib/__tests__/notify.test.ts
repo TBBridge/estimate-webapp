@@ -26,10 +26,13 @@ describe("sendAgencyDecisionGmailNotification", () => {
     mockCreateTransport.mockClear();
   });
 
-  it("sends the decision notice through Gmail to the agency contact email", async () => {
+  it("sends the decision notice via the decision-specific Gmail credentials", async () => {
     sqlQueue.push([
-      { key: "gmail_from", value: "sender@example.com" },
-      { key: "gmail_password", value: "app-password" },
+      { key: "decision_gmail_from", value: "overseas@cimtops.co.jp" },
+      { key: "decision_gmail_password", value: "decision-app-pw" },
+      // 申請通知用の値が入っていても影響しないこと
+      { key: "gmail_from", value: "submission@example.com" },
+      { key: "gmail_password", value: "submission-pw" },
     ]);
 
     const result = await sendAgencyDecisionGmailNotification({
@@ -45,11 +48,11 @@ describe("sendAgencyDecisionGmailNotification", () => {
     expect(result).toEqual({ ok: true });
     expect(mockCreateTransport).toHaveBeenCalledWith({
       service: "gmail",
-      auth: { user: "sender@example.com", pass: "app-password" },
+      auth: { user: "overseas@cimtops.co.jp", pass: "decision-app-pw" },
     });
     expect(mockSendMail).toHaveBeenCalledWith(
       expect.objectContaining({
-        from: "sender@example.com",
+        from: "overseas@cimtops.co.jp",
         to: "agency@example.com",
         subject: expect.stringContaining("差し戻し"),
         text: expect.stringContaining("EST-0001"),
@@ -60,5 +63,73 @@ describe("sendAgencyDecisionGmailNotification", () => {
         text: expect.stringContaining("Request Owner"),
       })
     );
+  });
+
+  it("renders custom subject/body templates with placeholders", async () => {
+    sqlQueue.push([
+      { key: "decision_gmail_from", value: "overseas@cimtops.co.jp" },
+      { key: "decision_gmail_password", value: "decision-app-pw" },
+      {
+        key: "decision_subject_template",
+        value: "[{{decisionLabel}}] {{estimateNo}}",
+      },
+      {
+        key: "decision_body_template",
+        value: "{{recipientGreeting}}{{customerName}} 様の見積（{{estimateNo}}）を{{decisionLabel}}しました。",
+      },
+    ]);
+
+    await sendAgencyDecisionGmailNotification({
+      recipientEmail: "agency@example.com",
+      recipientName: "山田 太郎",
+      status: "approved",
+      estimateNo: "EST-9999",
+      customerName: "Acme",
+      agencyName: "Agency One",
+      decidedAt: "2026-05-18 10:00",
+    });
+
+    expect(mockSendMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subject: "[承認] EST-9999",
+        text: "山田 太郎 様\n\nAcme 様の見積（EST-9999）を承認しました。",
+      })
+    );
+  });
+
+  it("returns an error result (no silent skip) when decision Gmail config is missing", async () => {
+    sqlQueue.push([]); // app_settings 空
+
+    const result = await sendAgencyDecisionGmailNotification({
+      recipientEmail: "agency@example.com",
+      status: "approved",
+      estimateNo: "EST-0001",
+      customerName: "Sample",
+      agencyName: "Agency",
+      decidedAt: "2026-05-18 10:00",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: "decision_gmail_config_missing",
+    });
+    expect(mockSendMail).not.toHaveBeenCalled();
+  });
+
+  it("returns an error result when recipientEmail is empty", async () => {
+    const result = await sendAgencyDecisionGmailNotification({
+      recipientEmail: "",
+      status: "approved",
+      estimateNo: "EST-0001",
+      customerName: "Sample",
+      agencyName: "Agency",
+      decidedAt: "2026-05-18 10:00",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: "decision_recipient_email_missing",
+    });
+    expect(mockSendMail).not.toHaveBeenCalled();
   });
 });

@@ -7,12 +7,18 @@ import { getDb } from "@/lib/db";
 import { handleAuthError, requireAdmin } from "@/lib/auth/guards";
 
 const SETTING_KEYS = [
+  // 申請通知（active_channel に従う）
   "active_channel",
   "slack_target",
   "teams_target",
   "gmail_target",
   "gmail_from",
   "gmail_password",
+  // 承認通知（常に Gmail）
+  "decision_gmail_from",
+  "decision_gmail_password",
+  "decision_subject_template",
+  "decision_body_template",
 ] as const;
 
 export async function GET(req: Request) {

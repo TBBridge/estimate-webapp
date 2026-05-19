@@ -1,14 +1,22 @@
 /**
- * 承認通知ヘルパー
+ * 通知ヘルパー
  * DB の app_settings テーブルから通知設定を取得して送信する。
  *
- * app_settings キー:
- *   active_channel  = "slack" | "teams" | "gmail"
- *   slack_target    = Slack Incoming Webhook URL
- *   teams_target    = Teams Incoming Webhook URL
- *   gmail_target    = 送信先メールアドレス
- *   gmail_from      = 送信元メールアドレス
- *   gmail_password  = Gmail アプリパスワード
+ * 通知は 2 系統:
+ *
+ * 1. 申請通知（代理店 → 承認者・管理者）: active_channel に従って 1 チャネル送信
+ *    active_channel  = "slack" | "teams" | "gmail"
+ *    slack_target    = Slack Incoming Webhook URL
+ *    teams_target    = Teams Incoming Webhook URL
+ *    gmail_target    = 送信先メールアドレス
+ *    gmail_from      = 申請通知の送信元（Gmail チャネル時のみ）
+ *    gmail_password  = 申請通知の Gmail アプリパスワード
+ *
+ * 2. 承認通知（承認者・管理者 → 代理店担当者）: 常に Gmail 固定
+ *    decision_gmail_from       = 承認通知の送信元（例: overseas@cimtops.co.jp）
+ *    decision_gmail_password   = 承認通知の Gmail アプリパスワード
+ *    decision_subject_template = 件名テンプレート（{{...}} プレースホルダ）
+ *    decision_body_template    = 本文テンプレート（同上）
  */
 
 import { getDb } from "./db";
@@ -31,7 +39,26 @@ type NotifySettings = {
   gmail_target: string;
   gmail_from: string;
   gmail_password: string;
+  decision_gmail_from: string;
+  decision_gmail_password: string;
+  decision_subject_template: string;
+  decision_body_template: string;
 };
+
+function emptySettings(): NotifySettings {
+  return {
+    active_channel: "slack",
+    slack_target: "",
+    teams_target: "",
+    gmail_target: "",
+    gmail_from: "",
+    gmail_password: "",
+    decision_gmail_from: "",
+    decision_gmail_password: "",
+    decision_subject_template: "",
+    decision_body_template: "",
+  };
+}
 
 async function loadSettings(): Promise<NotifySettings> {
   try {
@@ -46,16 +73,23 @@ async function loadSettings(): Promise<NotifySettings> {
       gmail_target:   map["gmail_target"]   ?? "",
       gmail_from:     map["gmail_from"]     ?? "",
       gmail_password: map["gmail_password"] ?? "",
+      decision_gmail_from:
+        map["decision_gmail_from"] ?? process.env.DECISION_GMAIL_FROM ?? "",
+      decision_gmail_password:
+        map["decision_gmail_password"] ?? process.env.DECISION_GMAIL_APP_PASSWORD ?? "",
+      decision_subject_template: map["decision_subject_template"] ?? "",
+      decision_body_template:    map["decision_body_template"]    ?? "",
     };
-  } catch {
-    // DB 接続失敗時はデフォルトを返す
+  } catch (e) {
+    // DB 接続失敗時は env フォールバックに落とす（黙って失敗しないよう警告を残す）
+    console.warn("[notify] loadSettings failed; falling back to env defaults", e);
     return {
-      active_channel: "slack",
+      ...emptySettings(),
       slack_target: process.env.NOTIFICATION_TARGET ?? "",
-      teams_target: "",
-      gmail_target: "",
       gmail_from: process.env.GMAIL_FROM ?? "",
       gmail_password: process.env.GMAIL_APP_PASSWORD ?? "",
+      decision_gmail_from: process.env.DECISION_GMAIL_FROM ?? "",
+      decision_gmail_password: process.env.DECISION_GMAIL_APP_PASSWORD ?? "",
     };
   }
 }
@@ -88,22 +122,32 @@ export async function sendAgencyDecisionGmailNotification(
   vars: AgencyDecisionNotificationVars & { recipientEmail: string }
 ): Promise<NotifyResult> {
   const recipientEmail = vars.recipientEmail.trim();
-  if (!recipientEmail) return { ok: true };
+  if (!recipientEmail) {
+    console.warn(
+      "[notify] decision notification skipped: recipientEmail is empty (set estimateRequesterEmail in form, or agencies.email)"
+    );
+    return { ok: false, error: "decision_recipient_email_missing" };
+  }
 
   const cfg = await loadSettings();
-  if (!cfg.gmail_from || !cfg.gmail_password) return { ok: true };
+  if (!cfg.decision_gmail_from || !cfg.decision_gmail_password) {
+    console.warn(
+      "[notify] decision notification skipped: decision_gmail_from / decision_gmail_password not configured (admin: /admin/settings)"
+    );
+    return { ok: false, error: "decision_gmail_config_missing" };
+  }
 
   try {
     return await sendGmailMessage({
-      from: cfg.gmail_from,
-      password: cfg.gmail_password,
+      from: cfg.decision_gmail_from,
+      password: cfg.decision_gmail_password,
       to: recipientEmail,
-      subject: getAgencyDecisionSubject(vars),
-      text: getAgencyDecisionBody(vars),
+      subject: getAgencyDecisionSubject(vars, cfg.decision_subject_template),
+      text: getAgencyDecisionBody(vars, cfg.decision_body_template),
     });
   } catch (e) {
     console.error("[notify] Failed to send agency decision notification:", e);
-    return { ok: false, error: String(e) };
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
 

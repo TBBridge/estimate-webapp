@@ -55,24 +55,78 @@ export function getApprovalShortTitle(v: NotificationVars): string {
   return `見積承認依頼：${v.estimateNo} - ${v.customerName}`;
 }
 
-export function getAgencyDecisionSubject(v: AgencyDecisionNotificationVars): string {
-  return `【見積依頼 ${decisionLabel(v.status)}】見積番号：${v.estimateNo} - ${v.customerName}`;
-}
+/**
+ * 承認通知の既定テンプレート。
+ * 管理者が `app_settings` の `decision_subject_template` / `decision_body_template` で
+ * 上書きできる。プレースホルダは {{...}} 形式。
+ */
+export const DEFAULT_DECISION_SUBJECT_TEMPLATE =
+  "【見積依頼 {{decisionLabel}}】見積番号：{{estimateNo}} - {{customerName}}";
 
-export function getAgencyDecisionBody(v: AgencyDecisionNotificationVars): string {
-  const label = decisionLabel(v.status);
-  const greeting = v.recipientName?.trim() ? `${v.recipientName.trim()} 様
+export const DEFAULT_DECISION_BODY_TEMPLATE = `{{recipientGreeting}}見積依頼が{{decisionLabel}}されました。
 
-` : "";
-  return `${greeting}見積依頼が${label}されました。
-
-■ 見積番号：${v.estimateNo}
-■ 顧客名：${v.customerName}
-■ 代理店：${v.agencyName}
-■ 結果：${label}
-■ 処理日時：${v.decidedAt}
+■ 見積番号：{{estimateNo}}
+■ 顧客名：{{customerName}}
+■ 代理店：{{agencyName}}
+■ 結果：{{decisionLabel}}
+■ 処理日時：{{decidedAt}}
 
 代理店画面で見積内容をご確認ください。
 
 ※ 本メッセージは見積自動作成システムから自動送信されています。`;
+
+/** テンプレートのプレースホルダキー（UI ヒント表示にも利用） */
+export const DECISION_TEMPLATE_PLACEHOLDERS = [
+  "estimateNo",
+  "customerName",
+  "agencyName",
+  "decisionLabel",
+  "decidedAt",
+  "recipientName",
+  "recipientGreeting",
+] as const;
+
+function buildDecisionPlaceholderMap(
+  v: AgencyDecisionNotificationVars
+): Record<string, string> {
+  const recipientName = v.recipientName?.trim() ?? "";
+  return {
+    estimateNo: v.estimateNo,
+    customerName: v.customerName,
+    agencyName: v.agencyName,
+    decisionLabel: decisionLabel(v.status),
+    decidedAt: v.decidedAt,
+    recipientName,
+    recipientGreeting: recipientName ? `${recipientName} 様\n\n` : "",
+  };
+}
+
+/**
+ * `{{key}}` 形式のプレースホルダを置換する。未定義キーは空文字に置換する。
+ * `\n` リテラルは改行として解釈する（管理画面のテキストエリアから入った値を素直に表示するため）。
+ */
+export function renderDecisionTemplate(
+  template: string,
+  v: AgencyDecisionNotificationVars
+): string {
+  const values = buildDecisionPlaceholderMap(v);
+  return template.replace(/\{\{\s*([a-zA-Z_]+)\s*\}\}/g, (_, key: string) =>
+    Object.prototype.hasOwnProperty.call(values, key) ? values[key] : ""
+  );
+}
+
+export function getAgencyDecisionSubject(
+  v: AgencyDecisionNotificationVars,
+  template?: string
+): string {
+  const tpl = template?.trim() ? template : DEFAULT_DECISION_SUBJECT_TEMPLATE;
+  return renderDecisionTemplate(tpl, v);
+}
+
+export function getAgencyDecisionBody(
+  v: AgencyDecisionNotificationVars,
+  template?: string
+): string {
+  const tpl = template?.trim() ? template : DEFAULT_DECISION_BODY_TEMPLATE;
+  return renderDecisionTemplate(tpl, v);
 }

@@ -13,6 +13,10 @@ type Settings = {
   gmail_target: string;
   gmail_from: string;
   gmail_password: string;
+  decision_gmail_from: string;
+  decision_gmail_password: string;
+  decision_subject_template: string;
+  decision_body_template: string;
 };
 
 const DEFAULT_SETTINGS: Settings = {
@@ -22,6 +26,10 @@ const DEFAULT_SETTINGS: Settings = {
   gmail_target: "",
   gmail_from: "",
   gmail_password: "",
+  decision_gmail_from: "",
+  decision_gmail_password: "",
+  decision_subject_template: "",
+  decision_body_template: "",
 };
 
 const CHANNELS: { value: Channel; labelKey: string; icon: string }[] = [
@@ -125,11 +133,14 @@ export default function AdminSettingsPage() {
           </div>
         </div>
 
-        {/* ── チャネル別設定 ── */}
+        {/* ── 申請通知: チャネル別設定 ── */}
         <div className="rounded-xl border border-stone-200/80 bg-[var(--color-surface-elevated)] p-6 shadow-sm dark:border-stone-700/80 space-y-6">
           <h2 className="font-body text-sm font-medium text-[var(--color-ink)]">
-            {l("admin.settings.channelConfig")}
+            {l("admin.settings.requestSection")}
           </h2>
+          <p className="-mt-3 font-body text-xs text-[var(--color-ink-muted)]">
+            {l("admin.settings.channelConfig")}
+          </p>
 
           {/* Slack */}
           <div className="space-y-2 rounded-lg border border-stone-100 bg-stone-50/50 p-4 dark:border-stone-700 dark:bg-stone-800/30">
@@ -204,6 +215,61 @@ export default function AdminSettingsPage() {
               />
             </div>
           </div>
+        </div>
+
+        {/* ── 承認通知（常に Gmail） ── */}
+        <div className="rounded-xl border border-stone-200/80 bg-[var(--color-surface-elevated)] p-6 shadow-sm dark:border-stone-700/80 space-y-4">
+          <div>
+            <h2 className="font-body text-sm font-medium text-[var(--color-ink)]">
+              {l("admin.settings.decisionSection")}
+            </h2>
+            <p className="mt-1 font-body text-xs text-[var(--color-ink-muted)]">
+              {l("admin.settings.decisionDescription")}
+            </p>
+          </div>
+          <div>
+            <label className="mb-1 block font-body text-xs text-[var(--color-ink-muted)]">{l("admin.settings.decisionGmailFrom")}</label>
+            <input
+              type="email"
+              value={settings.decision_gmail_from}
+              onChange={(e) => set("decision_gmail_from", e.target.value)}
+              placeholder={l("admin.settings.decisionGmailFromHint")}
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block font-body text-xs text-[var(--color-ink-muted)]">{l("admin.settings.decisionGmailPassword")}</label>
+            <input
+              type="password"
+              value={settings.decision_gmail_password}
+              onChange={(e) => set("decision_gmail_password", e.target.value)}
+              placeholder={l("admin.settings.decisionGmailPasswordHint")}
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block font-body text-xs text-[var(--color-ink-muted)]">{l("admin.settings.decisionSubject")}</label>
+            <input
+              type="text"
+              value={settings.decision_subject_template}
+              onChange={(e) => set("decision_subject_template", e.target.value)}
+              placeholder={l("admin.settings.decisionSubjectHint")}
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block font-body text-xs text-[var(--color-ink-muted)]">{l("admin.settings.decisionBody")}</label>
+            <textarea
+              value={settings.decision_body_template}
+              onChange={(e) => set("decision_body_template", e.target.value)}
+              placeholder={l("admin.settings.decisionBodyHint")}
+              rows={8}
+              className={`${inputCls} font-mono`}
+            />
+          </div>
+          <p className="font-body text-xs text-[var(--color-ink-muted)]">
+            {l("admin.settings.decisionPlaceholders")}
+          </p>
         </div>
 
         {/* 保存ボタン */}
