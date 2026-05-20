@@ -5,6 +5,7 @@ import {
   evaluateAndStripWorkbook,
   extractAmountsFromCsv,
   extractAmountsFromPdfText,
+  freezeNonPrintSheetFormulas,
   reorderPrintSheetsFirst,
 } from "@/lib/pdf-generator";
 
@@ -178,5 +179,99 @@ describe("reorderPrintSheetsFirst", () => {
     expect(wb.worksheets.map((ws) => ws.name).sort()).toEqual(
       ["ライセンス", "単価マスタ", "保守料", "表紙", "設定情報"].sort()
     );
+  });
+});
+
+describe("freezeNonPrintSheetFormulas", () => {
+  /**
+   * excel-writer.ts のセル書き込みを模した状態:
+   *   - 設定情報!C8 は元の VLOOKUP 数式を保持しつつ result に正しい値 (0.7) を持つ
+   *   - 設定情報!C28 は intra-sheet 数式 (=C26+5) で result は古い値（C26 更新前）
+   *   - 設定情報!C4 は plain string（数式無し）
+   *   - 印刷シートの数式は変更しない
+   */
+  function buildWorkbookSimulatingWriter(): ExcelJS.Workbook {
+    const wb = new ExcelJS.Workbook();
+
+    const settings = wb.addWorksheet("設定情報");
+    settings.getCell("C4").value = "To: テスト代理店";  // plain（数式無し）
+    settings.getCell("C7").value = "B"; // VLOOKUP キー
+    settings.getCell("C8").value = {
+      formula: "VLOOKUP(C7,'単価マスタ'!A:B,2,FALSE)",
+      result: 0.7,
+      date1904: false,
+    } as ExcelJS.CellFormulaValue;
+    settings.getCell("C26").value = 2025; // 既存保守開始年
+    settings.getCell("C28").value = {
+      formula: "C26+5",
+      result: 2030, // テンプレ保存時のキャッシュ（更新 C26 と一致する想定）
+      date1904: false,
+    } as ExcelJS.CellFormulaValue;
+
+    // 単価マスタ: VLOOKUP の参照テーブル
+    const prices = wb.addWorksheet("単価マスタ");
+    prices.getCell("A1").value = "A";
+    prices.getCell("B1").value = 0.6;
+    prices.getCell("A2").value = "B";
+    prices.getCell("B2").value = 0.7;
+
+    // 印刷シート
+    const cover = wb.addWorksheet("表紙");
+    cover.getCell("A1").value = "見積書";
+    cover.getCell("B1").value = {
+      formula: "設定情報!C4",
+      date1904: false,
+    } as ExcelJS.CellFormulaValue;
+
+    return wb;
+  }
+
+  it("replaces 設定情報 formula cells with HF results (preserving excel-writer values)", () => {
+    const wb = buildWorkbookSimulatingWriter();
+    freezeNonPrintSheetFormulas(wb);
+
+    const settings = wb.getWorksheet("設定情報")!;
+    // VLOOKUP は HyperFormula で評価可能（単価マスタ がワークブックにある）
+    expect(settings.getCell("C8").value).toBe(0.7);
+    // intra-sheet 数式 =C26+5 は HF が C26=2025 を見て 2030 に評価
+    expect(settings.getCell("C28").value).toBe(2030);
+    // 数式は除去されている（plain value のみ）
+    expect(typeof settings.getCell("C8").value).toBe("number");
+    expect(typeof settings.getCell("C28").value).toBe("number");
+  });
+
+  it("does not modify print-sheet formulas (LibreOffice evaluates them)", () => {
+    const wb = buildWorkbookSimulatingWriter();
+    freezeNonPrintSheetFormulas(wb);
+
+    const cover = wb.getWorksheet("表紙")!;
+    const v = cover.getCell("B1").value as ExcelJS.CellFormulaValue;
+    expect(typeof v).toBe("object");
+    expect(v.formula).toBe("設定情報!C4");
+  });
+
+  it("keeps all sheets in workbook (no deletion)", () => {
+    const wb = buildWorkbookSimulatingWriter();
+    freezeNonPrintSheetFormulas(wb);
+
+    const names = wb.worksheets.map((ws) => ws.name).sort();
+    expect(names).toEqual(["単価マスタ", "表紙", "設定情報"].sort());
+  });
+
+  it("falls back to cached result when HF cannot evaluate", () => {
+    const wb = new ExcelJS.Workbook();
+    const settings = wb.addWorksheet("設定情報");
+    // 存在しないシートへの参照（HF はエラーを返す）
+    settings.getCell("C8").value = {
+      formula: "VLOOKUP(C7,'存在しないシート'!A:B,2,FALSE)",
+      result: 0.5,
+      date1904: false,
+    } as ExcelJS.CellFormulaValue;
+    settings.getCell("C7").value = "X";
+
+    freezeNonPrintSheetFormulas(wb);
+
+    // HF エラー → excel-writer.ts が書き込んだ cached result 0.5 にフォールバック
+    expect(wb.getWorksheet("設定情報")!.getCell("C8").value).toBe(0.5);
   });
 });

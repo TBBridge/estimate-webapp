@@ -437,6 +437,129 @@ export function evaluateAndStripWorkbook(workbook: ExcelJS.Workbook): void {
 }
 
 /**
+ * 非印刷シート（設定情報・単価マスタ等）の数式セルを評価結果に固定する。
+ *
+ * 目的:
+ *   excel-writer.ts は 設定情報 の数式セル（VLOOKUP 等）に対し formula を保持したまま
+ *   result だけ正しい値で更新する。しかし LibreOffice は xlsx を開くと cached result を
+ *   無視して formula を再評価するため、参照テーブルや名前付き範囲が解決できないと
+ *   excel-writer.ts が書き込んだ値が消えてしまう。
+ *
+ *   このため Gotenberg に渡す前に、非印刷シートの数式セルを HyperFormula で評価して
+ *   プレーン値に置換する。HyperFormula も解釈できない場合は cached result にフォールバック。
+ *
+ * 印刷シート（表紙・ライセンス・保守料）の数式は触らない:
+ *   LibreOffice が固定済みの非印刷シート値を使って正確に評価する。
+ */
+export function freezeNonPrintSheetFormulas(workbook: ExcelJS.Workbook): void {
+  const sheetNames = workbook.worksheets.map((ws) => ws.name);
+
+  // 1. HyperFormula 用にデータを抽出（全シート、formula を渡す）
+  const sheetsData: Record<string, (string | number | boolean | null)[][]> = {};
+  for (const ws of workbook.worksheets) {
+    const rows: (string | number | boolean | null)[][] = [];
+    const rowCount = ws.actualRowCount > 0 ? ws.rowCount : 0;
+    const colCount = ws.actualColumnCount > 0 ? ws.columnCount : 0;
+    for (let r = 1; r <= rowCount; r++) {
+      const row: (string | number | boolean | null)[] = [];
+      for (let c = 1; c <= colCount; c++) {
+        const cell = ws.getCell(r, c);
+        row.push(excelCellToHfValue(cell.value, sheetNames, false));
+      }
+      rows.push(row);
+    }
+    sheetsData[ws.name] = rows;
+  }
+
+  const hf = HyperFormula.buildFromSheets(sheetsData, {
+    licenseKey: "gpl-v3",
+    smartRounding: true,
+  });
+
+  // 名前付き範囲をベストエフォートで登録（model.definedNames の形は ranges[] 配列）
+  try {
+    type DefinedNameModel = { name: string; ranges?: string[] };
+    type WbModel = { definedNames?: DefinedNameModel[] };
+    const wbModel = (workbook as unknown as { model?: WbModel }).model;
+    if (Array.isArray(wbModel?.definedNames)) {
+      for (const dn of wbModel.definedNames) {
+        if (!dn.name || !Array.isArray(dn.ranges) || dn.ranges.length === 0) continue;
+        try {
+          const expr =
+            "=" + quoteSheetNamesInFormula(dn.ranges[0].replace(/^=/, ""), sheetNames);
+          hf.addNamedExpression(dn.name, expr);
+        } catch {
+          /* 個別の登録失敗は無視 */
+        }
+      }
+    }
+  } catch {
+    /* 取得失敗は無視 */
+  }
+
+  // 2. 非印刷シートの数式セルを評価結果に置換
+  let frozen = 0;
+  let fallbackCached = 0;
+  let fallbackNull = 0;
+  for (const ws of workbook.worksheets) {
+    if (PRINT_SHEETS.includes(ws.name)) continue;
+    const sheetId = hf.getSheetId(ws.name);
+    if (sheetId === undefined) continue;
+
+    ws.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        const v = cell.value;
+        const hasFormula =
+          v !== null &&
+          typeof v === "object" &&
+          ("formula" in (v as object) || "sharedFormula" in (v as object));
+        if (!hasFormula) return;
+
+        const computed = hf.getCellValue({
+          sheet: sheetId,
+          row: cell.fullAddress.row - 1,
+          col: cell.fullAddress.col - 1,
+        });
+
+        const computedAsUnknown = computed as unknown;
+        const isHfError =
+          computedAsUnknown !== null &&
+          typeof computedAsUnknown === "object" &&
+          typeof (computedAsUnknown as Record<string, unknown>).type === "string";
+
+        if (isHfError) {
+          // HF 失敗時は excel-writer.ts が書き込んだ cached result を採用
+          const vo = v as unknown as Record<string, unknown>;
+          const cached = "result" in vo ? vo.result : undefined;
+          if (
+            typeof cached === "number" ||
+            typeof cached === "string" ||
+            typeof cached === "boolean"
+          ) {
+            cell.value = cached;
+            fallbackCached++;
+          } else if (cached instanceof Date) {
+            cell.value = cached;
+            fallbackCached++;
+          } else {
+            cell.value = null;
+            fallbackNull++;
+          }
+        } else {
+          cell.value = hfValueToExcelCellValue(computed);
+          frozen++;
+        }
+      });
+    });
+  }
+
+  hf.destroy();
+  console.log(
+    `[pdf-generator] 非印刷シート数式の固定: HF評価=${frozen}, キャッシュ採用=${fallbackCached}, 空セル=${fallbackNull}`
+  );
+}
+
+/**
  * 全シート共通の前処理: 編集ロック解除 + 印刷対象シートを visible に。
  */
 function unlockAndShowPrintSheets(workbook: ExcelJS.Workbook): void {
@@ -495,6 +618,9 @@ async function prepareExcelForGotenberg(excelBuffer: Buffer): Promise<Buffer> {
 
   unlockAndShowPrintSheets(workbook);
   reorderPrintSheetsFirst(workbook);
+  // 非印刷シートの数式セルを評価結果に固定し、LibreOffice が再評価で
+  // excel-writer.ts の書き込み値を上書きしないようにする。
+  freezeNonPrintSheetFormulas(workbook);
 
   const afterNames = workbook.worksheets.map((ws) => `"${ws.name}"`);
   console.log(`[pdf-generator] 並び替え後（Gotenberg 用・全シート保持）: ${afterNames.join(", ")}`);
