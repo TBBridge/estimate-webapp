@@ -1,0 +1,34 @@
+# Render IaC: Gotenberg (Excel → PDF 変換用 LibreOffice/Chromium API)
+# 公式 Docker イメージ gotenberg/gotenberg:8 を Render の Web Service として常駐させる。
+# Vercel 上の Next.js から HTTP で叩く運用に切り替え、CloudConvert の日次フリー枠依存を解消する。
+#
+# デプロイ手順:
+#   1. Render ダッシュボード → New → Blueprint → このリポジトリを指定
+#   2. 自動検出された "gotenberg" サービスを承認
+#   3. ダッシュボードで GOTENBERG_API_BASIC_AUTH_USERNAME / GOTENBERG_API_BASIC_AUTH_PASSWORD を設定
+#   4. 完了後に Vercel 環境変数へ以下を投入:
+#        GOTENBERG_URL=https://<service-slug>.onrender.com
+#        GOTENBERG_USERNAME=<上で決めたユーザー名>
+#        GOTENBERG_PASSWORD=<上で決めたパスワード>
+#
+# 補足:
+#   - Render free プランはアイドル時にスリープし、初回リクエストで数十秒のコールドスタートが入る。
+#     1日数十件規模ならフリーで問題ないが、応答時間が気になる場合は Starter ($7/月) に上げる。
+#   - Gotenberg 自身は変換回数に課金しない（LibreOffice ベースの OSS）。
+
+services:
+  - type: web
+    name: gotenberg
+    runtime: image
+    image:
+      url: docker.io/gotenberg/gotenberg:8
+    plan: free
+    region: singapore
+    healthCheckPath: /health
+    # Basic Auth を有効化（未指定だと公開エンドポイントになるため必須）
+    dockerCommand: gotenberg --api-enable-basic-auth --api-timeout=120s
+    envVars:
+      - key: GOTENBERG_API_BASIC_AUTH_USERNAME
+        sync: false
+      - key: GOTENBERG_API_BASIC_AUTH_PASSWORD
+        sync: false

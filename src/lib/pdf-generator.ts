@@ -8,12 +8,25 @@
  *    ※ 設定情報シートは数式参照元のため削除不可。非表示にすることで変換エンジンの対象から除外する
  * 4. 表紙・ライセンス・保守料の3シートのみが PDF 化される
  *
- * 変換: CloudConvert API v2（同期 Jobs: import/base64 → convert → export/url）
- * 必須環境変数: CLOUDCONVERT_API_KEY（ダッシュボードで task.read / task.write を付与）
+ * 変換エンジン:
+ *   1. 既定: Render 上の Gotenberg（LibreOffice）— GOTENBERG_URL が設定されているとき使う。
+ *      日次フリー枠が無い OSS 構成のため見積件数に比例した課金は発生しない。
+ *      ・必須: GOTENBERG_URL
+ *      ・推奨: GOTENBERG_USERNAME / GOTENBERG_PASSWORD（Basic Auth）
+ *   2. フォールバック: CloudConvert API v2 — 上記が未設定のときのみ動作する。
+ *      ・必須: CLOUDCONVERT_API_KEY（task.read / task.write）
+ *
+ * 見積金額の抽出:
+ *   Excel テンプレート内の数式は ExcelJS だけでは評価できないため、
+ *   PDF 化エンジンが評価した結果から金額を読み戻す:
+ *     - Gotenberg 経路: 生成された PDF のテキストを抽出してキーワード一致で抽出
+ *     - CloudConvert 経路: 並行生成した CSV から抽出
  */
 
 import ExcelJS from "exceljs";
 import { PassThrough } from "stream";
+// pdf-parse は index.js のデバッグ実行コードを避けるため lib 直参照
+import pdfParse from "pdf-parse/lib/pdf-parse.js";
 
 /** PDF に含める印刷対象シート名（この3シートのみ残し、他は削除） */
 const PRINT_SHEETS = ["表紙", "ライセンス", "保守料"];
@@ -123,14 +136,47 @@ export type ConvertResult = {
   amounts: { amount: number; maintenanceFee: number } | null;
 };
 
+const AMOUNT_KEYWORDS = ["御見積金額", "見積金額", "お見積金額"] as const;
+const MAINTENANCE_KEYWORDS = ["保守", "年額保守", "保守料"] as const;
+const TOTAL_KEYWORDS = ["合計", "税抜合計"] as const;
+
+/**
+ * テキスト行群（CSV / PDF）からキーワード一致で見積金額を抽出する共通ロジック。
+ * 数値の抽出方法だけ呼び出し側に委ねる。
+ */
+function extractAmountsFromLines(
+  lines: ReadonlyArray<string>,
+  extractNums: (line: string) => number[]
+): { amount: number; maintenanceFee: number } {
+  let amount = 0;
+  let maintenanceFee = 0;
+
+  for (const line of lines) {
+    const nums = extractNums(line);
+    if (nums.length === 0) continue;
+    const maxNum = Math.max(...nums);
+
+    if (AMOUNT_KEYWORDS.some((kw) => line.includes(kw))) {
+      amount = Math.max(amount, maxNum);
+    } else if (
+      MAINTENANCE_KEYWORDS.some((kw) => line.includes(kw)) &&
+      !AMOUNT_KEYWORDS.some((kw) => line.includes(kw))
+    ) {
+      maintenanceFee = Math.max(maintenanceFee, maxNum);
+    } else if (amount === 0 && TOTAL_KEYWORDS.some((kw) => line.includes(kw))) {
+      amount = Math.max(amount, maxNum);
+    }
+  }
+
+  return { amount: Math.floor(amount), maintenanceFee: Math.floor(maintenanceFee) };
+}
+
 /**
  * CloudConvert が出力した表紙 CSV から見積金額を抽出する。
  * 「御見積金額」「見積金額」「合計」等のキーワード行にある最大の数値を取る。
  */
 export function extractAmountsFromCsv(csv: string): { amount: number; maintenanceFee: number } {
-  const lines = csv.split(/\r?\n/);
-
-  const extractNums = (line: string): number[] => {
+  return extractAmountsFromLines(csv.split(/\r?\n/), (line) => {
     const nums: number[] = [];
     for (const cell of line.split(",")) {
       const cleaned = cell.replace(/[""¥￥,、\s]/g, "");
@@ -138,30 +184,25 @@ export function extractAmountsFromCsv(csv: string): { amount: number; maintenanc
       if (Number.isFinite(n) && n > 0) nums.push(n);
     }
     return nums;
-  };
+  });
+}
 
-  let amount = 0;
-  let maintenanceFee = 0;
-
-  const amountKeywords = ["御見積金額", "見積金額", "お見積金額"];
-  const maintenanceKeywords = ["保守", "年額保守", "保守料"];
-  const totalKeywords = ["合計", "税抜合計"];
-
-  for (const line of lines) {
-    const nums = extractNums(line);
-    if (nums.length === 0) continue;
-    const maxNum = Math.max(...nums);
-
-    if (amountKeywords.some((kw) => line.includes(kw))) {
-      amount = Math.max(amount, maxNum);
-    } else if (maintenanceKeywords.some((kw) => line.includes(kw)) && !amountKeywords.some((kw) => line.includes(kw))) {
-      maintenanceFee = Math.max(maintenanceFee, maxNum);
-    } else if (amount === 0 && totalKeywords.some((kw) => line.includes(kw))) {
-      amount = Math.max(amount, maxNum);
+/**
+ * Gotenberg が出力した PDF を pdf-parse で抽出したテキストから見積金額を抽出する。
+ * PDF テキストには CSV のような明確なセル境界が無いので、数値トークンを正規表現で拾う。
+ */
+export function extractAmountsFromPdfText(text: string): { amount: number; maintenanceFee: number } {
+  return extractAmountsFromLines(text.split(/\r?\n/), (line) => {
+    const nums: number[] = [];
+    // `1,234,567` / `1234567` / `1234567.89` を許容（カンマ区切りの整数 / 小数）
+    const matches = line.match(/[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?/g) ?? [];
+    for (const m of matches) {
+      const cleaned = m.replace(/,/g, "");
+      const n = Number(cleaned);
+      if (Number.isFinite(n) && n > 0) nums.push(n);
     }
-  }
-
-  return { amount: Math.floor(amount), maintenanceFee: Math.floor(maintenanceFee) };
+    return nums;
+  });
 }
 
 /**
@@ -341,7 +382,72 @@ async function convertBufferWithCloudConvert(pdfReadyBuffer: Buffer): Promise<Co
   return { pdf, amounts };
 }
 
+/**
+ * Gotenberg（Render などにホスト）で xlsx → pdf 変換し、生成 PDF からテキストを抽出して
+ * 見積金額を読み戻す。Gotenberg のレスポンスは PDF バイナリのみ。
+ */
+async function convertBufferWithGotenberg(pdfReadyBuffer: Buffer): Promise<ConvertResult> {
+  const baseUrl = process.env.GOTENBERG_URL?.trim().replace(/\/$/, "");
+  if (!baseUrl) {
+    throw new Error("GOTENBERG_URL is not set");
+  }
+
+  const username = process.env.GOTENBERG_USERNAME?.trim() ?? "";
+  const password = process.env.GOTENBERG_PASSWORD?.trim() ?? "";
+
+  // multipart/form-data: フィールド名は Gotenberg 仕様で `files`
+  const form = new FormData();
+  const blob = new Blob([new Uint8Array(pdfReadyBuffer)], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  form.append("files", blob, "estimate.xlsx");
+
+  const headers: Record<string, string> = {};
+  if (username && password) {
+    headers["Authorization"] =
+      "Basic " + Buffer.from(`${username}:${password}`).toString("base64");
+  }
+
+  const res = await fetch(`${baseUrl}/forms/libreoffice/convert`, {
+    method: "POST",
+    headers,
+    body: form,
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(
+        `Gotenberg 認証エラー HTTP ${res.status}: GOTENBERG_USERNAME / GOTENBERG_PASSWORD と Render 側の ` +
+          `GOTENBERG_API_BASIC_AUTH_USERNAME / GOTENBERG_API_BASIC_AUTH_PASSWORD が一致しているか確認してください。 ` +
+          `応答: ${text.slice(0, 300)}`
+      );
+    }
+    throw new Error(`Gotenberg HTTP ${res.status}: ${text.slice(0, 500)}`);
+  }
+
+  const pdf = Buffer.from(await res.arrayBuffer());
+
+  let amounts: ConvertResult["amounts"] = null;
+  try {
+    const parsed = await pdfParse(pdf);
+    if (parsed?.text) {
+      amounts = extractAmountsFromPdfText(parsed.text);
+    }
+  } catch (parseErr) {
+    console.error("[pdf-generator] PDF テキスト抽出失敗（PDF 生成は継続）:", parseErr);
+  }
+
+  return { pdf, amounts };
+}
+
 export async function convertExcelToPdf(excelBuffer: Buffer): Promise<ConvertResult> {
   const pdfReadyBuffer = await prepareExcelForPdf(excelBuffer);
+
+  // 既定は Gotenberg。未設定なら従来の CloudConvert にフォールバック。
+  const gotenbergUrl = process.env.GOTENBERG_URL?.trim();
+  if (gotenbergUrl) {
+    return convertBufferWithGotenberg(pdfReadyBuffer);
+  }
   return convertBufferWithCloudConvert(pdfReadyBuffer);
 }
