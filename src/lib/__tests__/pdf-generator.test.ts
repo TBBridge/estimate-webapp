@@ -5,6 +5,7 @@ import {
   evaluateAndStripWorkbook,
   extractAmountsFromCsv,
   extractAmountsFromPdfText,
+  reorderPrintSheetsFirst,
 } from "@/lib/pdf-generator";
 
 describe("extractAmountsFromCsv", () => {
@@ -138,5 +139,44 @@ describe("evaluateAndStripWorkbook", () => {
     evaluateAndStripWorkbook(wb);
 
     expect(wb.getWorksheet("表紙")!.getCell("A1").value).toBe("見積書");
+  });
+});
+
+describe("reorderPrintSheetsFirst", () => {
+  it("moves 表紙/ライセンス/保守料 to the front in defined order", () => {
+    const wb = new ExcelJS.Workbook();
+    // テンプレートを模した順序（非印刷シートが先頭にある）
+    wb.addWorksheet("設定情報");
+    wb.addWorksheet("保守料");
+    wb.addWorksheet("単価マスタ");
+    wb.addWorksheet("ライセンス");
+    wb.addWorksheet("表紙");
+
+    reorderPrintSheetsFirst(wb);
+
+    // ExcelJS の orderNo はシート一覧をそのまま再ソートはしないため、
+    // 並び順を明示的に確認する（orderNo は型定義に無いのでキャストして読み出す）
+    const getOrder = (ws: ExcelJS.Worksheet): number =>
+      (ws as unknown as { orderNo?: number }).orderNo ?? 0;
+    const sorted = [...wb.worksheets].sort((a, b) => getOrder(a) - getOrder(b));
+    const names = sorted.map((ws) => ws.name);
+    expect(names.slice(0, 3)).toEqual(["表紙", "ライセンス", "保守料"]);
+    // 非印刷シートは元の相対順序で末尾に残る
+    expect(names.slice(3).sort()).toEqual(["単価マスタ", "設定情報"].sort());
+  });
+
+  it("does not delete any sheets (Gotenberg path keeps all sheets)", () => {
+    const wb = new ExcelJS.Workbook();
+    wb.addWorksheet("設定情報");
+    wb.addWorksheet("表紙");
+    wb.addWorksheet("ライセンス");
+    wb.addWorksheet("保守料");
+    wb.addWorksheet("単価マスタ");
+
+    reorderPrintSheetsFirst(wb);
+
+    expect(wb.worksheets.map((ws) => ws.name).sort()).toEqual(
+      ["ライセンス", "単価マスタ", "保守料", "表紙", "設定情報"].sort()
+    );
   });
 });

@@ -1,25 +1,28 @@
 /**
  * Excel → PDF 変換ユーティリティ
  *
- * 流れ:
- * 1. 自動入力済み Excel をコピーして PDF 用の一時ワークブックとする
- * 2. 一時ワークブックを開き、編集ロックがあれば解除する
- * 3. 「表紙」「ライセンス」「保守料」を visible、その他（設定情報など）を veryHidden に設定
- *    ※ 設定情報シートは数式参照元のため削除不可。非表示にすることで変換エンジンの対象から除外する
- * 4. 表紙・ライセンス・保守料の3シートのみが PDF 化される
+ * 印刷対象シート（表紙・ライセンス・保守料）のみを PDF に出力するための戦略を、
+ * 変換エンジンの能力に合わせて切り替える:
  *
- * 変換エンジン:
- *   1. 既定: Render 上の Gotenberg（LibreOffice）— GOTENBERG_URL が設定されているとき使う。
- *      日次フリー枠が無い OSS 構成のため見積件数に比例した課金は発生しない。
- *      ・必須: GOTENBERG_URL
- *      ・推奨: GOTENBERG_USERNAME / GOTENBERG_PASSWORD（Basic Auth）
- *   2. フォールバック: CloudConvert API v2 — 上記が未設定のときのみ動作する。
- *      ・必須: CLOUDCONVERT_API_KEY（task.read / task.write）
+ * ── Gotenberg 経路（既定・GOTENBERG_URL 設定時）─────────────────
+ *   1. 全シートを保持したまま LibreOffice に渡し、数式を「本物のエンジン」で評価させる
+ *   2. シート並びを 表紙 → ライセンス → 保守料 → その他 に並び替える
+ *   3. Gotenberg の nativePageRanges=1-3 で PDF の先頭 3 ページのみを取り出す
+ *   この方式なら、テンプレートが Excel Name Manager の名前付き範囲 / VLOOKUP /
+ *   未対応の関数を使っていても結果が正しく評価される。
+ *   ・必須: GOTENBERG_URL
+ *   ・推奨: GOTENBERG_USERNAME / GOTENBERG_PASSWORD（Basic Auth）
+ *   ・任意: GOTENBERG_NATIVE_PAGE_RANGES（既定 "1-3"。テンプレートのページ数を変えたとき上書き）
+ *
+ * ── CloudConvert 経路（フォールバック・GOTENBERG_URL 未設定時）──
+ *   ページ選択 API が無いため、HyperFormula で印刷シートの数式を事前評価し、
+ *   非印刷シートをワークブックから物理削除して PDF 化する（複雑な数式は値が空欄になる可能性あり）。
+ *   ・必須: CLOUDCONVERT_API_KEY（task.read / task.write）
  *
  * 見積金額の抽出:
  *   Excel テンプレート内の数式は ExcelJS だけでは評価できないため、
  *   PDF 化エンジンが評価した結果から金額を読み戻す:
- *     - Gotenberg 経路: 生成された PDF のテキストを抽出してキーワード一致で抽出
+ *     - Gotenberg 経路: 生成された PDF のテキストを pdf-parse で抽出
  *     - CloudConvert 経路: 並行生成した CSV から抽出
  */
 
@@ -434,19 +437,9 @@ export function evaluateAndStripWorkbook(workbook: ExcelJS.Workbook): void {
 }
 
 /**
- * 自動入力済み Excel をコピーし、PDF 用に以下を行う:
- * - ワークブック・シートの編集ロックを解除
- * - 印刷対象シート（表紙・ライセンス・保守料）内の数式を HyperFormula で評価して値に確定
- * - 設定情報など印刷対象外シートをワークブックから削除
- * 返すバッファは Gotenberg / CloudConvert で PDF 化する用。
+ * 全シート共通の前処理: 編集ロック解除 + 印刷対象シートを visible に。
  */
-async function prepareExcelForPdf(excelBuffer: Buffer): Promise<Buffer> {
-  const workbook = await loadWorkbook(excelBuffer);
-
-  const sheetNames = workbook.worksheets.map((ws) => `"${ws.name}"(${ws.state})`);
-  console.log(`[pdf-generator] 読み込みシート: ${sheetNames.join(", ")}`);
-
-  // 編集ロック解除と可視化（削除前に必須）
+function unlockAndShowPrintSheets(workbook: ExcelJS.Workbook): void {
   for (const ws of workbook.worksheets) {
     const sheet = ws as ExcelJS.Worksheet & { sheetProtection?: unknown; unprotect?: () => void };
     if (sheet.sheetProtection) {
@@ -457,12 +450,76 @@ async function prepareExcelForPdf(excelBuffer: Buffer): Promise<Buffer> {
       ws.state = "visible";
     }
   }
+}
 
-  // 数式評価 + 印刷対象外シート削除
+/**
+ * 印刷対象シートを先頭に並び替える（PRINT_SHEETS の順序を保持）。
+ * Gotenberg 経路で nativePageRanges=1-3 が確実に印刷対象シートを指すようにするため。
+ */
+export function reorderPrintSheetsFirst(workbook: ExcelJS.Workbook): void {
+  // ExcelJS の orderNo は型定義に含まれないが、ランタイムには存在し
+  // ワークブック保存時のシート順序を決定する
+  const setOrder = (ws: ExcelJS.Worksheet, order: number): void => {
+    (ws as unknown as { orderNo: number }).orderNo = order;
+  };
+
+  let order = 1;
+  // 1. 印刷対象シートを PRINT_SHEETS 定義順に並べる
+  for (const name of PRINT_SHEETS) {
+    const ws = workbook.getWorksheet(name);
+    if (ws) {
+      setOrder(ws, order);
+      order++;
+    }
+  }
+  // 2. それ以外のシートを後ろに（既存順序のまま）並べる
+  for (const ws of workbook.worksheets) {
+    if (!PRINT_SHEETS.includes(ws.name)) {
+      setOrder(ws, order);
+      order++;
+    }
+  }
+}
+
+/**
+ * Gotenberg 経路用の前処理:
+ *   全シートを保持したまま、印刷対象シートを先頭に並び替える。
+ *   数式評価は LibreOffice に任せる（HyperFormula で対応できない名前付き範囲も正しく評価される）。
+ *   PDF 化後に Gotenberg の nativePageRanges で先頭 N ページのみ取り出す。
+ */
+async function prepareExcelForGotenberg(excelBuffer: Buffer): Promise<Buffer> {
+  const workbook = await loadWorkbook(excelBuffer);
+
+  const beforeNames = workbook.worksheets.map((ws) => `"${ws.name}"(${ws.state})`);
+  console.log(`[pdf-generator] 読み込みシート: ${beforeNames.join(", ")}`);
+
+  unlockAndShowPrintSheets(workbook);
+  reorderPrintSheetsFirst(workbook);
+
+  const afterNames = workbook.worksheets.map((ws) => `"${ws.name}"`);
+  console.log(`[pdf-generator] 並び替え後（Gotenberg 用・全シート保持）: ${afterNames.join(", ")}`);
+
+  const buf = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buf);
+}
+
+/**
+ * CloudConvert 経路用の前処理:
+ *   CloudConvert は PDF ページ範囲指定 API を持たないため、印刷シートの数式を
+ *   HyperFormula で事前評価して値に確定し、非印刷シートを物理削除する。
+ *   ※テンプレートが Name Manager の名前付き範囲を多用していると一部値が空欄になる可能性あり。
+ */
+async function prepareExcelForCloudConvert(excelBuffer: Buffer): Promise<Buffer> {
+  const workbook = await loadWorkbook(excelBuffer);
+
+  const beforeNames = workbook.worksheets.map((ws) => `"${ws.name}"(${ws.state})`);
+  console.log(`[pdf-generator] 読み込みシート: ${beforeNames.join(", ")}`);
+
+  unlockAndShowPrintSheets(workbook);
   evaluateAndStripWorkbook(workbook);
 
-  const afterStates = workbook.worksheets.map((ws) => `"${ws.name}"(${ws.state})`);
-  console.log(`[pdf-generator] 変換後シート: ${afterStates.join(", ")}`);
+  const afterNames = workbook.worksheets.map((ws) => `"${ws.name}"`);
+  console.log(`[pdf-generator] 変換後（CloudConvert 用・3 シートのみ）: ${afterNames.join(", ")}`);
 
   const buf = await workbook.xlsx.writeBuffer();
   return Buffer.from(buf);
@@ -611,6 +668,15 @@ async function convertBufferWithGotenberg(pdfReadyBuffer: Buffer): Promise<Conve
   });
   form.append("files", blob, "estimate.xlsx");
 
+  // 全シートを保持して LibreOffice に渡しているため、先頭の N ページ
+  //（= 印刷対象シートの枚数。既定 3）のみを PDF に残す。
+  // テンプレートが 1 シート = 1 ページ前提（PDF サンプルでも 3 ページに収まっている）。
+  // 印刷シートが複数ページに渡るテンプレートを使う場合は env で上書き可能。
+  const pageRanges =
+    process.env.GOTENBERG_NATIVE_PAGE_RANGES?.trim() || `1-${PRINT_SHEETS.length}`;
+  form.append("nativePageRanges", pageRanges);
+  console.log(`[pdf-generator] Gotenberg nativePageRanges=${pageRanges}`);
+
   const headers: Record<string, string> = {};
   if (username && password) {
     headers["Authorization"] =
@@ -651,12 +717,13 @@ async function convertBufferWithGotenberg(pdfReadyBuffer: Buffer): Promise<Conve
 }
 
 export async function convertExcelToPdf(excelBuffer: Buffer): Promise<ConvertResult> {
-  const pdfReadyBuffer = await prepareExcelForPdf(excelBuffer);
-
   // 既定は Gotenberg。未設定なら従来の CloudConvert にフォールバック。
+  // 経路によって xlsx 前処理が異なる（Gotenberg: 全シート保持・並び替え / CloudConvert: 数式評価＋削除）。
   const gotenbergUrl = process.env.GOTENBERG_URL?.trim();
   if (gotenbergUrl) {
-    return convertBufferWithGotenberg(pdfReadyBuffer);
+    const ready = await prepareExcelForGotenberg(excelBuffer);
+    return convertBufferWithGotenberg(ready);
   }
-  return convertBufferWithCloudConvert(pdfReadyBuffer);
+  const ready = await prepareExcelForCloudConvert(excelBuffer);
+  return convertBufferWithCloudConvert(ready);
 }
