@@ -64,10 +64,10 @@ App Router。ロール別ディレクトリで分割: `admin/`（ダッシュボ
 
 1. `src/lib/template-cells.ts` + `src/lib/excel-writer.ts` で **ExcelJS** を使い、管理者がアップロードしたテンプレート (`.xlsx`) のセルへ値を流し込む。表紙 / ライセンス / 保守料 / 設定情報シートを使用。
 2. `src/lib/estimate-form-display.ts` / `estimate-schema.ts`（Zod）でフォーム値の正規化・検証。
-3. `src/lib/pdf-generator.ts` が生成済み Excel をコピーして「表紙 / ライセンス / 保守料」だけ visible にし、PDF 化する。変換エンジンは 2 系統:
+3. `src/lib/pdf-generator.ts` が生成済み Excel をコピーし、`evaluateAndStripWorkbook` で「表紙 / ライセンス / 保守料」内の **クロスシート数式を HyperFormula で評価** → 値に確定 → 設定情報など印刷対象外シートを**物理削除** してから PDF 化する。`veryHidden` に依存しないため LibreOffice/Gotenberg でも確実に 3 シートだけが出力される。日本語シート名は `quoteSheetNamesInFormula` で `'設定情報'!C5` 形式に正規化して HyperFormula に渡す。変換エンジンは 2 系統:
    - **既定: Gotenberg** — `GOTENBERG_URL` が設定されているとき。Render に `render.yaml` から `gotenberg/gotenberg:8` をデプロイし、Basic Auth (`GOTENBERG_USERNAME` / `GOTENBERG_PASSWORD`) 越しに `POST /forms/libreoffice/convert` を叩く。日次フリー枠が無いので件数制限はホスト側のリソース次第。
    - **フォールバック: CloudConvert** — `GOTENBERG_URL` 未設定時のみ動く（無料 25 件/日制限あり）。`CLOUDCONVERT_API_KEY` のスコープは `task.read/write`、入力 ~10MB 超で import/base64 不可。
-   見積金額は ExcelJS では数式評価できないため、Gotenberg 経路では生成 PDF を `pdf-parse` でテキスト抽出 → `extractAmountsFromPdfText`、CloudConvert 経路では並行生成した CSV から `extractAmountsFromCsv` で読み戻す。
+   見積金額は Gotenberg 経路では生成 PDF を `pdf-parse` でテキスト抽出 → `extractAmountsFromPdfText`、CloudConvert 経路では並行生成した CSV から `extractAmountsFromCsv` で読み戻す。
 4. 成果物は `@vercel/blob` で保存し URL を `estimates` 行に紐づける。Excel 差し替え時は履歴を `excel-file-history.ts` で保持。
 
 ### 外部システム連携

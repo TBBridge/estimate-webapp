@@ -24,6 +24,7 @@
  */
 
 import ExcelJS from "exceljs";
+import { HyperFormula } from "hyperformula";
 import { PassThrough } from "stream";
 // pdf-parse は index.js のデバッグ実行コードを避けるため lib 直参照
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
@@ -220,13 +221,154 @@ async function loadWorkbook(buf: Buffer): Promise<ExcelJS.Workbook> {
 }
 
 /**
+ * 任意の ExcelJS セル値を HyperFormula に渡せるスカラへ正規化する。
+ * 数式セルは `=...` 文字列、それ以外は数値・文字列・真偽値・null に落とす。
+ * リッチテキストや日付などは表示文字列へフォールバックする。
+ */
+/**
+ * 数式中の未引用シート名参照（例: `設定情報!C5`）を `'設定情報'!C5` に正規化する。
+ * HyperFormula のパーサは日本語などの非 ASCII シート名を引用なしで受けると
+ * `#ERROR!` を返すことがあるため。既に引用済みの参照は触らない。
+ */
+function quoteSheetNamesInFormula(formula: string, sheetNames: ReadonlyArray<string>): string {
+  let result = formula;
+  // 長い名前から処理（"設定" が "設定情報" の前にマッチするのを避ける）
+  const sorted = [...sheetNames].sort((a, b) => b.length - a.length);
+  for (const name of sorted) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // 直前が `'` ではない（= 未引用の）シート名のみ置換
+    const re = new RegExp(`(?<!['A-Za-z0-9_])${escaped}!`, "g");
+    result = result.replace(re, `'${name}'!`);
+  }
+  return result;
+}
+
+function excelCellToHfValue(
+  value: ExcelJS.CellValue,
+  sheetNames: ReadonlyArray<string>
+): string | number | boolean | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "string") {
+    return value;
+  }
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "object") {
+    const v = value as unknown as Record<string, unknown>;
+    if (typeof v.formula === "string") return "=" + quoteSheetNamesInFormula(v.formula, sheetNames);
+    if (typeof v.sharedFormula === "string")
+      return "=" + quoteSheetNamesInFormula(v.sharedFormula, sheetNames);
+    if ("result" in v) {
+      const r = v.result;
+      if (typeof r === "number" || typeof r === "string" || typeof r === "boolean") return r;
+    }
+    if ("richText" in v && Array.isArray(v.richText)) {
+      return v.richText.map((rt) => (rt as { text?: unknown }).text ?? "").join("");
+    }
+    if ("text" in v && typeof v.text === "string") return v.text;
+  }
+  return String(value);
+}
+
+/**
+ * HyperFormula の評価結果を ExcelJS のセル値に変換する。
+ * エラー（#REF!, #N/A など）は文字列化して可視化する。
+ */
+function hfValueToExcelCellValue(value: unknown): ExcelJS.CellValue {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "object") {
+    const v = value as Record<string, unknown>;
+    // HyperFormula の DetailedCellError
+    if (typeof v.type === "string" && typeof v.value === "string") {
+      return v.value;
+    }
+  }
+  return String(value);
+}
+
+/**
+ * 印刷対象シート（表紙・ライセンス・保守料）の数式セルを HyperFormula で評価し、
+ * 評価結果を直接書き込む（数式は除去）。これにより設定情報シートへの参照が解消される。
+ * その後、印刷対象外シートをワークブックから物理削除する。
+ *
+ * LibreOffice（Gotenberg）は xlsx の veryHidden シートをスキップしないケースがあるため、
+ * 不要シートを削除することで確実に 3 シートのみ PDF 化させる。
+ */
+export function evaluateAndStripWorkbook(workbook: ExcelJS.Workbook): void {
+  // 1. 全シートのデータを HyperFormula 用に抽出
+  const sheetNames = workbook.worksheets.map((ws) => ws.name);
+  const sheetsData: Record<string, (string | number | boolean | null)[][]> = {};
+  for (const ws of workbook.worksheets) {
+    const rows: (string | number | boolean | null)[][] = [];
+    const rowCount = ws.actualRowCount > 0 ? ws.rowCount : 0;
+    const colCount = ws.actualColumnCount > 0 ? ws.columnCount : 0;
+    for (let r = 1; r <= rowCount; r++) {
+      const row: (string | number | boolean | null)[] = [];
+      for (let c = 1; c <= colCount; c++) {
+        const cell = ws.getCell(r, c);
+        row.push(excelCellToHfValue(cell.value, sheetNames));
+      }
+      rows.push(row);
+    }
+    sheetsData[ws.name] = rows;
+  }
+
+  // 2. HyperFormula を構築。gpl-v3 ライセンスは OSS 利用で無償。
+  const hf = HyperFormula.buildFromSheets(sheetsData, {
+    licenseKey: "gpl-v3",
+    // Excel 互換性のため日本のテンプレートで使うことの多い関数を許可しておく
+    smartRounding: true,
+  });
+
+  // 3. 印刷対象シート内の数式セルを評価結果で置き換える
+  for (const ws of workbook.worksheets) {
+    if (!PRINT_SHEETS.includes(ws.name)) continue;
+    const sheetId = hf.getSheetId(ws.name);
+    if (sheetId === undefined) continue;
+
+    ws.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        const v = cell.value;
+        const hasFormula =
+          v !== null &&
+          typeof v === "object" &&
+          ("formula" in (v as object) || "sharedFormula" in (v as object));
+        if (!hasFormula) return;
+
+        const computed = hf.getCellValue({
+          sheet: sheetId,
+          row: cell.fullAddress.row - 1,
+          col: cell.fullAddress.col - 1,
+        });
+        cell.value = hfValueToExcelCellValue(computed);
+      });
+    });
+  }
+
+  hf.destroy();
+
+  // 4. 印刷対象外シートを物理削除
+  const toRemove = workbook.worksheets
+    .filter((ws) => !PRINT_SHEETS.includes(ws.name))
+    .map((ws) => ({ name: ws.name, id: ws.id }));
+  for (const { id } of toRemove) {
+    workbook.removeWorksheet(id);
+  }
+  if (toRemove.length > 0) {
+    console.log(
+      `[pdf-generator] 印刷対象外シートを削除: ${toRemove.map((s) => s.name).join(", ")}`
+    );
+  }
+}
+
+/**
  * 自動入力済み Excel をコピーし、PDF 用に以下を行う:
  * - ワークブック・シートの編集ロックを解除
- * - 印刷対象シート（表紙・ライセンス・保守料）を visible に設定
- * - 印刷対象外シート（設定情報など）を veryHidden に設定
- *   ※ 設定情報シートは数式参照元のため削除不可。非表示にすることで
- *     CloudConvert の変換対象から除外しつつ、数式参照を維持する。
- * 返すバッファは CloudConvert で PDF 化する用（設定情報は非表示として保持）
+ * - 印刷対象シート（表紙・ライセンス・保守料）内の数式を HyperFormula で評価して値に確定
+ * - 設定情報など印刷対象外シートをワークブックから削除
+ * 返すバッファは Gotenberg / CloudConvert で PDF 化する用。
  */
 async function prepareExcelForPdf(excelBuffer: Buffer): Promise<Buffer> {
   const workbook = await loadWorkbook(excelBuffer);
@@ -234,26 +376,23 @@ async function prepareExcelForPdf(excelBuffer: Buffer): Promise<Buffer> {
   const sheetNames = workbook.worksheets.map((ws) => `"${ws.name}"(${ws.state})`);
   console.log(`[pdf-generator] 読み込みシート: ${sheetNames.join(", ")}`);
 
+  // 編集ロック解除と可視化（削除前に必須）
   for (const ws of workbook.worksheets) {
     const sheet = ws as ExcelJS.Worksheet & { sheetProtection?: unknown; unprotect?: () => void };
-
-    // 編集ロック解除（PDF 用一時ファイルを処理可能にする）
     if (sheet.sheetProtection) {
       if (typeof sheet.unprotect === "function") sheet.unprotect();
       else sheet.sheetProtection = null;
     }
-
     if (PRINT_SHEETS.includes(ws.name)) {
-      // 印刷対象シートは必ず visible に
       ws.state = "visible";
-    } else {
-      // 印刷対象外シートは veryHidden に（変換時に対象外になりやすい）
-      ws.state = "veryHidden";
     }
   }
 
+  // 数式評価 + 印刷対象外シート削除
+  evaluateAndStripWorkbook(workbook);
+
   const afterStates = workbook.worksheets.map((ws) => `"${ws.name}"(${ws.state})`);
-  console.log(`[pdf-generator] 変換後シート状態: ${afterStates.join(", ")}`);
+  console.log(`[pdf-generator] 変換後シート: ${afterStates.join(", ")}`);
 
   const buf = await workbook.xlsx.writeBuffer();
   return Buffer.from(buf);
