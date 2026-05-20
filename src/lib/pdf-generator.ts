@@ -221,11 +221,6 @@ async function loadWorkbook(buf: Buffer): Promise<ExcelJS.Workbook> {
 }
 
 /**
- * 任意の ExcelJS セル値を HyperFormula に渡せるスカラへ正規化する。
- * 数式セルは `=...` 文字列、それ以外は数値・文字列・真偽値・null に落とす。
- * リッチテキストや日付などは表示文字列へフォールバックする。
- */
-/**
  * 数式中の未引用シート名参照（例: `設定情報!C5`）を `'設定情報'!C5` に正規化する。
  * HyperFormula のパーサは日本語などの非 ASCII シート名を引用なしで受けると
  * `#ERROR!` を返すことがあるため。既に引用済みの参照は触らない。
@@ -243,9 +238,23 @@ function quoteSheetNamesInFormula(formula: string, sheetNames: ReadonlyArray<str
   return result;
 }
 
+/**
+ * 任意の ExcelJS セル値を HyperFormula に渡せるスカラへ正規化する。
+ *
+ * preferCachedResult=true（非印刷シート用）:
+ *   数式セルでも result が存在すれば result を返す。
+ *   excel-writer.ts は 設定情報 の数式セルに正しい result を書き込み済みのため、
+ *   VLOOKUP 等の複雑な数式を HyperFormula で再評価せず済む。
+ *   再評価しようとすると参照テーブルシートが存在しないため #NAME?/#VALUE! が
+ *   全印刷シートに連鎖してしまう。
+ *
+ * preferCachedResult=false（印刷シート用）:
+ *   数式文字列をそのまま HyperFormula に渡して評価させる（設定情報参照を解決するため）。
+ */
 function excelCellToHfValue(
   value: ExcelJS.CellValue,
-  sheetNames: ReadonlyArray<string>
+  sheetNames: ReadonlyArray<string>,
+  preferCachedResult = false
 ): string | number | boolean | null {
   if (value === null || value === undefined) return null;
   if (typeof value === "number" || typeof value === "boolean" || typeof value === "string") {
@@ -254,6 +263,12 @@ function excelCellToHfValue(
   if (value instanceof Date) return value.toISOString();
   if (typeof value === "object") {
     const v = value as unknown as Record<string, unknown>;
+    // 非印刷シートはキャッシュ済み result を優先して数式の再評価を回避する
+    if (preferCachedResult && "result" in v) {
+      const r = v.result;
+      if (typeof r === "number" || typeof r === "string" || typeof r === "boolean") return r;
+      if (r instanceof Date) return r.toISOString();
+    }
     if (typeof v.formula === "string") return "=" + quoteSheetNamesInFormula(v.formula, sheetNames);
     if (typeof v.sharedFormula === "string")
       return "=" + quoteSheetNamesInFormula(v.sharedFormula, sheetNames);
@@ -301,6 +316,7 @@ export function evaluateAndStripWorkbook(workbook: ExcelJS.Workbook): void {
   const sheetNames = workbook.worksheets.map((ws) => ws.name);
   const sheetsData: Record<string, (string | number | boolean | null)[][]> = {};
   for (const ws of workbook.worksheets) {
+    const isPrintSheet = PRINT_SHEETS.includes(ws.name);
     const rows: (string | number | boolean | null)[][] = [];
     const rowCount = ws.actualRowCount > 0 ? ws.rowCount : 0;
     const colCount = ws.actualColumnCount > 0 ? ws.columnCount : 0;
@@ -308,7 +324,9 @@ export function evaluateAndStripWorkbook(workbook: ExcelJS.Workbook): void {
       const row: (string | number | boolean | null)[] = [];
       for (let c = 1; c <= colCount; c++) {
         const cell = ws.getCell(r, c);
-        row.push(excelCellToHfValue(cell.value, sheetNames));
+        // 非印刷シート（設定情報等）は result を優先することで、
+        // VLOOKUP など HyperFormula が解釈できない数式を再評価しない。
+        row.push(excelCellToHfValue(cell.value, sheetNames, !isPrintSheet));
       }
       rows.push(row);
     }
@@ -318,9 +336,29 @@ export function evaluateAndStripWorkbook(workbook: ExcelJS.Workbook): void {
   // 2. HyperFormula を構築。gpl-v3 ライセンスは OSS 利用で無償。
   const hf = HyperFormula.buildFromSheets(sheetsData, {
     licenseKey: "gpl-v3",
-    // Excel 互換性のため日本のテンプレートで使うことの多い関数を許可しておく
     smartRounding: true,
   });
+
+  // ワークブックに定義された名前付き範囲を HyperFormula に登録する（ベストエフォート）。
+  // Excel の Name Manager で定義された名前（例: 仕切り率テーブル）を数式内で使う
+  // テンプレートがある場合、未登録だと #NAME? エラーになるため。
+  try {
+    type WbModel = { definedNames?: Array<{ name: string; formula?: string }> };
+    const wbModel = (workbook as unknown as { model?: WbModel }).model;
+    if (Array.isArray(wbModel?.definedNames)) {
+      for (const dn of wbModel.definedNames) {
+        if (!dn.name || !dn.formula) continue;
+        try {
+          const expr = "=" + quoteSheetNamesInFormula(dn.formula.replace(/^=/, ""), sheetNames);
+          hf.addNamedExpression(dn.name, expr);
+        } catch {
+          /* 個別の名前付き範囲登録失敗は無視 */
+        }
+      }
+    }
+  } catch {
+    /* 名前付き範囲取得失敗は無視 */
+  }
 
   // 3. 印刷対象シート内の数式セルを評価結果で置き換える
   for (const ws of workbook.worksheets) {
@@ -342,7 +380,39 @@ export function evaluateAndStripWorkbook(workbook: ExcelJS.Workbook): void {
           row: cell.fullAddress.row - 1,
           col: cell.fullAddress.col - 1,
         });
-        cell.value = hfValueToExcelCellValue(computed);
+
+        // HyperFormula がエラーオブジェクトを返した場合は
+        // エラー文字列（#NAME? 等）をセルに書き込まない。
+        // キャッシュ済み result があればそれを使い、なければ null（空セル）にする。
+        const computedAsUnknown = computed as unknown;
+        const isHfError =
+          computedAsUnknown !== null &&
+          typeof computedAsUnknown === "object" &&
+          typeof (computedAsUnknown as Record<string, unknown>).type === "string";
+
+        if (isHfError) {
+          const vo = v as unknown as Record<string, unknown>;
+          const cached = "result" in vo ? vo.result : undefined;
+          if (
+            typeof cached === "number" ||
+            typeof cached === "string" ||
+            typeof cached === "boolean"
+          ) {
+            cell.value = cached;
+            console.warn(
+              `[pdf-generator] 数式評価エラー→キャッシュ値使用: ${ws.name}!${cell.address} ` +
+                `(${(computedAsUnknown as Record<string, unknown>).type})`
+            );
+          } else {
+            cell.value = null;
+            console.warn(
+              `[pdf-generator] 数式評価エラー・キャッシュ値なし→空: ${ws.name}!${cell.address} ` +
+                `(${(computedAsUnknown as Record<string, unknown>).type})`
+            );
+          }
+        } else {
+          cell.value = hfValueToExcelCellValue(computed);
+        }
       });
     });
   }
