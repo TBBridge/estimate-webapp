@@ -19,6 +19,7 @@ import { updateExcelHubSpotNo } from "@/lib/excel-writer";
 import { generateEstimatePdfAndSave } from "@/lib/estimate-pdf-generate";
 import { sanitizeEstimateNoForBlobPath } from "@/lib/excel-file-history";
 import type { HubSpotSyncResultDto } from "@/lib/hubspot-approve-feedback";
+import { HUBSPOT_DEAL_SELECT_CREATE_NEW } from "@/lib/hubspot-approve-feedback";
 import type { Locale } from "@/lib/translations";
 import { getEstimateRequesterContact } from "@/lib/estimate-schema";
 import { parseExcelFileHistory } from "@/lib/excel-file-history";
@@ -229,11 +230,20 @@ export async function PUT(req: Request, { params }: Params) {
     const { id } = await params;
     const body = (await req.json()) as {
       status: "approved" | "rejected";
-      /** クライアントが既存重複を確認済みかどうか（contract_type=new で重複ありの場合に必要） */
+      /** クライアントが既存重複を確認済みかどうか（contract_type=new で単一重複ありの場合に必要） */
       confirmHubSpotDuplicate?: boolean;
+      /**
+       * 会社名で複数取引がマッチした場合に承認者/管理者が選択した取引 ID。
+       * 特殊値 "__new__" は「新規取引を作成」を意味する。
+       */
+      selectedHubSpotDealId?: string;
     };
     const { status } = body;
     const confirmHubSpotDuplicate = body.confirmHubSpotDuplicate === true;
+    const selectedHubSpotDealId =
+      typeof body.selectedHubSpotDealId === "string" && body.selectedHubSpotDealId.trim() !== ""
+        ? body.selectedHubSpotDealId.trim()
+        : undefined;
 
     if (status !== "approved" && status !== "rejected") {
       return NextResponse.json({ error: "Invalid status" }, { status: 400 });
@@ -282,36 +292,6 @@ export async function PUT(req: Request, { params }: Params) {
     if (status === "approved") {
       const hubCfg = getHubSpotConfig();
 
-      if (hubCfg && cur.contract_type === "new" && !confirmHubSpotDuplicate) {
-        try {
-          const existingDup = await searchDealsByCompanyName(hubCfg, cur.customer_name);
-          if (existingDup.length > 0) {
-            return NextResponse.json(
-              {
-                error: "duplicate_hubspot_deal",
-                hubspotDuplicate: {
-                  contractType: cur.contract_type,
-                  customerName: cur.customer_name,
-                  deals: existingDup.map((d) => ({
-                    id: d.id,
-                    dealName: d.dealName,
-                    customerName: d.customerName,
-                  })),
-                },
-              },
-              { status: 409 }
-            );
-          }
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          console.error("[estimates/id PUT] HubSpot 重複チェック失敗:", e);
-          return NextResponse.json(
-            { error: "hubspot_check_failed", message: msg.slice(0, 500) },
-            { status: 502 }
-          );
-        }
-      }
-
       if (hubCfg) {
         try {
           // 見積金額 = 本体金額 + 保守料（DB は INTEGER, yen）
@@ -323,7 +303,96 @@ export async function PUT(req: Request, { params }: Params) {
               : null;
 
           const existing = await searchDealsByCompanyName(hubCfg, cur.customer_name);
-          if (existing.length === 0) {
+
+          // 複数マッチ + 選択未指定 → どの取引に紐付けるか承認者/管理者に選ばせる
+          if (
+            existing.length > 1 &&
+            selectedHubSpotDealId === undefined
+          ) {
+            return NextResponse.json(
+              {
+                error: "hubspot_deal_selection_required",
+                hubspotDealSelection: {
+                  customerName: cur.customer_name,
+                  deals: existing.map((d) => ({
+                    id: d.id,
+                    dealName: d.dealName,
+                    customerName: d.customerName,
+                  })),
+                },
+              },
+              { status: 409 }
+            );
+          }
+
+          // 単一マッチ + contract_type=new + 未確認 → 従来の重複警告
+          if (
+            existing.length === 1 &&
+            cur.contract_type === "new" &&
+            !confirmHubSpotDuplicate &&
+            selectedHubSpotDealId === undefined
+          ) {
+            return NextResponse.json(
+              {
+                error: "duplicate_hubspot_deal",
+                hubspotDuplicate: {
+                  contractType: cur.contract_type,
+                  customerName: cur.customer_name,
+                  deals: existing.map((d) => ({
+                    id: d.id,
+                    dealName: d.dealName,
+                    customerName: d.customerName,
+                  })),
+                },
+              },
+              { status: 409 }
+            );
+          }
+
+          // ユーザーが選択した取引 ID を解決
+          let chosenExistingId: string | undefined;
+          let wantsCreateNew = false;
+          if (selectedHubSpotDealId !== undefined) {
+            if (selectedHubSpotDealId === HUBSPOT_DEAL_SELECT_CREATE_NEW) {
+              wantsCreateNew = true;
+            } else {
+              // 改竄防止: 選択 ID は検索結果に含まれていなければならない
+              const found = existing.find((d) => d.id === selectedHubSpotDealId);
+              if (!found) {
+                return NextResponse.json(
+                  {
+                    error: "hubspot_selected_deal_invalid",
+                    message:
+                      "指定された取引 ID は会社名にマッチする取引一覧に存在しません。画面を更新して再度選択してください。",
+                  },
+                  { status: 400 }
+                );
+              }
+              chosenExistingId = found.id;
+            }
+          } else if (existing.length === 1) {
+            chosenExistingId = existing[0].id;
+          }
+          // existing.length === 0 → wantsCreateNew/chosenExistingId 共に未設定 → 後段で新規作成
+
+          if (chosenExistingId) {
+            finalDealId = chosenExistingId;
+            // 既存取引にも見積金額を反映（失敗しても承認は成功させる）
+            const upd = await updateDealEstimatedAmount(hubCfg, finalDealId, estimatedAmount);
+            if (!upd.ok) {
+              console.warn(
+                "[estimates/id PUT] HubSpot 既存取引の見積金額更新失敗（承認は継続）:",
+                upd.error
+              );
+            }
+            hubspotSync = {
+              ok: true,
+              action: "existing",
+              dealId: finalDealId,
+              excelUpdated: false,
+            };
+          } else {
+            // 新規作成: existing.length === 0 もしくは wantsCreateNew === true
             const created = await createDealByCompanyName(hubCfg, {
               agencyId: cur.agency_id,
               agencyName: cur.agency_name,
@@ -342,22 +411,6 @@ export async function PUT(req: Request, { params }: Params) {
             hubspotSync = {
               ok: true,
               action: "created",
-              dealId: finalDealId,
-              excelUpdated: false,
-            };
-          } else {
-            finalDealId = existing[0].id;
-            // 既存取引にも見積金額を反映（失敗しても承認は成功させる）
-            const upd = await updateDealEstimatedAmount(hubCfg, finalDealId, estimatedAmount);
-            if (!upd.ok) {
-              console.warn(
-                "[estimates/id PUT] HubSpot 既存取引の見積金額更新失敗（承認は継続）:",
-                upd.error
-              );
-            }
-            hubspotSync = {
-              ok: true,
-              action: "existing",
               dealId: finalDealId,
               excelUpdated: false,
             };

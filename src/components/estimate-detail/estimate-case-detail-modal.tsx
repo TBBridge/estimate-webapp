@@ -9,6 +9,7 @@ import { EstimateApplicationDetail } from "@/components/estimate-detail/estimate
 import {
   alertHubSpotSyncAfterApprove,
   HUBSPOT_DUPLICATE_CANCELLED,
+  HUBSPOT_DEAL_SELECTION_CANCELLED,
 } from "@/lib/hubspot-approve-feedback";
 import { FormFieldRenderer, type FormFieldValues } from "@/components/estimate-form/form-field-renderer";
 import {
@@ -291,7 +292,7 @@ export function EstimateCaseDetailModal({
       alertHubSpotSyncAfterApprove(locale, status, payload);
     } catch (err) {
       const m = err instanceof Error ? err.message : String(err);
-      if (m === HUBSPOT_DUPLICATE_CANCELLED) {
+      if (m === HUBSPOT_DUPLICATE_CANCELLED || m === HUBSPOT_DEAL_SELECTION_CANCELLED) {
         cancelled = true;
       } else {
         hadError = true;

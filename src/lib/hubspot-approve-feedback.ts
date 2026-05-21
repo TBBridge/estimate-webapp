@@ -10,9 +10,21 @@ export type HubSpotSyncResultDto =
 /** ユーザーが重複承認確認をキャンセルしたことを示すエラー */
 export const HUBSPOT_DUPLICATE_CANCELLED = "hubspot_duplicate_cancelled";
 
+/** 複数取引マッチ時のユーザー選択キャンセルを示すエラー */
+export const HUBSPOT_DEAL_SELECTION_CANCELLED = "hubspot_deal_selection_cancelled";
+
+/** 「新規取引を作成」を表す selectedHubSpotDealId の特殊値 */
+export const HUBSPOT_DEAL_SELECT_CREATE_NEW = "__new__";
+
 /** PUT のレスポンスから HubSpot の重複情報を取り出す（409 時に使う） */
 export type HubSpotDuplicatePayload = {
   contractType: "new" | string;
+  customerName: string;
+  deals: Array<{ id: string; dealName: string; customerName?: string }>;
+};
+
+/** 複数マッチ時の取引選択要求ペイロード（409 時） */
+export type HubSpotDealSelectionPayload = {
   customerName: string;
   deals: Array<{ id: string; dealName: string; customerName?: string }>;
 };
@@ -30,6 +42,21 @@ export function getHubSpotDuplicateFromPayload(payload: unknown): HubSpotDuplica
   if (!payload || typeof payload !== "object") return undefined;
   const raw = (payload as { hubspotDuplicate?: unknown }).hubspotDuplicate;
   if (!isDuplicatePayload(raw)) return undefined;
+  return raw;
+}
+
+function isSelectionPayload(x: unknown): x is HubSpotDealSelectionPayload {
+  if (!x || typeof x !== "object") return false;
+  const o = x as Record<string, unknown>;
+  return typeof o.customerName === "string" && Array.isArray(o.deals);
+}
+
+export function getHubSpotDealSelectionFromPayload(
+  payload: unknown
+): HubSpotDealSelectionPayload | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const raw = (payload as { hubspotDealSelection?: unknown }).hubspotDealSelection;
+  if (!isSelectionPayload(raw)) return undefined;
   return raw;
 }
 

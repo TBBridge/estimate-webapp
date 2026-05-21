@@ -15,8 +15,12 @@ import {
 import {
   buildHubSpotDuplicateConfirmMessage,
   getHubSpotDuplicateFromPayload,
+  getHubSpotDealSelectionFromPayload,
   HUBSPOT_DUPLICATE_CANCELLED,
+  HUBSPOT_DEAL_SELECTION_CANCELLED,
 } from "@/lib/hubspot-approve-feedback";
+import { HubSpotDealSelectionDialog } from "@/components/estimate-detail/hubspot-deal-selection-dialog";
+import { useHubSpotDealSelection } from "@/hooks/use-hubspot-deal-selection";
 
 const STATUS_BADGE: Record<string, string> = {
   pending:  "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
@@ -114,24 +118,40 @@ export default function AdminEstimatesPage() {
     </th>
   );
 
+  const { selectionState, requestSelection, confirmSelection, cancelSelection } =
+    useHubSpotDealSelection();
+
   async function handleStatusChange(id: string, status: "approved" | "rejected") {
     let confirmHubSpotDuplicate = false;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    let selectedHubSpotDealId: string | undefined;
+    for (let attempt = 0; attempt < 3; attempt++) {
       const res = await fetch(`/api/estimates/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, confirmHubSpotDuplicate }),
+        body: JSON.stringify({
+          status,
+          confirmHubSpotDuplicate,
+          ...(selectedHubSpotDealId !== undefined ? { selectedHubSpotDealId } : {}),
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
         message?: string;
         hubspotDuplicate?: unknown;
+        hubspotDealSelection?: unknown;
       };
       if (res.ok) {
         await mutate(() => true, undefined, { revalidate: true });
         return data;
       }
       if (res.status === 409) {
+        const sel = getHubSpotDealSelectionFromPayload(data);
+        if (sel) {
+          const chosen = await requestSelection(sel);
+          if (!chosen) throw new Error(HUBSPOT_DEAL_SELECTION_CANCELLED);
+          selectedHubSpotDealId = chosen;
+          continue;
+        }
         const dup = getHubSpotDuplicateFromPayload(data);
         if (dup) {
           const msg = buildHubSpotDuplicateConfirmMessage(locale, dup);
@@ -339,6 +359,14 @@ export default function AdminEstimatesPage() {
           onStatusChange={handleStatusChange}
         />
       )}
+
+      <HubSpotDealSelectionDialog
+        open={selectionState.open}
+        payload={selectionState.open ? selectionState.payload : null}
+        locale={locale}
+        onConfirm={confirmSelection}
+        onCancel={cancelSelection}
+      />
     </div>
   );
 }
