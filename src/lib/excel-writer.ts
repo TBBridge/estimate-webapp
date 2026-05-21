@@ -59,16 +59,19 @@ export interface WriteEstimateParams {
   hubspotNo?: string;
 }
 
-/** セルに値をセット（数式セルは result を上書き） */
+/**
+ * セルに値をセット。元の数式があっても **常にプレーン値で上書き**（数式は除去）する。
+ *
+ * 理由: 設定情報の VLOOKUP 等を残したまま LibreOffice に渡すと、cached result が無視され
+ * 数式が再評価され、参照テーブルや名前付き範囲が解決できないとセル値が消える。
+ * このため Web アプリで値を確定したセルは数式を捨てる方が安全。
+ * （C28=C26+5 のように Excel テンプレ側で自動計算したいセルは setCell を呼ばないので
+ *  元の数式が残り、LibreOffice が更新後の C26 を参照して再計算する。）
+ */
 function setCell(sheet: ExcelJS.Worksheet, cellAddr: string, value: unknown) {
   if (value === null || value === undefined || value === "") return;
   const cell = sheet.getCell(cellAddr);
-  // 数式セルの場合は result のみ更新（数式は保持）
-  if (cell.formula) {
-    cell.value = { formula: cell.formula, result: typeof value === "number" ? value : String(value) };
-  } else {
-    cell.value = typeof value === "number" ? value : String(value);
-  }
+  cell.value = typeof value === "number" ? value : String(value);
 }
 
 /** year_month 値 { year, month } を分解 */

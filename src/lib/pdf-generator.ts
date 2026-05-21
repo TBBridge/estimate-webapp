@@ -618,9 +618,8 @@ async function prepareExcelForGotenberg(excelBuffer: Buffer): Promise<Buffer> {
 
   unlockAndShowPrintSheets(workbook);
   reorderPrintSheetsFirst(workbook);
-  // 非印刷シートの数式セルを評価結果に固定し、LibreOffice が再評価で
-  // excel-writer.ts の書き込み値を上書きしないようにする。
-  freezeNonPrintSheetFormulas(workbook);
+  // 設定情報の数式上書きは excel-writer.ts 側で行う（setCell が数式を除去してプレーン値を書く）。
+  // それ以外の数式（C28=C26+5 等、ユーザが触らないテンプレ計算）は LibreOffice にそのまま評価させる。
 
   const afterNames = workbook.worksheets.map((ws) => `"${ws.name}"`);
   console.log(`[pdf-generator] 並び替え後（Gotenberg 用・全シート保持）: ${afterNames.join(", ")}`);
