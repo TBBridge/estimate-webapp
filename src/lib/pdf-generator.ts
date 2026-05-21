@@ -164,12 +164,59 @@ function coerceCellToAmount(value: ExcelJS.CellValue): number {
 }
 
 /**
+ * ExcelJS のセル値からテンプレ保存時にキャッシュされた評価結果を取り出す。
+ * 形式 `{ formula, result }` の result を採用。プレーン値はそのまま返す。
+ * HF 評価が失敗した場合のフォールバック用。
+ */
+function readCachedCellResult(value: ExcelJS.CellValue): number {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === "number") return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+  if (typeof value === "string") {
+    const cleaned = value.replace(/[¥￥,、\s　]/g, "");
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+  }
+  if (typeof value === "object") {
+    const v = value as unknown as Record<string, unknown>;
+    if ("result" in v) {
+      const r = v.result;
+      if (typeof r === "number" && Number.isFinite(r)) return Math.max(0, Math.floor(r));
+      if (typeof r === "string") {
+        const cleaned = r.replace(/[¥￥,、\s　]/g, "");
+        const n = Number(cleaned);
+        if (Number.isFinite(n)) return Math.max(0, Math.floor(n));
+      }
+    }
+  }
+  return 0;
+}
+
+/** デバッグ用に ExcelJS セル値を JSON 互換のサマリへ変換する */
+function describeCellValue(value: ExcelJS.CellValue): string {
+  if (value === null || value === undefined) return "null";
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "string") return JSON.stringify(value.slice(0, 80));
+  if (typeof value === "object") {
+    const v = value as unknown as Record<string, unknown>;
+    const summary: Record<string, unknown> = {};
+    if ("formula" in v) summary.formula = String(v.formula).slice(0, 120);
+    if ("sharedFormula" in v) summary.sharedFormula = String(v.sharedFormula).slice(0, 120);
+    if ("result" in v) summary.result = v.result;
+    if (Object.keys(summary).length > 0) return JSON.stringify(summary);
+  }
+  return String(value).slice(0, 80);
+}
+
+/**
  * 自動入力済み Excel をローカルで HyperFormula 評価し、表紙シートの固定セルから
  * 見積金額（C21）と保守料（C24）を直接読む。
  *
- * evaluateAndStripWorkbook は破壊的なので、必ず新規ロードしたワークブックに対して実行する。
- * 評価結果は呼び出し側で破棄し、PDF 生成用バッファには影響させない。
+ * 多段フォールバック:
+ *   1. HF 評価後の値を採用（最優先・最新の計算結果）
+ *   2. HF 評価で 0 や失敗が出たら、Excel 内の cached result を使う
+ *      （テンプレが Excel/LibreOffice で保存された時点の評価値）
  *
+ * 評価は破壊的なので、必ず新規ロードしたワークブックに対して実行する。
  * 失敗時は null を返し、呼び出し側は DB 更新をスキップする（手動入力で上書き可）。
  */
 export async function extractAmountsFromWorkbookBuffer(
@@ -177,16 +224,52 @@ export async function extractAmountsFromWorkbookBuffer(
 ): Promise<{ amount: number; maintenanceFee: number } | null> {
   try {
     const wb = await loadWorkbook(excelBuffer);
-    evaluateAndStripWorkbook(wb);
-    const cover = wb.getWorksheet("表紙");
-    if (!cover) {
+    const coverBefore = wb.getWorksheet("表紙");
+    if (!coverBefore) {
       console.warn("[pdf-generator] 表紙 シートが見つからず金額抽出をスキップしました");
       return null;
     }
-    const amount = coerceCellToAmount(cover.getCell(COVER_AMOUNT_CELL).value);
-    const maintenanceFee = coerceCellToAmount(cover.getCell(COVER_MAINTENANCE_CELL).value);
+
+    // 評価前: テンプレが保存しているキャッシュ済み result を採る（フォールバック用）
+    const rawAmountCell = coverBefore.getCell(COVER_AMOUNT_CELL).value;
+    const rawMaintCell = coverBefore.getCell(COVER_MAINTENANCE_CELL).value;
+    const cachedAmount = readCachedCellResult(rawAmountCell);
+    const cachedMaint = readCachedCellResult(rawMaintCell);
     console.log(
-      `[pdf-generator] 金額抽出: 表紙!${COVER_AMOUNT_CELL}=${amount} 表紙!${COVER_MAINTENANCE_CELL}=${maintenanceFee}`
+      `[pdf-generator] 金額セル評価前: 表紙!${COVER_AMOUNT_CELL}=${describeCellValue(rawAmountCell)} ` +
+        `表紙!${COVER_MAINTENANCE_CELL}=${describeCellValue(rawMaintCell)} ` +
+        `(cached: amount=${cachedAmount} maint=${cachedMaint})`
+    );
+
+    let evaluatedAmount = 0;
+    let evaluatedMaint = 0;
+    let evalError: string | null = null;
+    try {
+      evaluateAndStripWorkbook(wb);
+      const coverAfter = wb.getWorksheet("表紙");
+      if (coverAfter) {
+        const evalAmountCell = coverAfter.getCell(COVER_AMOUNT_CELL).value;
+        const evalMaintCell = coverAfter.getCell(COVER_MAINTENANCE_CELL).value;
+        evaluatedAmount = coerceCellToAmount(evalAmountCell);
+        evaluatedMaint = coerceCellToAmount(evalMaintCell);
+        console.log(
+          `[pdf-generator] 金額セル評価後: 表紙!${COVER_AMOUNT_CELL}=${describeCellValue(evalAmountCell)} ` +
+            `表紙!${COVER_MAINTENANCE_CELL}=${describeCellValue(evalMaintCell)}`
+        );
+      }
+    } catch (hfErr) {
+      evalError = hfErr instanceof Error ? hfErr.message : String(hfErr);
+      console.warn("[pdf-generator] HyperFormula 評価失敗、cached フォールバックに切替:", evalError);
+    }
+
+    // 評価値が 0 または失敗のときは cached を使う
+    const amount = evaluatedAmount > 0 ? evaluatedAmount : cachedAmount;
+    const maintenanceFee = evaluatedMaint > 0 ? evaluatedMaint : cachedMaint;
+    console.log(
+      `[pdf-generator] 金額抽出 確定値: amount=${amount} maintenanceFee=${maintenanceFee} ` +
+        `(eval=${evaluatedAmount}/${evaluatedMaint}, cached=${cachedAmount}/${cachedMaint}` +
+        (evalError ? `, evalError=${evalError}` : "") +
+        ")"
     );
     return { amount, maintenanceFee };
   } catch (e) {
