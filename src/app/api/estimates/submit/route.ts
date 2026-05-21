@@ -131,21 +131,29 @@ export async function POST(req: Request) {
     // 採番ルール: EST-YYYYMM-{連番3桁}。
     // 削除済みレコードの番号は再利用しない（管理者が削除しても次回採番に影響させない）ため、
     // COUNT(*) ではなく既存最大連番 + 1 で算出する。
-    // 並列申請による一意制約衝突 (23505) に備えて、最大 5 回まで連番をインクリメントしてリトライする。
+    // 並列申請による一意制約衝突 (23505) に備えて、衝突したら MAX を再取得して連番を取り直す。
     const now = new Date();
     const ym = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
     const prefix = `EST-${ym}-`;
     const likePattern = `${prefix}%`;
 
-    const maxRows = await sql`
-      SELECT COALESCE(
-        MAX(CAST(SUBSTRING(no FROM 'EST-\d{6}-(\d+)$') AS INTEGER)),
-        0
-      ) AS max_seq
-      FROM estimates
-      WHERE no LIKE ${likePattern}
-    `;
-    let seq = Number(maxRows[0]?.max_seq ?? 0) + 1;
+    // 正規表現は JS テンプレートリテラルでの \d 縮退（\d → d）を避けるため [0-9] を使う。
+    // PostgreSQL ARE で `EST-[0-9]{6}-([0-9]+)$` の括弧キャプチャを SUBSTRING が返す。
+    const seqPattern = `^${prefix}([0-9]+)$`;
+
+    async function fetchNextSeq(): Promise<number> {
+      const rows = await sql`
+        SELECT COALESCE(
+          MAX(CAST(SUBSTRING(no FROM ${seqPattern}) AS INTEGER)),
+          0
+        ) AS max_seq
+        FROM estimates
+        WHERE no LIKE ${likePattern}
+      `;
+      return Number(rows[0]?.max_seq ?? 0) + 1;
+    }
+
+    let seq = await fetchNextSeq();
 
     const createdAt = now.toISOString().slice(0, 10);
 
@@ -156,7 +164,7 @@ export async function POST(req: Request) {
       created_at: string;
     };
     let record: EstimateInsertRow | null = null;
-    const MAX_NO_RETRY = 5;
+    const MAX_NO_RETRY = 10;
     for (let attempt = 0; attempt < MAX_NO_RETRY; attempt++) {
       const candidateNo = `${prefix}${String(seq).padStart(3, "0")}`;
       try {
@@ -176,11 +184,14 @@ export async function POST(req: Request) {
       } catch (insertErr: unknown) {
         const e = insertErr as { code?: string; constraint?: string } | null;
         if (e?.code === "23505" && e?.constraint === "estimates_no_key") {
-          // 同一連番が他リクエストで先に確定 or DB 上に既に存在する → 次の連番で再試行
+          // 衝突: MAX を再取得して取り直す（並列申請で他リクエストが先に確定したケースに追従）。
+          // 万一 MAX が今の seq 以下のままなら、確実に進めるため +1 する。
+          const next = await fetchNextSeq();
+          const bumped = next > seq ? next : seq + 1;
           console.warn(
-            `[submit] estimate no collision on ${candidateNo} (attempt ${attempt + 1}), retrying with next seq`
+            `[submit] estimate no collision on ${candidateNo} (attempt ${attempt + 1}), retry seq=${bumped}`
           );
-          seq += 1;
+          seq = bumped;
           continue;
         }
         throw insertErr;
