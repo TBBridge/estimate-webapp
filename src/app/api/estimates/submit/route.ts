@@ -127,29 +127,70 @@ export async function POST(req: Request) {
       resolveCustomerDisplayName(normalizedFormInputs) ||
       "（未入力）";
 
-    // ── 見積番号生成 ─────────────────────────────────────
+    // ── 見積番号生成 & DB INSERT ──────────────────────────
+    // 採番ルール: EST-YYYYMM-{連番3桁}。
+    // 削除済みレコードの番号は再利用しない（管理者が削除しても次回採番に影響させない）ため、
+    // COUNT(*) ではなく既存最大連番 + 1 で算出する。
+    // 並列申請による一意制約衝突 (23505) に備えて、最大 5 回まで連番をインクリメントしてリトライする。
     const now = new Date();
     const ym = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const seqRows = await sql`
-      SELECT COUNT(*) AS cnt FROM estimates WHERE no LIKE ${"EST-" + ym + "-%"}
+    const prefix = `EST-${ym}-`;
+    const likePattern = `${prefix}%`;
+
+    const maxRows = await sql`
+      SELECT COALESCE(
+        MAX(CAST(SUBSTRING(no FROM 'EST-\d{6}-(\d+)$') AS INTEGER)),
+        0
+      ) AS max_seq
+      FROM estimates
+      WHERE no LIKE ${likePattern}
     `;
-    const seq = Number(seqRows[0].cnt) + 1;
-    const estimateNo = `EST-${ym}-${String(seq).padStart(3, "0")}`;
+    let seq = Number(maxRows[0]?.max_seq ?? 0) + 1;
+
     const createdAt = now.toISOString().slice(0, 10);
 
-    // ── DB INSERT ────────────────────────────────────────
-    const rows = await sql`
-      INSERT INTO estimates
-        (no, agency_id, agency_name, customer_name,
-         delivery_type, contract_type, cloud_billing, form_inputs)
-      VALUES
-        (${estimateNo}, ${agencyId}, ${agencyName}, ${resolvedCustomerName},
-         ${deliveryType}, ${contractType}, ${cloudBilling ?? null},
-         ${JSON.stringify(normalizedFormInputs)}::JSONB)
-      RETURNING id, no, status,
-                TO_CHAR(created_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS created_at
-    `;
-    const record = rows[0];
+    type EstimateInsertRow = {
+      id: string;
+      no: string;
+      status: string;
+      created_at: string;
+    };
+    let record: EstimateInsertRow | null = null;
+    const MAX_NO_RETRY = 5;
+    for (let attempt = 0; attempt < MAX_NO_RETRY; attempt++) {
+      const candidateNo = `${prefix}${String(seq).padStart(3, "0")}`;
+      try {
+        const rows = await sql`
+          INSERT INTO estimates
+            (no, agency_id, agency_name, customer_name,
+             delivery_type, contract_type, cloud_billing, form_inputs)
+          VALUES
+            (${candidateNo}, ${agencyId}, ${agencyName}, ${resolvedCustomerName},
+             ${deliveryType}, ${contractType}, ${cloudBilling ?? null},
+             ${JSON.stringify(normalizedFormInputs)}::JSONB)
+          RETURNING id, no, status,
+                    TO_CHAR(created_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS created_at
+        `;
+        record = rows[0] as EstimateInsertRow;
+        break;
+      } catch (insertErr: unknown) {
+        const e = insertErr as { code?: string; constraint?: string } | null;
+        if (e?.code === "23505" && e?.constraint === "estimates_no_key") {
+          // 同一連番が他リクエストで先に確定 or DB 上に既に存在する → 次の連番で再試行
+          console.warn(
+            `[submit] estimate no collision on ${candidateNo} (attempt ${attempt + 1}), retrying with next seq`
+          );
+          seq += 1;
+          continue;
+        }
+        throw insertErr;
+      }
+    }
+    if (!record) {
+      console.error(`[submit] estimate no collision exceeded ${MAX_NO_RETRY} retries for prefix ${prefix}`);
+      return NextResponse.json({ error: "estimate_no_collision" }, { status: 500 });
+    }
+    const estimateNo = record.no;
 
     // ── Excel 生成 & Blob 保存 ────────────────────────────
     // HubSpot 連携は承認時（PUT /api/estimates/[id] status=approved）に行うため、
