@@ -5,6 +5,7 @@ import { buildEstimateApplicationSections } from "@/lib/estimate-form-display";
 import type { Estimate } from "@/lib/mock-data";
 import { t } from "@/lib/translations";
 import type { Locale } from "@/lib/translations";
+import { HUBSPOT_DEAL_SELECT_CREATE_NEW } from "@/lib/hubspot-approve-feedback";
 
 type HubSpotDealsClient =
   | { configured: false }
@@ -18,9 +19,24 @@ type HubSpotDealsClient =
 type Props = {
   estimate: Estimate;
   locale: Locale;
+  /**
+   * 複数取引マッチ時に「どの取引に紐付けるか」を承認者/管理者がインライン選択できるようにする。
+   * true のときは取引一覧をラジオボタンで描画する。
+   */
+  selectionEnabled?: boolean;
+  /** 現在の選択（既存取引 ID または "__new__"）。未選択時は空文字。 */
+  selectedHubSpotDealId?: string;
+  /** ユーザーの選択変更時に呼ばれるコールバック */
+  onSelectHubSpotDeal?: (dealId: string) => void;
 };
 
-export function EstimateApplicationDetail({ estimate, locale }: Props) {
+export function EstimateApplicationDetail({
+  estimate,
+  locale,
+  selectionEnabled,
+  selectedHubSpotDealId,
+  onSelectHubSpotDeal,
+}: Props) {
   const [hubspotDeals, setHubspotDeals] = useState<HubSpotDealsClient | null>(null);
 
   useEffect(() => {
@@ -143,21 +159,80 @@ export function EstimateApplicationDetail({ estimate, locale }: Props) {
                     count: String(hubspotDeals.deals.length),
                   })}
                 </p>
-                <div className="divide-y divide-[var(--color-border)]">
-                  {hubspotDeals.deals.map((d) => (
-                    <div
-                      key={d.id}
-                      className="flex flex-col gap-1 py-2 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
-                    >
-                      <span className="shrink-0 font-mono text-xs text-[var(--color-ink-muted)] sm:max-w-[42%]">
-                        {t(locale, "admin.estimates.hubspotDealId")}: {d.id}
-                      </span>
-                      <span className="min-w-0 font-body text-sm text-[var(--color-ink)] whitespace-pre-wrap break-words sm:text-right">
-                        {d.dealName || d.customerName || "-"}
-                      </span>
+                {selectionEnabled && hubspotDeals.deals.length > 1 ? (
+                  <>
+                    <p className="font-body text-xs text-[var(--color-ink-muted)]">
+                      {t(locale, "admin.estimates.hubspotDealSelectionInlinePrompt")}
+                    </p>
+                    <div className="space-y-2">
+                      {hubspotDeals.deals.map((d) => {
+                        const checked = selectedHubSpotDealId === d.id;
+                        return (
+                          <label
+                            key={d.id}
+                            className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2 transition hover:bg-[var(--color-surface-sub)] ${
+                              checked
+                                ? "border-[var(--color-brand)] bg-[var(--color-surface-sub)]"
+                                : "border-[var(--color-border)]"
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name={`hubspot-deal-inline-${estimate.id}`}
+                              value={d.id}
+                              checked={checked}
+                              onChange={() => onSelectHubSpotDeal?.(d.id)}
+                              className="mt-1"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="font-body text-sm font-medium text-[var(--color-ink)] whitespace-pre-wrap break-words">
+                                {d.dealName || d.customerName || d.id}
+                              </p>
+                              <p className="mt-0.5 font-mono text-xs text-[var(--color-ink-muted)]">
+                                {t(locale, "admin.estimates.hubspotDealId")}: {d.id}
+                              </p>
+                            </div>
+                          </label>
+                        );
+                      })}
+                      <label
+                        className={`flex cursor-pointer items-start gap-3 rounded-lg border border-dashed px-3 py-2 transition hover:bg-[var(--color-surface-sub)] ${
+                          selectedHubSpotDealId === HUBSPOT_DEAL_SELECT_CREATE_NEW
+                            ? "border-[var(--color-brand)] bg-[var(--color-surface-sub)]"
+                            : "border-[var(--color-border)]"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name={`hubspot-deal-inline-${estimate.id}`}
+                          value={HUBSPOT_DEAL_SELECT_CREATE_NEW}
+                          checked={selectedHubSpotDealId === HUBSPOT_DEAL_SELECT_CREATE_NEW}
+                          onChange={() => onSelectHubSpotDeal?.(HUBSPOT_DEAL_SELECT_CREATE_NEW)}
+                          className="mt-1"
+                        />
+                        <span className="font-body text-sm font-medium text-[var(--color-ink)]">
+                          {t(locale, "admin.estimates.hubspotDealSelectionCreateNew")}
+                        </span>
+                      </label>
                     </div>
-                  ))}
-                </div>
+                  </>
+                ) : (
+                  <div className="divide-y divide-[var(--color-border)]">
+                    {hubspotDeals.deals.map((d) => (
+                      <div
+                        key={d.id}
+                        className="flex flex-col gap-1 py-2 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
+                      >
+                        <span className="shrink-0 font-mono text-xs text-[var(--color-ink-muted)] sm:max-w-[42%]">
+                          {t(locale, "admin.estimates.hubspotDealId")}: {d.id}
+                        </span>
+                        <span className="min-w-0 font-body text-sm text-[var(--color-ink)] whitespace-pre-wrap break-words sm:text-right">
+                          {d.dealName || d.customerName || "-"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </>
             ) : (
               <p className="font-body text-sm text-[var(--color-ink-muted)]">

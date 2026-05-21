@@ -81,13 +81,23 @@ export function apiJsonToEstimate(d: Record<string, unknown>): Estimate {
   };
 }
 
+/** onStatusChange に追加で渡せるオプション */
+export type StatusChangeOptions = {
+  /** 詳細モーダル内で事前に選んだ HubSpot 取引 ID（"__new__" で新規作成） */
+  selectedHubSpotDealId?: string;
+};
+
 type Props = {
   estimate: Estimate;
   locale: Locale;
   onClose: () => void;
   /** 詳細を GET で取り直して親の selected を更新する */
   onRefreshEstimate: (id: string) => Promise<void>;
-  onStatusChange?: (id: string, status: "approved" | "rejected") => Promise<unknown>;
+  onStatusChange?: (
+    id: string,
+    status: "approved" | "rejected",
+    options?: StatusChangeOptions
+  ) => Promise<unknown>;
 };
 
 export function EstimateCaseDetailModal({
@@ -121,6 +131,13 @@ export function EstimateCaseDetailModal({
 
   const [excelBusy, setExcelBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  /** 詳細モーダル内で承認者/管理者がインライン選択した HubSpot 取引 ID */
+  const [selectedHubSpotDealId, setSelectedHubSpotDealId] = useState<string>("");
+  // 別案件に切り替わったら選択をリセット
+  useEffect(() => {
+    setSelectedHubSpotDealId("");
+  }, [e.id]);
 
   useEffect(() => {
     setPdfState((prev) => {
@@ -288,7 +305,11 @@ export function EstimateCaseDetailModal({
     let cancelled = false;
     let hadError = false;
     try {
-      const payload = await onStatusChange(e.id, status);
+      const options =
+        status === "approved" && selectedHubSpotDealId
+          ? { selectedHubSpotDealId }
+          : undefined;
+      const payload = await onStatusChange(e.id, status, options);
       alertHubSpotSyncAfterApprove(locale, status, payload);
     } catch (err) {
       const m = err instanceof Error ? err.message : String(err);
@@ -510,7 +531,13 @@ export function EstimateCaseDetailModal({
               </div>
             </div>
           ) : (
-            <EstimateApplicationDetail estimate={e} locale={locale} />
+            <EstimateApplicationDetail
+              estimate={e}
+              locale={locale}
+              selectionEnabled={Boolean(onStatusChange) && e.status === "pending"}
+              selectedHubSpotDealId={selectedHubSpotDealId}
+              onSelectHubSpotDeal={setSelectedHubSpotDealId}
+            />
           )}
         </div>
 

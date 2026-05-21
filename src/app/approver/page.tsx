@@ -53,9 +53,13 @@ export default function ApproverPage() {
     ? estimates.filter((e) => e.status === "pending")
     : estimates;
 
-  async function handleAction(id: string, status: "approved" | "rejected") {
+  async function handleAction(
+    id: string,
+    status: "approved" | "rejected",
+    options?: { selectedHubSpotDealId?: string }
+  ) {
     let confirmHubSpotDuplicate = false;
-    let selectedHubSpotDealId: string | undefined;
+    let selectedHubSpotDealId: string | undefined = options?.selectedHubSpotDealId;
     for (let attempt = 0; attempt < 3; attempt++) {
       const res = await fetch(`/api/estimates/${id}`, {
         method: "PUT",

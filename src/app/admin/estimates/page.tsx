@@ -121,9 +121,13 @@ export default function AdminEstimatesPage() {
   const { selectionState, requestSelection, confirmSelection, cancelSelection } =
     useHubSpotDealSelection();
 
-  async function handleStatusChange(id: string, status: "approved" | "rejected") {
+  async function handleStatusChange(
+    id: string,
+    status: "approved" | "rejected",
+    options?: { selectedHubSpotDealId?: string }
+  ) {
     let confirmHubSpotDuplicate = false;
-    let selectedHubSpotDealId: string | undefined;
+    let selectedHubSpotDealId: string | undefined = options?.selectedHubSpotDealId;
     for (let attempt = 0; attempt < 3; attempt++) {
       const res = await fetch(`/api/estimates/${id}`, {
         method: "PUT",
