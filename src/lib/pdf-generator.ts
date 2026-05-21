@@ -560,6 +560,46 @@ export function freezeNonPrintSheetFormulas(workbook: ExcelJS.Workbook): void {
 }
 
 /**
+ * 全シートの数式セルから cached result（`<v>` 要素）を物理除去する。
+ *
+ * 背景:
+ *   Gotenberg にホストされた LibreOffice は xlsx を開く際、formula セルに
+ *   cached value が残っていればそれを優先し、数式を再計算しないことがある
+ *   （`fullCalcOnLoad=1` を立てても headless 変換のパスでは再計算されないケースが
+ *    実環境で確認された）。テンプレ作成時に保存された古い cached value（前回顧客の
+ *    データや空白・0）がそのまま PDF に焼き付いてしまう。
+ *
+ * 対策:
+ *   formula セルから `result` プロパティを削除し、ExcelJS が出力する xlsx の
+ *   `<c><f>...</f></c>` から `<v>...</v>` が消えるようにする。cached value が
+ *   無い formula セルは xlsx 仕様上 "dirty" 扱いになり、どの spreadsheet engine も
+ *   開封時に計算しなければならない（計算不能な場合は #ERROR で可視化）。
+ *
+ *   印刷対象シートだけでなく 設定情報 も対象にする。なぜなら 設定情報!C15 のような
+ *   中間 formula セルの cached value も古いままで、印刷シートがそれを参照すると
+ *   結果が古くなるため。単価マスタ等のテンプレ固定データは formula を持たないので
+ *   影響なし。
+ */
+function stripFormulaCachedResults(workbook: ExcelJS.Workbook): void {
+  let stripped = 0;
+  for (const ws of workbook.worksheets) {
+    ws.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        // 数値型 formula セル（t 属性なし）は cell.value から result が見えないが
+        // cell.model.result には残り、保存時に <v> として再出力される。確実に消すため
+        // model から直接 delete する。
+        const model = cell.model as { formula?: string; sharedFormula?: string; result?: unknown };
+        if ((model.formula || model.sharedFormula) && "result" in model) {
+          delete model.result;
+          stripped++;
+        }
+      });
+    });
+  }
+  console.log(`[pdf-generator] formula セルの cached result を除去: ${stripped} 件`);
+}
+
+/**
  * 全シート共通の前処理: 編集ロック解除 + 印刷対象シートを visible に。
  */
 function unlockAndShowPrintSheets(workbook: ExcelJS.Workbook): void {
@@ -621,13 +661,15 @@ export async function prepareExcelForGotenberg(excelBuffer: Buffer): Promise<Buf
   // 設定情報の数式上書きは excel-writer.ts 側で行う（setCell が数式を除去してプレーン値を書く）。
   // それ以外の数式（C28=C26+5 等、ユーザが触らないテンプレ計算）は LibreOffice にそのまま評価させる。
 
-  // LibreOffice はデフォルトで xlsx の cached result（前回保存時の評価結果）を信用して
-  // 数式を再計算しない。テンプレ作成時にキャッシュされた古い値（前回のデータや空白）が
-  // PDF に残ってしまうため、fullCalcOnLoad=1 を立てて開封時の全再計算を強制する。
+  // LibreOffice (Gotenberg) はテンプレ作成時に保存された cached value を優先して
+  // 数式を再計算しないケースがある。fullCalcOnLoad=1 を立てるだけでは headless 経路で
+  // 不十分なため、formula セルの cached result を物理除去して xlsx を "dirty" 状態にし、
+  // LibreOffice が必ず再計算するようにする。
   workbook.calcProperties.fullCalcOnLoad = true;
+  stripFormulaCachedResults(workbook);
 
   const afterNames = workbook.worksheets.map((ws) => `"${ws.name}"`);
-  console.log(`[pdf-generator] 並び替え後（Gotenberg 用・全シート保持・fullCalcOnLoad=true）: ${afterNames.join(", ")}`);
+  console.log(`[pdf-generator] 並び替え後（Gotenberg 用・全シート保持・キャッシュ除去済み）: ${afterNames.join(", ")}`);
 
   const buf = await workbook.xlsx.writeBuffer();
   return Buffer.from(buf);

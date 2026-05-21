@@ -316,7 +316,7 @@ describe("prepareExcelForGotenberg", () => {
   });
 
   it("does not destroy print-sheet formulas (LibreOffice still evaluates them)", async () => {
-    // fullCalcOnLoad は数式を消す処理ではない。表紙の数式自体は保持されたまま。
+    // 数式自体は保持されたまま（評価は LibreOffice が行う）。cached result だけ消える。
     const tplBuf = await buildTemplateBuffer();
     const readyBuf = await prepareExcelForGotenberg(tplBuf);
     const wb = new ExcelJS.Workbook();
@@ -325,5 +325,35 @@ describe("prepareExcelForGotenberg", () => {
     const v = cover.getCell("A1").value as ExcelJS.CellFormulaValue;
     expect(typeof v).toBe("object");
     expect(v.formula).toBe("設定情報!C4");
+  });
+
+  it("strips cached <v> from formula cells so LibreOffice must recompute", async () => {
+    // 元テンプレの formula セルには古いキャッシュ値が残っているケースを再現。
+    // prepareExcelForGotenberg 通過後、出力 xlsx の formula セルから <v> が消えていることを確認。
+    const tplBuf = await buildTemplateBuffer();
+    const readyBuf = await prepareExcelForGotenberg(tplBuf);
+
+    const JSZip = (await import("jszip")).default;
+
+    async function findSheetWithRef(buf: Buffer, ref: string): Promise<string> {
+      const zip = await JSZip.loadAsync(buf);
+      for (const name of Object.keys(zip.files)) {
+        if (!name.startsWith("xl/worksheets/") || !name.endsWith(".xml")) continue;
+        const file = zip.file(name);
+        if (!file) continue;
+        const xml = await file.async("string");
+        if (xml.includes(ref)) return xml;
+      }
+      return "";
+    }
+
+    // 元テンプレでは A1 に formula+cached value "To: 旧代理店" が入っている
+    const beforeCoverXml = await findSheetWithRef(tplBuf, "設定情報!C4");
+    expect(beforeCoverXml).toMatch(/<f>設定情報!C4<\/f>.*?<v>/);
+
+    // 修正後: <v> 要素が消えている（formula のみ残る）
+    const afterCoverXml = await findSheetWithRef(readyBuf, "設定情報!C4");
+    // 数式は残っているが、その直後に <v> が来ない
+    expect(afterCoverXml).toMatch(/<f>設定情報!C4<\/f>(?!<v>)/);
   });
 });
