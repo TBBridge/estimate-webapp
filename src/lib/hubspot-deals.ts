@@ -383,12 +383,16 @@ async function applyDealRequiredAndExtraFields(
   if (config.dealNegotiationProperty && input.contractType) {
     properties[config.dealNegotiationProperty] = contractTypeLabelJa(input.contractType);
   }
-  const amountProp = config.dealAmountProperty.trim();
-  if (amountProp) {
-    const v = formatAmountForHubSpot(input.estimatedAmount);
-    if (v !== undefined) {
-      properties[amountProp] = v;
+  // 見積金額（本体 + 保守料 の合計）を、(1) カスタムプロパティ（HUBSPOT_DEAL_PROPERTY_AMOUNT、
+  // 既定 estimated_amount）と (2) HubSpot 標準プロパティ "amount" の両方に書き込む。
+  const amountValue = formatAmountForHubSpot(input.estimatedAmount);
+  if (amountValue !== undefined) {
+    const customAmountProp = config.dealAmountProperty.trim();
+    if (customAmountProp) {
+      properties[customAmountProp] = amountValue;
     }
+    // 標準プロパティ amount は常に同期（取引一覧などで使われる主要金額）
+    properties.amount = amountValue;
   }
 
   await normalizeHubspotOwnerIdOnProperties(config, properties);
@@ -633,8 +637,10 @@ export async function createDealByCompanyName(
 }
 
 /**
- * 既存取引の見積金額を更新する。HUBSPOT_DEAL_PROPERTY_AMOUNT が空、または amount が
- * 数値化できないときは何もせず { ok: true, skipped: true } を返す。
+ * 既存取引の見積金額を更新する。amount が数値化できないときは何もせず
+ * { ok: true, updated: false } を返す。
+ * カスタムプロパティ（HUBSPOT_DEAL_PROPERTY_AMOUNT、既定 estimated_amount）と
+ * HubSpot 標準プロパティ amount の両方を同じ値で更新する。
  */
 export async function updateDealEstimatedAmount(
   config: HubSpotConfig,
@@ -642,16 +648,20 @@ export async function updateDealEstimatedAmount(
   estimatedAmount: number | null | undefined
 ): Promise<{ ok: true; updated: boolean } | { ok: false; error: string }> {
   try {
-    const amountProp = config.dealAmountProperty.trim();
-    if (!amountProp) return { ok: true, updated: false };
     const v = formatAmountForHubSpot(estimatedAmount);
     if (v === undefined) return { ok: true, updated: false };
+
+    const properties: Record<string, string> = { amount: v };
+    const customAmountProp = config.dealAmountProperty.trim();
+    if (customAmountProp) {
+      properties[customAmountProp] = v;
+    }
 
     await hubspotFetchJson(
       config,
       "PATCH",
       `/crm/v3/objects/deals/${encodeURIComponent(dealId)}`,
-      { properties: { [amountProp]: v } }
+      { properties }
     );
     return { ok: true, updated: true };
   } catch (e) {
