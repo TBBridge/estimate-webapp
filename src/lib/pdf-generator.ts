@@ -610,7 +610,7 @@ export function reorderPrintSheetsFirst(workbook: ExcelJS.Workbook): void {
  *   数式評価は LibreOffice に任せる（HyperFormula で対応できない名前付き範囲も正しく評価される）。
  *   PDF 化後に Gotenberg の nativePageRanges で先頭 N ページのみ取り出す。
  */
-async function prepareExcelForGotenberg(excelBuffer: Buffer): Promise<Buffer> {
+export async function prepareExcelForGotenberg(excelBuffer: Buffer): Promise<Buffer> {
   const workbook = await loadWorkbook(excelBuffer);
 
   const beforeNames = workbook.worksheets.map((ws) => `"${ws.name}"(${ws.state})`);
@@ -621,8 +621,13 @@ async function prepareExcelForGotenberg(excelBuffer: Buffer): Promise<Buffer> {
   // 設定情報の数式上書きは excel-writer.ts 側で行う（setCell が数式を除去してプレーン値を書く）。
   // それ以外の数式（C28=C26+5 等、ユーザが触らないテンプレ計算）は LibreOffice にそのまま評価させる。
 
+  // LibreOffice はデフォルトで xlsx の cached result（前回保存時の評価結果）を信用して
+  // 数式を再計算しない。テンプレ作成時にキャッシュされた古い値（前回のデータや空白）が
+  // PDF に残ってしまうため、fullCalcOnLoad=1 を立てて開封時の全再計算を強制する。
+  workbook.calcProperties.fullCalcOnLoad = true;
+
   const afterNames = workbook.worksheets.map((ws) => `"${ws.name}"`);
-  console.log(`[pdf-generator] 並び替え後（Gotenberg 用・全シート保持）: ${afterNames.join(", ")}`);
+  console.log(`[pdf-generator] 並び替え後（Gotenberg 用・全シート保持・fullCalcOnLoad=true）: ${afterNames.join(", ")}`);
 
   const buf = await workbook.xlsx.writeBuffer();
   return Buffer.from(buf);

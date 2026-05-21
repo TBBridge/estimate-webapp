@@ -6,6 +6,7 @@ import {
   extractAmountsFromCsv,
   extractAmountsFromPdfText,
   freezeNonPrintSheetFormulas,
+  prepareExcelForGotenberg,
   reorderPrintSheetsFirst,
 } from "@/lib/pdf-generator";
 
@@ -273,5 +274,56 @@ describe("freezeNonPrintSheetFormulas", () => {
 
     // HF エラー → excel-writer.ts が書き込んだ cached result 0.5 にフォールバック
     expect(wb.getWorksheet("設定情報")!.getCell("C8").value).toBe(0.5);
+  });
+});
+
+describe("prepareExcelForGotenberg", () => {
+  /**
+   * 設定情報を更新してから 表紙 が古いキャッシュ値を返さないことを担保するには、
+   * 生成 xlsx の workbook.xml に `<calcPr fullCalcOnLoad="1"/>` が必要。
+   * LibreOffice はこのフラグが無いと cached result を信用し、書き換えた値を反映しない。
+   */
+  async function buildTemplateBuffer(): Promise<Buffer> {
+    const wb = new ExcelJS.Workbook();
+    const settings = wb.addWorksheet("設定情報");
+    settings.getCell("C4").value = "To: 旧代理店"; // 後で書き換える想定
+    const cover = wb.addWorksheet("表紙");
+    cover.getCell("A1").value = {
+      formula: "設定情報!C4",
+      result: "To: 旧代理店", // テンプレ作成時のキャッシュ（古い値）
+      date1904: false,
+    } as ExcelJS.CellFormulaValue;
+    wb.addWorksheet("ライセンス");
+    wb.addWorksheet("保守料");
+    return Buffer.from(await wb.xlsx.writeBuffer());
+  }
+
+  it("writes <calcPr fullCalcOnLoad=\"1\"/> into the saved workbook.xml", async () => {
+    // 元テンプレ XML に fullCalcOnLoad が無いことを確認 → prepareExcelForGotenberg 経由で
+    // 1 が立つことを保証する。LibreOffice はこのフラグで全数式を再評価するため、
+    // テンプレ作成時に保存された cached result（前回のデータや空白）が PDF に残らない。
+    const tplBuf = await buildTemplateBuffer();
+    const JSZip = (await import("jszip")).default;
+
+    const beforeZip = await JSZip.loadAsync(tplBuf);
+    const beforeXml = await beforeZip.file("xl/workbook.xml")!.async("string");
+    expect(beforeXml).not.toMatch(/fullCalcOnLoad/);
+
+    const readyBuf = await prepareExcelForGotenberg(tplBuf);
+    const afterZip = await JSZip.loadAsync(readyBuf);
+    const afterXml = await afterZip.file("xl/workbook.xml")!.async("string");
+    expect(afterXml).toMatch(/<calcPr[^/]*fullCalcOnLoad="1"/);
+  });
+
+  it("does not destroy print-sheet formulas (LibreOffice still evaluates them)", async () => {
+    // fullCalcOnLoad は数式を消す処理ではない。表紙の数式自体は保持されたまま。
+    const tplBuf = await buildTemplateBuffer();
+    const readyBuf = await prepareExcelForGotenberg(tplBuf);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(readyBuf as unknown as ExcelJS.Buffer);
+    const cover = wb.getWorksheet("表紙")!;
+    const v = cover.getCell("A1").value as ExcelJS.CellFormulaValue;
+    expect(typeof v).toBe("object");
+    expect(v.formula).toBe("設定情報!C4");
   });
 });
