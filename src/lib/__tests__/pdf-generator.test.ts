@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 
 import {
   evaluateAndStripWorkbook,
+  extractAmountsFromPdfText,
   extractAmountsFromWorkbookBuffer,
   freezeNonPrintSheetFormulas,
   prepareExcelForGotenberg,
@@ -101,6 +102,62 @@ describe("extractAmountsFromWorkbookBuffer", () => {
 
     const result = await extractAmountsFromWorkbookBuffer(buf);
     expect(result).toEqual({ amount: 12345, maintenanceFee: 0 });
+  });
+});
+
+describe("extractAmountsFromPdfText", () => {
+  it("picks values on the same line as the keyword", () => {
+    const text = [
+      "見積書",
+      "御見積金額    ¥1,234,567",
+      "年額保守    234,000",
+      "ご担当: 山田 03-1234-5678",
+    ].join("\n");
+
+    expect(extractAmountsFromPdfText(text)).toEqual({
+      amount: 1234567,
+      maintenanceFee: 234000,
+    });
+  });
+
+  it("falls back to the next line when the keyword line has no number (multi-line layout)", () => {
+    // pdf-parse は spreadsheet PDF をセルごとに別行へ分解しがち。
+    // 御見積金額 と 数値 が別行に出るレイアウトを想定。
+    const text = [
+      "御見積金額",
+      "¥1,234,567",
+      "（税抜）",
+      "保守料",
+      "234,000",
+    ].join("\n");
+
+    expect(extractAmountsFromPdfText(text)).toEqual({
+      amount: 1234567,
+      maintenanceFee: 234000,
+    });
+  });
+
+  it("picks 合計 when 御見積金額 line is missing", () => {
+    const text = ["小計", "100,000", "合計", "500,000", "保守", "80,000"].join("\n");
+    expect(extractAmountsFromPdfText(text)).toEqual({
+      amount: 500000,
+      maintenanceFee: 80000,
+    });
+  });
+
+  it("does not pick maintenance value from the amount line (exclude rule)", () => {
+    const text = ["御見積金額（保守含む）  ¥1,000,000", "年額保守 200,000"].join("\n");
+    expect(extractAmountsFromPdfText(text)).toEqual({
+      amount: 1000000,
+      maintenanceFee: 200000,
+    });
+  });
+
+  it("returns zeros for irrelevant text", () => {
+    expect(extractAmountsFromPdfText("請求先 株式会社サンプル 03-9999-0000")).toEqual({
+      amount: 0,
+      maintenanceFee: 0,
+    });
   });
 });
 

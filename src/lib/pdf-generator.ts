@@ -30,6 +30,8 @@
 import ExcelJS from "exceljs";
 import { HyperFormula } from "hyperformula";
 import { PassThrough } from "stream";
+// pdf-parse は index.js のデバッグ実行コードを避けるため lib 直参照
+import pdfParse from "pdf-parse/lib/pdf-parse.js";
 
 /** PDF に含める印刷対象シート名（この3シートのみ残し、他は削除） */
 const PRINT_SHEETS = ["表紙", "ライセンス", "保守料"];
@@ -132,6 +134,82 @@ export type ConvertResult = {
 const COVER_AMOUNT_CELL = "C21";
 /** 表紙シートの保守料セル */
 const COVER_MAINTENANCE_CELL = "C24";
+
+/** PDF テキスト抽出のキーワード（同じ行 or 直後の行に数値があるパターンを許容） */
+const PDF_AMOUNT_KEYWORDS = ["御見積金額", "見積金額", "お見積金額", "御見積額", "御見積総額"] as const;
+const PDF_MAINTENANCE_KEYWORDS = ["年額保守", "保守料", "保守費用", "保守"] as const;
+const PDF_TOTAL_KEYWORDS = ["税抜合計", "合計"] as const;
+
+/** PDF テキストから最初に現れる数値（千区切り or 整数）を整数値で返す。無ければ 0 */
+function parsePdfLineNumber(line: string): number {
+  const m = line.match(/[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?/g);
+  if (!m) return 0;
+  let best = 0;
+  for (const tok of m) {
+    const n = Number(tok.replace(/,/g, ""));
+    if (Number.isFinite(n) && n > best) best = n;
+  }
+  return Math.floor(best);
+}
+
+/**
+ * pdf-parse で抽出した PDF テキストから見積金額・保守料を読む。
+ *  - 同一行にキーワード＋数値があれば採用
+ *  - 同一行に数値が無ければ直後 3 行を覗いて最初の数値を採用
+ *    （LibreOffice→pdf-parse はセルごとに別行に分解しがちなため）
+ *
+ * 各キーワード群について最初にヒットした値を返す（template はキーワードが 1 行のみのため）。
+ */
+export function extractAmountsFromPdfText(text: string): { amount: number; maintenanceFee: number } {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+
+  function findFor(
+    includeKeywords: ReadonlyArray<string>,
+    excludeKeywords: ReadonlyArray<string> = []
+  ): number {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (!includeKeywords.some((kw) => line.includes(kw))) continue;
+      if (excludeKeywords.some((kw) => line.includes(kw))) continue;
+      const sameLine = parsePdfLineNumber(line);
+      if (sameLine > 0) return sameLine;
+      for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+        const next = parsePdfLineNumber(lines[j]);
+        if (next > 0) return next;
+      }
+    }
+    return 0;
+  }
+
+  const amount = findFor(PDF_AMOUNT_KEYWORDS) || findFor(PDF_TOTAL_KEYWORDS);
+  // 保守料は「御見積金額」等を含む行を除外（誤拾い防止）
+  const maintenanceFee = findFor(PDF_MAINTENANCE_KEYWORDS, PDF_AMOUNT_KEYWORDS);
+  return { amount, maintenanceFee };
+}
+
+/**
+ * 生成済み PDF バッファから金額を抽出する。LibreOffice/Gotenberg が出力した PDF テキストには
+ * テンプレ数式が解決済みの値が入っているため、HF 評価が失敗しても拾える。
+ * 失敗時は null。
+ */
+export async function extractAmountsFromPdfBuffer(
+  pdfBuffer: Buffer
+): Promise<{ amount: number; maintenanceFee: number } | null> {
+  try {
+    const parsed = await pdfParse(pdfBuffer);
+    if (!parsed?.text) return null;
+    const result = extractAmountsFromPdfText(parsed.text);
+    console.log(
+      `[pdf-generator] PDF テキスト抽出: amount=${result.amount} maintenanceFee=${result.maintenanceFee} ` +
+        `(textLen=${parsed.text.length})`
+    );
+    return result;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[pdf-generator] PDF テキスト抽出失敗:", msg);
+    return null;
+  }
+}
 
 /**
  * ExcelJS のセル値（数値 / 文字列 / formula オブジェクト）を金額の整数値へ正規化する。
@@ -916,21 +994,51 @@ async function convertBufferWithGotenberg(pdfReadyBuffer: Buffer): Promise<Conve
   return { pdf, amounts: null };
 }
 
+/**
+ * Excel 経由（HF 評価）と PDF 経由（pdf-parse）の抽出結果を合成する。
+ * 各値について、片方が 0 ならもう片方を採用、両方とも > 0 なら Excel 側（最も信頼できる）を優先。
+ */
+function mergeAmountSources(
+  fromExcel: { amount: number; maintenanceFee: number } | null,
+  fromPdf: { amount: number; maintenanceFee: number } | null
+): { amount: number; maintenanceFee: number } | null {
+  if (!fromExcel && !fromPdf) return null;
+  const ex = fromExcel ?? { amount: 0, maintenanceFee: 0 };
+  const pd = fromPdf ?? { amount: 0, maintenanceFee: 0 };
+  return {
+    amount: ex.amount > 0 ? ex.amount : pd.amount,
+    maintenanceFee: ex.maintenanceFee > 0 ? ex.maintenanceFee : pd.maintenanceFee,
+  };
+}
+
 export async function convertExcelToPdf(excelBuffer: Buffer): Promise<ConvertResult> {
-  // 金額抽出は経路非依存: 元 Excel をローカルで HyperFormula 評価して 表紙!C21/C24 を読む。
-  // PDF 化エンジン側の描画結果や CSV/PDF テキストレイアウトに依存しないため、
-  // pdf-parse の行分解の癖や LibreOffice の数式キャッシュ問題の影響を受けない。
-  const amounts = await extractAmountsFromWorkbookBuffer(excelBuffer);
+  // 第一段: Excel を HF 評価して 表紙!C21/C24 を読む（template の数式が HF サポート関数のみで
+  // 完結する場合は最速で正確）。
+  const fromExcel = await extractAmountsFromWorkbookBuffer(excelBuffer);
 
   // 既定は Gotenberg。未設定なら従来の CloudConvert にフォールバック。
   // 経路によって xlsx 前処理が異なる（Gotenberg: 全シート保持・並び替え / CloudConvert: 数式評価＋削除）。
   const gotenbergUrl = process.env.GOTENBERG_URL?.trim();
+  let pdf: Buffer;
   if (gotenbergUrl) {
     const ready = await prepareExcelForGotenberg(excelBuffer);
-    const { pdf } = await convertBufferWithGotenberg(ready);
-    return { pdf, amounts };
+    pdf = (await convertBufferWithGotenberg(ready)).pdf;
+  } else {
+    const ready = await prepareExcelForCloudConvert(excelBuffer);
+    pdf = (await convertBufferWithCloudConvert(ready)).pdf;
   }
-  const ready = await prepareExcelForCloudConvert(excelBuffer);
-  const { pdf } = await convertBufferWithCloudConvert(ready);
+
+  // 第二段: Excel 抽出で 0 が残った場合は生成済み PDF テキストから読み取って補完する。
+  // LibreOffice/Office は HF 未サポートの関数（UDF・特殊定義名等）も評価できるため、
+  // PDF には正しい値が描画されているケースがある。
+  const needsPdfFallback = !fromExcel || fromExcel.amount === 0 || fromExcel.maintenanceFee === 0;
+  const fromPdf = needsPdfFallback ? await extractAmountsFromPdfBuffer(pdf) : null;
+
+  const amounts = mergeAmountSources(fromExcel, fromPdf);
+  console.log(
+    `[pdf-generator] 金額確定: amount=${amounts?.amount ?? 0} maintenanceFee=${amounts?.maintenanceFee ?? 0} ` +
+      `(excel=${fromExcel?.amount ?? "null"}/${fromExcel?.maintenanceFee ?? "null"}, ` +
+      `pdf=${fromPdf?.amount ?? "n/a"}/${fromPdf?.maintenanceFee ?? "n/a"})`
+  );
   return { pdf, amounts };
 }
