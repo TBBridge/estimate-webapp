@@ -3,72 +3,104 @@ import ExcelJS from "exceljs";
 
 import {
   evaluateAndStripWorkbook,
-  extractAmountsFromCsv,
-  extractAmountsFromPdfText,
+  extractAmountsFromWorkbookBuffer,
   freezeNonPrintSheetFormulas,
   prepareExcelForGotenberg,
   reorderPrintSheetsFirst,
 } from "@/lib/pdf-generator";
 
-describe("extractAmountsFromCsv", () => {
-  // LibreOffice の CSV 出力はセル書式を剥がすため、表示の千区切りカンマは入らない。
-  it("picks the largest number on the matching keyword line", () => {
-    const csv = [
-      "ヘッダ,項目,金額",
-      "御見積金額,,1234567",
-      "保守料,,234000",
-      "備考,1,2",
-    ].join("\n");
+describe("extractAmountsFromWorkbookBuffer", () => {
+  /**
+   * テンプレートを模した合成ワークブック:
+   *   設定情報 シートの値を 表紙 シートが数式で参照し、表紙!C21 に金額、表紙!C24 に保守料が入る。
+   */
+  async function buildWorkbookBuffer(opts: {
+    licensePrice: number;
+    licenseQty: number;
+    maintRatio: number;
+    extraSheets?: string[];
+  }): Promise<Buffer> {
+    const wb = new ExcelJS.Workbook();
 
-    expect(extractAmountsFromCsv(csv)).toEqual({
-      amount: 1234567,
-      maintenanceFee: 234000,
+    const settings = wb.addWorksheet("設定情報");
+    settings.getCell("C18").value = opts.licensePrice;
+    settings.getCell("C19").value = opts.licenseQty;
+    settings.getCell("C30").value = opts.maintRatio;
+
+    const cover = wb.addWorksheet("表紙");
+    cover.getCell("A1").value = "見積書";
+    // 表紙!C21 = 本体金額 = 設定情報!C18 * 設定情報!C19
+    cover.getCell("C21").value = {
+      formula: "設定情報!C18*設定情報!C19",
+      date1904: false,
+    } as ExcelJS.CellFormulaValue;
+    // 表紙!C24 = 保守料 = ROUND(本体金額 * 保守率, 0)
+    cover.getCell("C24").value = {
+      formula: "ROUND(C21*設定情報!C30,0)",
+      date1904: false,
+    } as ExcelJS.CellFormulaValue;
+
+    wb.addWorksheet("ライセンス");
+    wb.addWorksheet("保守料");
+    for (const name of opts.extraSheets ?? []) wb.addWorksheet(name);
+
+    return Buffer.from(await wb.xlsx.writeBuffer());
+  }
+
+  it("reads amount from 表紙!C21 and maintenanceFee from 表紙!C24 via HyperFormula", async () => {
+    const buf = await buildWorkbookBuffer({
+      licensePrice: 50000,
+      licenseQty: 24,
+      maintRatio: 0.18,
     });
+
+    const result = await extractAmountsFromWorkbookBuffer(buf);
+    expect(result).not.toBeNull();
+    // 50000 * 24 = 1,200,000
+    expect(result!.amount).toBe(1_200_000);
+    // ROUND(1,200,000 * 0.18, 0) = 216,000
+    expect(result!.maintenanceFee).toBe(216_000);
   });
 
-  it("falls back to 合計 line when 見積金額 keyword is absent", () => {
-    const csv = ["合計,,500000", "保守,,80000"].join("\n");
-    expect(extractAmountsFromCsv(csv)).toEqual({
-      amount: 500000,
-      maintenanceFee: 80000,
-    });
+  it("returns zeros when target cells are empty", async () => {
+    const wb = new ExcelJS.Workbook();
+    wb.addWorksheet("設定情報");
+    wb.addWorksheet("表紙"); // C21 / C24 は空
+    wb.addWorksheet("ライセンス");
+    wb.addWorksheet("保守料");
+    const buf = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const result = await extractAmountsFromWorkbookBuffer(buf);
+    expect(result).toEqual({ amount: 0, maintenanceFee: 0 });
   });
 
-  it("returns zeros for empty input", () => {
-    expect(extractAmountsFromCsv("")).toEqual({ amount: 0, maintenanceFee: 0 });
-  });
-});
+  it("returns null when 表紙 sheet is missing", async () => {
+    const wb = new ExcelJS.Workbook();
+    wb.addWorksheet("設定情報");
+    wb.addWorksheet("ライセンス");
+    wb.addWorksheet("保守料");
+    const buf = Buffer.from(await wb.xlsx.writeBuffer());
 
-describe("extractAmountsFromPdfText", () => {
-  it("extracts amount and maintenance from PDF-style text (no comma cell separators)", () => {
-    // Gotenberg / LibreOffice の PDF テキスト抽出例（行内が空白区切り）
-    const text = [
-      "見積書",
-      "御見積金額    ¥1,234,567",
-      "年額保守    234,000",
-      "ご担当: 山田 03-1234-5678",
-    ].join("\n");
-
-    expect(extractAmountsFromPdfText(text)).toEqual({
-      amount: 1234567,
-      maintenanceFee: 234000,
-    });
+    const result = await extractAmountsFromWorkbookBuffer(buf);
+    expect(result).toBeNull();
   });
 
-  it("picks 合計 when 見積金額 line is missing", () => {
-    const text = ["小計 100,000", "合計 500,000", "保守 80,000"].join("\n");
-    expect(extractAmountsFromPdfText(text)).toEqual({
-      amount: 500000,
-      maintenanceFee: 80000,
-    });
-  });
+  it("floors fractional results and clamps negatives to zero", async () => {
+    const wb = new ExcelJS.Workbook();
+    const settings = wb.addWorksheet("設定情報");
+    settings.getCell("C18").value = 12345.7;
+    const cover = wb.addWorksheet("表紙");
+    cover.getCell("C21").value = {
+      formula: "設定情報!C18",
+      date1904: false,
+    } as ExcelJS.CellFormulaValue;
+    cover.getCell("C24").value = -100;
+    wb.addWorksheet("ライセンス");
+    wb.addWorksheet("保守料");
+    const buf = Buffer.from(await wb.xlsx.writeBuffer());
 
-  it("ignores non-keyword lines and returns zeros", () => {
-    const text = "請求先 株式会社サンプル 03-9999-0000";
-    expect(extractAmountsFromPdfText(text)).toEqual({
-      amount: 0,
-      maintenanceFee: 0,
-    });
+    const result = await extractAmountsFromWorkbookBuffer(buf);
+    expect(result).toEqual({ amount: 12345, maintenanceFee: 0 });
   });
 });
 

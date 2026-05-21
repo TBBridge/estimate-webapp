@@ -20,17 +20,16 @@
  *   ・必須: CLOUDCONVERT_API_KEY（task.read / task.write）
  *
  * 見積金額の抽出:
- *   Excel テンプレート内の数式は ExcelJS だけでは評価できないため、
- *   PDF 化エンジンが評価した結果から金額を読み戻す:
- *     - Gotenberg 経路: 生成された PDF のテキストを pdf-parse で抽出
- *     - CloudConvert 経路: 並行生成した CSV から抽出
+ *   PDF 化エンジン（LibreOffice / Office）が描画した結果に依存せず、
+ *   ローカルで HyperFormula により Excel を評価し、表紙シートの固定セルから直接読む。
+ *     - amount         = 表紙!C21
+ *     - maintenanceFee = 表紙!C24
+ *   PDF テキスト抽出（pdf-parse）や CloudConvert CSV エクスポートには依存しない。
  */
 
 import ExcelJS from "exceljs";
 import { HyperFormula } from "hyperformula";
 import { PassThrough } from "stream";
-// pdf-parse は index.js のデバッグ実行コードを避けるため lib 直参照
-import pdfParse from "pdf-parse/lib/pdf-parse.js";
 
 /** PDF に含める印刷対象シート名（この3シートのみ残し、他は削除） */
 const PRINT_SHEETS = ["表紙", "ライセンス", "保守料"];
@@ -124,89 +123,77 @@ function findFinishedExportUrl(job: CloudConvertJobData, taskName?: string): str
   return null;
 }
 
-function findAllFinishedExportUrls(job: CloudConvertJobData, taskName: string): string[] {
-  for (const t of job.tasks ?? []) {
-    if (t.name === taskName && t.operation === "export/url" && t.status === "finished") {
-      return (t.result?.files ?? [])
-        .map((f) => f.url)
-        .filter((u): u is string => !!u && isAllowedCloudConvertUrl(u));
-    }
-  }
-  return [];
-}
-
 export type ConvertResult = {
   pdf: Buffer;
   amounts: { amount: number; maintenanceFee: number } | null;
 };
 
-const AMOUNT_KEYWORDS = ["御見積金額", "見積金額", "お見積金額"] as const;
-const MAINTENANCE_KEYWORDS = ["保守", "年額保守", "保守料"] as const;
-const TOTAL_KEYWORDS = ["合計", "税抜合計"] as const;
+/** 表紙シートの本体金額セル */
+const COVER_AMOUNT_CELL = "C21";
+/** 表紙シートの保守料セル */
+const COVER_MAINTENANCE_CELL = "C24";
 
 /**
- * テキスト行群（CSV / PDF）からキーワード一致で見積金額を抽出する共通ロジック。
- * 数値の抽出方法だけ呼び出し側に委ねる。
+ * ExcelJS のセル値（数値 / 文字列 / formula オブジェクト）を金額の整数値へ正規化する。
+ * - 数値はそのまま（負値や NaN は 0 に丸める）
+ * - 文字列は通貨記号・カンマ・全角空白等を除去してパース
+ * - { formula, result } 形式は result（最新評価値）を採用
+ * - 解釈不能なら 0
  */
-function extractAmountsFromLines(
-  lines: ReadonlyArray<string>,
-  extractNums: (line: string) => number[]
-): { amount: number; maintenanceFee: number } {
-  let amount = 0;
-  let maintenanceFee = 0;
-
-  for (const line of lines) {
-    const nums = extractNums(line);
-    if (nums.length === 0) continue;
-    const maxNum = Math.max(...nums);
-
-    if (AMOUNT_KEYWORDS.some((kw) => line.includes(kw))) {
-      amount = Math.max(amount, maxNum);
-    } else if (
-      MAINTENANCE_KEYWORDS.some((kw) => line.includes(kw)) &&
-      !AMOUNT_KEYWORDS.some((kw) => line.includes(kw))
-    ) {
-      maintenanceFee = Math.max(maintenanceFee, maxNum);
-    } else if (amount === 0 && TOTAL_KEYWORDS.some((kw) => line.includes(kw))) {
-      amount = Math.max(amount, maxNum);
+function coerceCellToAmount(value: ExcelJS.CellValue): number {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === "number") return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+  if (typeof value === "string") {
+    const cleaned = value.replace(/[¥￥,、\s　]/g, "");
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+  }
+  if (typeof value === "object") {
+    const v = value as unknown as Record<string, unknown>;
+    if ("result" in v) {
+      const r = v.result;
+      if (typeof r === "number" && Number.isFinite(r)) return Math.max(0, Math.floor(r));
+      if (typeof r === "string") {
+        const cleaned = r.replace(/[¥￥,、\s　]/g, "");
+        const n = Number(cleaned);
+        if (Number.isFinite(n)) return Math.max(0, Math.floor(n));
+      }
     }
   }
-
-  return { amount: Math.floor(amount), maintenanceFee: Math.floor(maintenanceFee) };
+  return 0;
 }
 
 /**
- * CloudConvert が出力した表紙 CSV から見積金額を抽出する。
- * 「御見積金額」「見積金額」「合計」等のキーワード行にある最大の数値を取る。
+ * 自動入力済み Excel をローカルで HyperFormula 評価し、表紙シートの固定セルから
+ * 見積金額（C21）と保守料（C24）を直接読む。
+ *
+ * evaluateAndStripWorkbook は破壊的なので、必ず新規ロードしたワークブックに対して実行する。
+ * 評価結果は呼び出し側で破棄し、PDF 生成用バッファには影響させない。
+ *
+ * 失敗時は null を返し、呼び出し側は DB 更新をスキップする（手動入力で上書き可）。
  */
-export function extractAmountsFromCsv(csv: string): { amount: number; maintenanceFee: number } {
-  return extractAmountsFromLines(csv.split(/\r?\n/), (line) => {
-    const nums: number[] = [];
-    for (const cell of line.split(",")) {
-      const cleaned = cell.replace(/[""¥￥,、\s]/g, "");
-      const n = Number(cleaned);
-      if (Number.isFinite(n) && n > 0) nums.push(n);
+export async function extractAmountsFromWorkbookBuffer(
+  excelBuffer: Buffer
+): Promise<{ amount: number; maintenanceFee: number } | null> {
+  try {
+    const wb = await loadWorkbook(excelBuffer);
+    evaluateAndStripWorkbook(wb);
+    const cover = wb.getWorksheet("表紙");
+    if (!cover) {
+      console.warn("[pdf-generator] 表紙 シートが見つからず金額抽出をスキップしました");
+      return null;
     }
-    return nums;
-  });
-}
-
-/**
- * Gotenberg が出力した PDF を pdf-parse で抽出したテキストから見積金額を抽出する。
- * PDF テキストには CSV のような明確なセル境界が無いので、数値トークンを正規表現で拾う。
- */
-export function extractAmountsFromPdfText(text: string): { amount: number; maintenanceFee: number } {
-  return extractAmountsFromLines(text.split(/\r?\n/), (line) => {
-    const nums: number[] = [];
-    // `1,234,567` / `1234567` / `1234567.89` を許容（カンマ区切りの整数 / 小数）
-    const matches = line.match(/[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?/g) ?? [];
-    for (const m of matches) {
-      const cleaned = m.replace(/,/g, "");
-      const n = Number(cleaned);
-      if (Number.isFinite(n) && n > 0) nums.push(n);
-    }
-    return nums;
-  });
+    const amount = coerceCellToAmount(cover.getCell(COVER_AMOUNT_CELL).value);
+    const maintenanceFee = coerceCellToAmount(cover.getCell(COVER_MAINTENANCE_CELL).value);
+    console.log(
+      `[pdf-generator] 金額抽出: 表紙!${COVER_AMOUNT_CELL}=${amount} 表紙!${COVER_MAINTENANCE_CELL}=${maintenanceFee}`
+    );
+    return { amount, maintenanceFee };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[pdf-generator] Excel 評価による金額抽出失敗:", msg);
+    return null;
+  }
 }
 
 /**
@@ -730,14 +717,6 @@ async function convertBufferWithCloudConvert(pdfReadyBuffer: Buffer): Promise<Co
   };
   if (useEngine) convertTask.engine = useEngine;
 
-  const convertCsvTask: Record<string, unknown> = {
-    operation: "convert",
-    input: "import_xlsx",
-    input_format: "xlsx",
-    output_format: "csv",
-  };
-  if (useEngine) convertCsvTask.engine = useEngine;
-
   const body = {
     tasks: {
       import_xlsx: {
@@ -749,11 +728,6 @@ async function convertBufferWithCloudConvert(pdfReadyBuffer: Buffer): Promise<Co
       export_pdf: {
         operation: "export/url",
         input: "convert_pdf",
-      },
-      convert_csv: convertCsvTask,
-      export_csv: {
-        operation: "export/url",
-        input: "convert_csv",
       },
     },
     tag: "estimate-webapp-excel-pdf",
@@ -799,30 +773,12 @@ async function convertBufferWithCloudConvert(pdfReadyBuffer: Buffer): Promise<Co
     throw new Error(`CloudConvert PDF ダウンロード失敗: HTTP ${dlRes.status}`);
   }
   const pdf = Buffer.from(await dlRes.arrayBuffer());
-
-  let amounts: ConvertResult["amounts"] = null;
-  try {
-    const csvUrls = findAllFinishedExportUrls(job, "export_csv");
-    if (csvUrls.length > 0) {
-      const parts: string[] = [];
-      for (const url of csvUrls) {
-        const csvRes = await fetch(url);
-        if (csvRes.ok) parts.push(await csvRes.text());
-      }
-      if (parts.length > 0) {
-        amounts = extractAmountsFromCsv(parts.join("\n"));
-      }
-    }
-  } catch (csvErr) {
-    console.error("[pdf-generator] CSV 金額抽出失敗（PDF 生成は継続）:", csvErr);
-  }
-
-  return { pdf, amounts };
+  return { pdf, amounts: null };
 }
 
 /**
- * Gotenberg（Render などにホスト）で xlsx → pdf 変換し、生成 PDF からテキストを抽出して
- * 見積金額を読み戻す。Gotenberg のレスポンスは PDF バイナリのみ。
+ * Gotenberg（Render などにホスト）で xlsx → pdf 変換する。
+ * 見積金額抽出は extractAmountsFromWorkbookBuffer が担当するため、ここでは行わない。
  */
 async function convertBufferWithGotenberg(pdfReadyBuffer: Buffer): Promise<ConvertResult> {
   const baseUrl = process.env.GOTENBERG_URL?.trim().replace(/\/$/, "");
@@ -874,28 +830,24 @@ async function convertBufferWithGotenberg(pdfReadyBuffer: Buffer): Promise<Conve
   }
 
   const pdf = Buffer.from(await res.arrayBuffer());
-
-  let amounts: ConvertResult["amounts"] = null;
-  try {
-    const parsed = await pdfParse(pdf);
-    if (parsed?.text) {
-      amounts = extractAmountsFromPdfText(parsed.text);
-    }
-  } catch (parseErr) {
-    console.error("[pdf-generator] PDF テキスト抽出失敗（PDF 生成は継続）:", parseErr);
-  }
-
-  return { pdf, amounts };
+  return { pdf, amounts: null };
 }
 
 export async function convertExcelToPdf(excelBuffer: Buffer): Promise<ConvertResult> {
+  // 金額抽出は経路非依存: 元 Excel をローカルで HyperFormula 評価して 表紙!C21/C24 を読む。
+  // PDF 化エンジン側の描画結果や CSV/PDF テキストレイアウトに依存しないため、
+  // pdf-parse の行分解の癖や LibreOffice の数式キャッシュ問題の影響を受けない。
+  const amounts = await extractAmountsFromWorkbookBuffer(excelBuffer);
+
   // 既定は Gotenberg。未設定なら従来の CloudConvert にフォールバック。
   // 経路によって xlsx 前処理が異なる（Gotenberg: 全シート保持・並び替え / CloudConvert: 数式評価＋削除）。
   const gotenbergUrl = process.env.GOTENBERG_URL?.trim();
   if (gotenbergUrl) {
     const ready = await prepareExcelForGotenberg(excelBuffer);
-    return convertBufferWithGotenberg(ready);
+    const { pdf } = await convertBufferWithGotenberg(ready);
+    return { pdf, amounts };
   }
   const ready = await prepareExcelForCloudConvert(excelBuffer);
-  return convertBufferWithCloudConvert(ready);
+  const { pdf } = await convertBufferWithCloudConvert(ready);
+  return { pdf, amounts };
 }
