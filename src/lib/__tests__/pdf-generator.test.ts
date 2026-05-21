@@ -159,6 +159,51 @@ describe("extractAmountsFromPdfText", () => {
       maintenanceFee: 0,
     });
   });
+
+  it("extracts from English template cover layout (License / Maintenance Fee on same line)", () => {
+    // 実際の英語テンプレ PDF (EST-202605-009) のレイアウトを模した入力
+    const text = [
+      "QUOTATION",
+      "Quotation No: 326145260253-001",
+      "Quotation Summary",
+      "1i-Reporter On-premise License Version License¥816,000 T.B.C",
+      "2 i-Reporter Annual Maintenance Fee¥153,000 T.B.C",
+      "¥969,000",
+    ].join("\n");
+
+    expect(extractAmountsFromPdfText(text)).toEqual({
+      amount: 816000,
+      maintenanceFee: 153000,
+    });
+  });
+
+  it("falls back to TOTAL AMOUNT sequence (1st=amount, 2nd=maintenance) when cover labels are absent", () => {
+    const text = [
+      "QUOTATION",
+      "Some unrelated lines",
+      "TOTAL AMOUNT ¥816,000",
+      "Item Software ...",
+      "TOTAL AMOUNT ¥153,000",
+    ].join("\n");
+
+    expect(extractAmountsFromPdfText(text)).toEqual({
+      amount: 816000,
+      maintenanceFee: 153000,
+    });
+  });
+
+  it("ignores very large IDs that exceed the amount upper bound", () => {
+    // HubSpot deal ID のような巨大数字を amount として誤拾いしない
+    const text = [
+      "Quotation No: 326145260253-001",
+      "御見積金額 ¥1,234,567",
+      "保守料 ¥234,000",
+    ].join("\n");
+    expect(extractAmountsFromPdfText(text)).toEqual({
+      amount: 1234567,
+      maintenanceFee: 234000,
+    });
+  });
 });
 
 describe("evaluateAndStripWorkbook", () => {

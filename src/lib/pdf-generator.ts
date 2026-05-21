@@ -135,35 +135,48 @@ const COVER_AMOUNT_CELL = "C21";
 /** 表紙シートの保守料セル */
 const COVER_MAINTENANCE_CELL = "C24";
 
-/** PDF テキスト抽出のキーワード（同じ行 or 直後の行に数値があるパターンを許容） */
-const PDF_AMOUNT_KEYWORDS = ["御見積金額", "見積金額", "お見積金額", "御見積額", "御見積総額"] as const;
-const PDF_MAINTENANCE_KEYWORDS = ["年額保守", "保守料", "保守費用", "保守"] as const;
-const PDF_TOTAL_KEYWORDS = ["税抜合計", "合計"] as const;
+/** PDF テキスト抽出のキーワード（日本語テンプレ用） */
+const PDF_AMOUNT_KEYWORDS_JA = ["御見積金額", "見積金額", "お見積金額", "御見積額", "御見積総額"] as const;
+const PDF_MAINTENANCE_KEYWORDS_JA = ["年額保守", "保守料", "保守費用", "保守"] as const;
+const PDF_TOTAL_KEYWORDS_JA = ["税抜合計", "合計"] as const;
 
-/** PDF テキストから最初に現れる数値（千区切り or 整数）を整数値で返す。無ければ 0 */
+/** 抽出結果として妥当な金額範囲（誤って HubSpot 取引 ID や電話番号を拾わないため） */
+const PDF_AMOUNT_UPPER_BOUND = 10_000_000_000;
+
+/**
+ * PDF テキスト行から最大の数値（千区切り or 整数）を返す。上限を超える値は除外。
+ * 無ければ 0。
+ */
 function parsePdfLineNumber(line: string): number {
   const m = line.match(/[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?/g);
   if (!m) return 0;
   let best = 0;
   for (const tok of m) {
     const n = Number(tok.replace(/,/g, ""));
-    if (Number.isFinite(n) && n > best) best = n;
+    if (Number.isFinite(n) && n > best && n <= PDF_AMOUNT_UPPER_BOUND) best = n;
   }
   return Math.floor(best);
 }
 
 /**
  * pdf-parse で抽出した PDF テキストから見積金額・保守料を読む。
- *  - 同一行にキーワード＋数値があれば採用
- *  - 同一行に数値が無ければ直後 3 行を覗いて最初の数値を採用
- *    （LibreOffice→pdf-parse はセルごとに別行に分解しがちなため）
+ * 日本語テンプレ（御見積金額 / 保守料 等）と英語テンプレ（License / Maintenance Fee / TOTAL AMOUNT）の
+ * 両方を扱う。
  *
- * 各キーワード群について最初にヒットした値を返す（template はキーワードが 1 行のみのため）。
+ * 抽出戦略（優先度順）:
+ *   1. 日本語キーワード（御見積金額 / 保守料）— 同一行 or 直後 3 行に数値
+ *   2. 英語キーワード（License / Maintenance Fee）— 同一行に数値
+ *      ※ amount は「License を含むが Maintenance を含まない」行
+ *   3. "TOTAL AMOUNT" の出現順序フォールバック
+ *      Gotenberg のシート順は 表紙 → ライセンス → 保守料 なので、
+ *      1 個目の TOTAL AMOUNT = amount, 2 個目 = maintenance
+ *   4. 日本語 合計 / 税抜合計 — 最終フォールバック
  */
 export function extractAmountsFromPdfText(text: string): { amount: number; maintenanceFee: number } {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
 
-  function findFor(
+  /** 多段検索: 指定キーワード行 → 同一行 → 直後 3 行に数値 */
+  function findMultilineForKeywords(
     includeKeywords: ReadonlyArray<string>,
     excludeKeywords: ReadonlyArray<string> = []
   ): number {
@@ -181,9 +194,37 @@ export function extractAmountsFromPdfText(text: string): { amount: number; maint
     return 0;
   }
 
-  const amount = findFor(PDF_AMOUNT_KEYWORDS) || findFor(PDF_TOTAL_KEYWORDS);
-  // 保守料は「御見積金額」等を含む行を除外（誤拾い防止）
-  const maintenanceFee = findFor(PDF_MAINTENANCE_KEYWORDS, PDF_AMOUNT_KEYWORDS);
+  /** 同一行限定: includePattern にマッチし excludePattern にマッチしない行の最大数値 */
+  function findSameLineByPattern(includePattern: RegExp, excludePattern?: RegExp): number {
+    for (const line of lines) {
+      if (!includePattern.test(line)) continue;
+      if (excludePattern && excludePattern.test(line)) continue;
+      const n = parsePdfLineNumber(line);
+      if (n > 0) return n;
+    }
+    return 0;
+  }
+
+  // TOTAL AMOUNT を出現順に収集（シート順序: 表紙→ライセンス→保守料）
+  const totalAmountValues: number[] = [];
+  for (const line of lines) {
+    if (/TOTAL\s+AMOUNT/i.test(line)) {
+      const n = parsePdfLineNumber(line);
+      if (n > 0) totalAmountValues.push(n);
+    }
+  }
+
+  // amount: 日本語 → 英語 License → TOTAL AMOUNT[0] → 日本語 合計
+  let amount = findMultilineForKeywords(PDF_AMOUNT_KEYWORDS_JA);
+  if (amount === 0) amount = findSameLineByPattern(/\blicense\b/i, /\bmaintenance\b/i);
+  if (amount === 0 && totalAmountValues.length > 0) amount = totalAmountValues[0];
+  if (amount === 0) amount = findMultilineForKeywords(PDF_TOTAL_KEYWORDS_JA);
+
+  // maintenance: 日本語 → 英語 Maintenance → TOTAL AMOUNT[1]
+  let maintenanceFee = findMultilineForKeywords(PDF_MAINTENANCE_KEYWORDS_JA, PDF_AMOUNT_KEYWORDS_JA);
+  if (maintenanceFee === 0) maintenanceFee = findSameLineByPattern(/\bmaintenance\b/i);
+  if (maintenanceFee === 0 && totalAmountValues.length >= 2) maintenanceFee = totalAmountValues[1];
+
   return { amount, maintenanceFee };
 }
 
