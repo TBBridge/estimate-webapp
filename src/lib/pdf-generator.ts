@@ -191,6 +191,12 @@ export function extractAmountsFromPdfText(text: string): { amount: number; maint
  * 生成済み PDF バッファから金額を抽出する。LibreOffice/Gotenberg が出力した PDF テキストには
  * テンプレ数式が解決済みの値が入っているため、HF 評価が失敗しても拾える。
  * 失敗時は null。
+ *
+ * デバッグログ:
+ *   抽出に失敗（amount=0 or maintenanceFee=0）したときは、原因分析のため
+ *   ・PDF テキストの先頭スニペット
+ *   ・金額系キーワードと保守系キーワードを含む行（前後 1 行も含む）
+ *   をログに出す。
  */
 export async function extractAmountsFromPdfBuffer(
   pdfBuffer: Buffer
@@ -203,6 +209,34 @@ export async function extractAmountsFromPdfBuffer(
       `[pdf-generator] PDF テキスト抽出: amount=${result.amount} maintenanceFee=${result.maintenanceFee} ` +
         `(textLen=${parsed.text.length})`
     );
+
+    if (result.amount === 0 || result.maintenanceFee === 0) {
+      const text = parsed.text;
+      console.log(
+        `[pdf-generator] PDF text snippet (先頭 600 chars): ${JSON.stringify(text.slice(0, 600))}`
+      );
+      const lines = text.split(/\r?\n/);
+      const probeKeywords = ["金額", "見積", "保守", "合計", "ライセンス", "￥", "¥", "円"];
+      const hits: string[] = [];
+      lines.forEach((line, idx) => {
+        if (probeKeywords.some((kw) => line.includes(kw))) {
+          const ctx = [
+            idx > 0 ? `[${idx - 1}] ${lines[idx - 1]}` : "",
+            `[${idx}] ${line}`,
+            idx < lines.length - 1 ? `[${idx + 1}] ${lines[idx + 1]}` : "",
+          ]
+            .filter(Boolean)
+            .join(" / ");
+          hits.push(ctx);
+        }
+      });
+      // 重複除去して最初の 25 件まで
+      const uniqueHits = [...new Set(hits)].slice(0, 25);
+      console.log(
+        `[pdf-generator] PDF keyword 行 (${uniqueHits.length} 件): ${JSON.stringify(uniqueHits)}`
+      );
+    }
+
     return result;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
