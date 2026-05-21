@@ -72,6 +72,11 @@ export type HubSpotConfig = {
   dealOwnerSearchName?: string;
   /** 取引プロパティ内部名: 商談区分（値は契約形態の日本語ラベル：新規／ライセンス追加／オプション追加） */
   dealNegotiationProperty?: string;
+  /**
+   * 取引プロパティ内部名: 見積金額（本体 + 保守料 の合計を数値で書き込む）。
+   * 既定は `estimated_amount`。空文字を明示指定すると見積金額の同期はスキップする。
+   */
+  dealAmountProperty: string;
   /** true のとき取引名に見積番号を付与（既定 false＝会社名のみ） */
   dealNameIncludeEstimateNo: boolean;
   /** 作成時にコピーする任意プロパティ internalName → 固定値またはテンプレート */
@@ -122,6 +127,10 @@ export function getHubSpotConfig(): HubSpotConfig | null {
   const dealOwnerId = process.env.HUBSPOT_DEAL_OWNER_ID?.trim() || undefined;
   const dealOwnerSearchName = process.env.HUBSPOT_DEAL_OWNER_SEARCH_NAME?.trim() || undefined;
   const dealNegotiationProperty = process.env.HUBSPOT_DEAL_PROPERTY_NEGOTIATION?.trim() || undefined;
+  const dealAmountPropertyRaw = process.env.HUBSPOT_DEAL_PROPERTY_AMOUNT;
+  // 未設定なら既定 `estimated_amount`、空文字（明示的に空）なら同期スキップ扱い
+  const dealAmountProperty =
+    dealAmountPropertyRaw === undefined ? "estimated_amount" : dealAmountPropertyRaw.trim();
   const dealNameIncludeEstimateNo = process.env.HUBSPOT_DEAL_NAME_INCLUDE_ESTIMATE_NO === "true";
 
   const agencySendsRaw = (process.env.HUBSPOT_MATCH_AGENCY_SENDS?.trim().toLowerCase() ?? "") as string;
@@ -154,6 +163,7 @@ export function getHubSpotConfig(): HubSpotConfig | null {
     dealOwnerId,
     dealOwnerSearchName,
     dealNegotiationProperty,
+    dealAmountProperty,
     dealNameIncludeEstimateNo,
     extraCreateProperties: Object.keys(extra).length ? extra : undefined,
   };

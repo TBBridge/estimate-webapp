@@ -12,6 +12,7 @@ import { getHubSpotConfig } from "@/lib/hubspot-env";
 import {
   searchDealsByCompanyName,
   createDealByCompanyName,
+  updateDealEstimatedAmount,
 } from "@/lib/hubspot-deals";
 import { randomBytes } from "crypto";
 import { updateExcelHubSpotNo } from "@/lib/excel-writer";
@@ -313,6 +314,14 @@ export async function PUT(req: Request, { params }: Params) {
 
       if (hubCfg) {
         try {
+          // 見積金額 = 本体金額 + 保守料（DB は INTEGER, yen）
+          const amountNum = Number(cur.amount ?? 0);
+          const maintNum = Number(cur.maintenance_fee ?? 0);
+          const estimatedAmount =
+            Number.isFinite(amountNum) && Number.isFinite(maintNum)
+              ? amountNum + maintNum
+              : null;
+
           const existing = await searchDealsByCompanyName(hubCfg, cur.customer_name);
           if (existing.length === 0) {
             const created = await createDealByCompanyName(hubCfg, {
@@ -321,6 +330,7 @@ export async function PUT(req: Request, { params }: Params) {
               customerName: cur.customer_name,
               contractType: cur.contract_type,
               estimateNo: cur.no,
+              estimatedAmount,
             });
             if (!created.ok) {
               return NextResponse.json(
@@ -337,6 +347,14 @@ export async function PUT(req: Request, { params }: Params) {
             };
           } else {
             finalDealId = existing[0].id;
+            // 既存取引にも見積金額を反映（失敗しても承認は成功させる）
+            const upd = await updateDealEstimatedAmount(hubCfg, finalDealId, estimatedAmount);
+            if (!upd.ok) {
+              console.warn(
+                "[estimates/id PUT] HubSpot 既存取引の見積金額更新失敗（承認は継続）:",
+                upd.error
+              );
+            }
             hubspotSync = {
               ok: true,
               action: "existing",

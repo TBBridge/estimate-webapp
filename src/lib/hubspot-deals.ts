@@ -327,7 +327,18 @@ async function normalizeHubspotOwnerIdOnProperties(
   console.warn("[hubspot] hubspot_owner_id を有効な Owner ID に解決できませんでした。当該プロパティを送りません。");
 }
 
-/** テンプレ JSON のあと、会社名・都道府県・担当・商談区分を上書き設定 */
+/**
+ * 見積金額（本体 + 保守料）を HubSpot プロパティ用文字列に正規化する。
+ * - null / undefined / 数値化できない値は何も書かない（undefined を返す）
+ * - 数値はそのまま（整数 yen）を文字列で返す
+ */
+function formatAmountForHubSpot(amount: number | null | undefined): string | undefined {
+  if (amount === null || amount === undefined) return undefined;
+  if (!Number.isFinite(amount)) return undefined;
+  return String(Math.trunc(amount));
+}
+
+/** テンプレ JSON のあと、会社名・都道府県・担当・商談区分・見積金額を上書き設定 */
 async function applyDealRequiredAndExtraFields(
   config: HubSpotConfig,
   properties: Record<string, string>,
@@ -337,6 +348,8 @@ async function applyDealRequiredAndExtraFields(
     customerName: string;
     estimateNo?: string;
     contractType?: string;
+    /** 本体 + 保守料 の合計（yen, 整数） */
+    estimatedAmount?: number | null;
   }
 ): Promise<void> {
   const customerName = String(input.customerName ?? "").trim();
@@ -370,6 +383,13 @@ async function applyDealRequiredAndExtraFields(
   if (config.dealNegotiationProperty && input.contractType) {
     properties[config.dealNegotiationProperty] = contractTypeLabelJa(input.contractType);
   }
+  const amountProp = config.dealAmountProperty.trim();
+  if (amountProp) {
+    const v = formatAmountForHubSpot(input.estimatedAmount);
+    if (v !== undefined) {
+      properties[amountProp] = v;
+    }
+  }
 
   await normalizeHubspotOwnerIdOnProperties(config, properties);
 }
@@ -382,6 +402,8 @@ export type FindOrCreateDealInput = {
   estimateNo: string;
   /** 商談区分などに使う契約形態（DB の contract_type） */
   contractType?: string;
+  /** 見積金額（本体 + 保守料 の合計, yen 整数）。承認時にのみ渡す */
+  estimatedAmount?: number | null;
 };
 
 export type FindOrCreateDealResult =
@@ -444,6 +466,7 @@ export async function findOrCreateDeal(
       customerName: input.customerName,
       estimateNo: input.estimateNo,
       contractType: input.contractType,
+      estimatedAmount: input.estimatedAmount,
     });
 
     const created = await hubspotFetchJson<{ id: string }>(
@@ -547,6 +570,8 @@ export type CreateDealByCompanyInput = {
   contractType: string;
   /** 取引名に使う見積番号（HUBSPOT_DEAL_NAME_INCLUDE_ESTIMATE_NO=true のときのみ付与） */
   estimateNo?: string;
+  /** 見積金額（本体 + 保守料 の合計, yen 整数） */
+  estimatedAmount?: number | null;
 };
 
 /** 会社名で新しい取引を HubSpot に作成し、ID を返す */
@@ -588,6 +613,7 @@ export async function createDealByCompanyName(
       customerName,
       estimateNo: input.estimateNo,
       contractType: input.contractType,
+      estimatedAmount: input.estimatedAmount,
     });
 
     const created = await hubspotFetchJson<{ id: string }>(
@@ -600,6 +626,34 @@ export async function createDealByCompanyName(
       return { ok: false, error: "HubSpot 取引の作成レスポンスに id がありません。" };
     }
     return { ok: true, dealId: created.id };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: msg };
+  }
+}
+
+/**
+ * 既存取引の見積金額を更新する。HUBSPOT_DEAL_PROPERTY_AMOUNT が空、または amount が
+ * 数値化できないときは何もせず { ok: true, skipped: true } を返す。
+ */
+export async function updateDealEstimatedAmount(
+  config: HubSpotConfig,
+  dealId: string,
+  estimatedAmount: number | null | undefined
+): Promise<{ ok: true; updated: boolean } | { ok: false; error: string }> {
+  try {
+    const amountProp = config.dealAmountProperty.trim();
+    if (!amountProp) return { ok: true, updated: false };
+    const v = formatAmountForHubSpot(estimatedAmount);
+    if (v === undefined) return { ok: true, updated: false };
+
+    await hubspotFetchJson(
+      config,
+      "PATCH",
+      `/crm/v3/objects/deals/${encodeURIComponent(dealId)}`,
+      { properties: { [amountProp]: v } }
+    );
+    return { ok: true, updated: true };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, error: msg };
