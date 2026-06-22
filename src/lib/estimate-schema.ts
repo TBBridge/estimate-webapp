@@ -47,6 +47,7 @@ export const OPTION_ITEMS = {
   iRepoEdgeOCR: { id: "i_repo_edge_ocr", labelJa: "i-Repo EdgeOCR", labelEn: "i-Repo EdgeOCR", hasLicenseCount: true },
   iRepoFreeDraw: { id: "i_repo_free_draw", labelJa: "i-Repo FreeDraw", labelEn: "i-Repo FreeDraw", hasLicenseCount: true },
   iRepoWorkFlow: { id: "i_repo_workflow", labelJa: "i-Repo WorkFlow", labelEn: "i-Repo WorkFlow", hasLicenseCount: true },
+  iRepoScan: { id: "i_repo_scan", labelJa: "i-Repo Scan", labelEn: "i-Repo Scan", hasLicenseCount: true },
 } as const;
 
 /** 契約形態の選択肢（提供形態によって表示するものを制限） */
@@ -97,6 +98,10 @@ export interface FormFieldDef {
   kind: FormFieldKind;
   /** オプション系の場合、OPTION_ITEMS のキーまたはキー配列 */
   optionIds?: (keyof typeof OPTION_ITEMS)[];
+  /** options_check で「有」を初期選択にする（オプション追加で使用） */
+  defaultHasOptions?: boolean;
+  /** options_check で、ライセンス数をチェックボックス右側にインライン入力させる際の保存先フィールド id */
+  licenseCountsField?: string;
   required?: boolean;
   /** textarea の行数 */
   rows?: number;
@@ -433,15 +438,21 @@ export const ONPREM_OPTION_ADD_FIELDS: FormFieldDef[] = [
       "iRepoEdgeOCR",
       "iRepoFreeDraw",
       "iRepoWorkFlow",
+      "iRepoScan",
     ],
+    // オプション追加は「有」を既定にし、ライセンス数はチェックボックス右側にインライン入力する
+    defaultHasOptions: true,
+    licenseCountsField: "optionLicenseCounts",
     required: false,
   },
   {
+    // ライセンス数は options_check 内にインライン表示するため入力欄は描画しないが、
+    // 一覧・Excel・詳細表示で参照するためフィールド定義は残す（保存先は optionLicenseCounts）
     id: "optionLicenseCounts",
     labelJa: "オプション別ライセンス数",
     labelEn: "License count per option",
     kind: "option_license_counts",
-    optionIds: ["iRepoEdgeOCR", "iRepoFreeDraw", "iRepoWorkFlow"],
+    optionIds: ["iRepoEdgeOCR", "iRepoFreeDraw", "iRepoWorkFlow", "iRepoScan"],
     required: false,
   },
   { id: "existingMaintenanceStart", labelJa: "既存保守開始年月", labelEn: "Existing maintenance start (Y/M)", kind: "year_month", required: true },

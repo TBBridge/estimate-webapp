@@ -15,6 +15,7 @@ import {
   SALES_AGENCY_CONTACT_FIELDS,
   APPLICATION_DETAIL_EXTRA_FIELDS,
   isValidLicenseCountValue,
+  OPTION_ITEMS,
   resolveCustomerDisplayName,
   SALES_AGENCY_PRESERVED_KEYS,
   validateEstimateRequesterContact,
@@ -36,7 +37,27 @@ type KintoneLicenseCandidate = {
   existingLicenseCount?: number;
   existingMaintenanceStart?: { year: number; month: number };
   existingMaintenanceEnd?: { year: number; month: number };
+  /** オプション追加時：現在契約中オプションの有無（OPTION_ITEMS のキー → 有無） */
+  optionPresence?: Record<string, boolean>;
+  /** オプション追加時：現在契約中オプションのライセンス数（OPTION_ITEMS のキー → 数） */
+  optionCounts?: Record<string, number>;
 };
+
+/** 現在の kintone オプション契約を読み取り専用表示する行（ラベル＋ライセンス数） */
+type CurrentOptionLine = { label: string; count?: number };
+
+function buildCurrentOptionLines(c: KintoneLicenseCandidate, isEn: boolean): CurrentOptionLine[] {
+  const presence = c.optionPresence ?? {};
+  const counts = c.optionCounts ?? {};
+  const lines: CurrentOptionLine[] = [];
+  for (const [key, opt] of Object.entries(OPTION_ITEMS)) {
+    const count = counts[key];
+    const isPresent = presence[key] === true || (typeof count === "number" && count > 0);
+    if (!isPresent) continue;
+    lines.push({ label: isEn ? opt.labelEn : opt.labelJa, count: typeof count === "number" ? count : undefined });
+  }
+  return lines;
+}
 
 const KINTONE_LOOKUP_DEBOUNCE_MS = 600;
 const PRESERVED_CONTACT_KEYS = [
@@ -91,6 +112,8 @@ export default function EstimateCreateForm() {
   const [kintoneMsgIsError, setKintoneMsgIsError] = useState(false);
   const [kintoneCandidates, setKintoneCandidates] = useState<KintoneLicenseCandidate[]>([]);
   const [kintonePickedId, setKintonePickedId] = useState<string | null>(null);
+  // オプション追加時：kintone 上の現在のオプション契約（読み取り専用表示用）
+  const [kintoneCurrentOptions, setKintoneCurrentOptions] = useState<CurrentOptionLine[] | null>(null);
   const kintoneSeqRef = useRef(0);
 
   const contractOptions = deliveryType ? getContractTypesForDelivery(deliveryType as DeliveryType) : [];
@@ -156,6 +179,23 @@ export default function EstimateCreateForm() {
     };
   }, [showMainForm, user?.agencyId, user?.role]);
 
+  /** オプション追加など defaultHasOptions 指定の項目は「有」を初期選択にする */
+  useEffect(() => {
+    if (!showMainForm) return;
+    const fields = getFormFields(deliveryType as DeliveryType, contractType as ContractType);
+    setValues((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const f of fields) {
+        if (f.kind === "options_check" && f.defaultHasOptions && next[f.id] === undefined) {
+          next[f.id] = { hasOptions: true };
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [showMainForm, deliveryType, contractType]);
+
   /** 会社名入力に連動して kintone を検索（ライセンス追加・オプション追加時） */
   useEffect(() => {
     if (!showKintoneLookup || user?.role !== "agency" || !user?.agencyId) {
@@ -164,6 +204,7 @@ export default function EstimateCreateForm() {
       setKintoneLookupState("idle");
       setKintoneCandidates([]);
       setKintonePickedId(null);
+      setKintoneCurrentOptions(null);
       return;
     }
 
@@ -176,6 +217,7 @@ export default function EstimateCreateForm() {
       setKintoneLookupState("idle");
       setKintoneCandidates([]);
       setKintonePickedId(null);
+      setKintoneCurrentOptions(null);
       setValues((prev) => stripKintoneFilledFields(prev));
       return;
     }
@@ -211,6 +253,8 @@ export default function EstimateCreateForm() {
             existingLicenseCount?: number;
             existingMaintenanceStart?: { year: number; month: number };
             existingMaintenanceEnd?: { year: number; month: number };
+            optionPresence?: Record<string, boolean>;
+            optionCounts?: Record<string, number>;
           };
 
           if (seq !== kintoneSeqRef.current) return;
@@ -218,6 +262,7 @@ export default function EstimateCreateForm() {
           if (res.status === 503 && data.configured === false) {
             setKintoneCandidates([]);
             setKintonePickedId(null);
+            setKintoneCurrentOptions(null);
             setKintoneMsg(t(locale, "estimate.kintoneNotConfigured"));
             setKintoneMsgIsError(true);
             setKintoneLookupState("idle");
@@ -227,6 +272,7 @@ export default function EstimateCreateForm() {
           if (!res.ok) {
             setKintoneCandidates([]);
             setKintonePickedId(null);
+            setKintoneCurrentOptions(null);
             setKintoneMsg(data.error ?? `HTTP ${res.status}`);
             setKintoneMsgIsError(true);
             setValues((prev) => stripKintoneFilledFields(prev));
@@ -239,6 +285,7 @@ export default function EstimateCreateForm() {
           if (!data.found || candidates.length === 0) {
             setKintoneCandidates([]);
             setKintonePickedId(null);
+            setKintoneCurrentOptions(null);
             setKintoneMsg(data.message?.trim() || t(locale, "estimate.kintoneNotFound"));
             setKintoneMsgIsError(false);
             setValues((prev) => stripKintoneFilledFields(prev));
@@ -249,6 +296,7 @@ export default function EstimateCreateForm() {
           if (candidates.length > 1) {
             setKintoneCandidates(candidates);
             setKintonePickedId(candidates[0]?.recordId ?? null);
+            setKintoneCurrentOptions(null);
             setValues((prev) => stripKintoneFilledFields(prev));
             setKintoneMsg(t(locale, "estimate.kintonePickPrompt"));
             setKintoneMsgIsError(false);
@@ -260,12 +308,16 @@ export default function EstimateCreateForm() {
           setKintoneCandidates([]);
           setKintonePickedId(null);
           setValues((prev) => mergeKintoneCandidate(prev, only));
+          setKintoneCurrentOptions(
+            contractType === "option_add" ? buildCurrentOptionLines(only, isEn) : null
+          );
           setKintoneMsg(t(locale, "estimate.kintoneLookupSuccess"));
         } catch (err) {
           if (seq !== kintoneSeqRef.current) return;
           console.error("[kintone lookup]", err);
           setKintoneCandidates([]);
           setKintonePickedId(null);
+          setKintoneCurrentOptions(null);
           setKintoneMsg(isEn ? "Search failed. Please try again." : "検索に失敗しました。しばらくしてから再度お試しください。");
           setKintoneMsgIsError(true);
           setValues((prev) => stripKintoneFilledFields(prev));
@@ -345,6 +397,7 @@ export default function EstimateCreateForm() {
     setKintoneMsgIsError(false);
     setKintoneCandidates([]);
     setKintonePickedId(null);
+    setKintoneCurrentOptions(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -586,9 +639,35 @@ export default function EstimateCreateForm() {
                       {kintoneMsg}
                     </p>
                   )}
+                  {user?.agencyId && kintoneLookupState !== "loading" && kintoneCurrentOptions && (
+                    <div className="mt-3 border-t border-stone-200 pt-2 dark:border-stone-600">
+                      <p className="font-body text-xs font-medium text-[var(--color-ink)]">
+                        {t(locale, "estimate.kintoneCurrentOptionsTitle")}
+                      </p>
+                      {kintoneCurrentOptions.length === 0 ? (
+                        <p className="mt-1 font-body text-xs text-[var(--color-ink-muted)]">
+                          {t(locale, "estimate.kintoneCurrentOptionsNone")}
+                        </p>
+                      ) : (
+                        <ul className="mt-1 space-y-0.5 font-body text-xs text-[var(--color-ink)]">
+                          {kintoneCurrentOptions.map((o) => (
+                            <li key={o.label}>
+                              ・{o.label}
+                              {o.count != null && (
+                                <span className="text-[var(--color-ink-muted)]">
+                                  （{o.count} {t(locale, "estimate.licenses")}）
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
-              {formFields.map((f) => (
+              {/* option_license_counts はオプション有無のチェックボックス右側にインライン表示するため単独描画しない */}
+              {formFields.filter((f) => f.kind !== "option_license_counts").map((f) => (
                 <div key={f.id}>
                   <FormFieldRenderer
                     field={f}
@@ -686,6 +765,7 @@ export default function EstimateCreateForm() {
                       onClick={() => {
                         setKintoneCandidates([]);
                         setKintonePickedId(null);
+                        setKintoneCurrentOptions(null);
                         setValues((prev) => stripKintoneFilledFields(prev));
                         setKintoneMsg("");
                       }}
@@ -700,6 +780,9 @@ export default function EstimateCreateForm() {
                         const c = kintoneCandidates.find((x) => x.recordId === kintonePickedId);
                         if (!c) return;
                         setValues((prev) => mergeKintoneCandidate(prev, c));
+                        setKintoneCurrentOptions(
+                          contractType === "option_add" ? buildCurrentOptionLines(c, isEn) : null
+                        );
                         setKintoneCandidates([]);
                         setKintonePickedId(null);
                         setKintoneMsg(t(locale, "estimate.kintoneLookupSuccess"));

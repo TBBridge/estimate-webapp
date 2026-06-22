@@ -8,7 +8,7 @@
  */
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import type { ContractType, DeliveryType } from "@/lib/estimate-schema";
+import { OPTION_ITEMS, type ContractType, type DeliveryType } from "@/lib/estimate-schema";
 import {
   escapeKintoneQueryString,
   fetchKintoneRecords,
@@ -17,7 +17,12 @@ import {
   kintoneStringValue,
   type KintoneRecord,
 } from "@/lib/kintone";
-import { getKintoneLicenseAppConfig, kintoneConfigErrorMessage } from "@/lib/kintone-env";
+import {
+  getKintoneLicenseAppConfig,
+  getKintoneOptionFieldConfigs,
+  kintoneConfigErrorMessage,
+  type KintoneOptionFieldConfig,
+} from "@/lib/kintone-env";
 import { handleAuthError, requireAuth } from "@/lib/auth/guards";
 
 export const runtime = "nodejs";
@@ -32,14 +37,33 @@ export type KintoneLicenseCandidate = {
   existingLicenseCount?: number;
   existingMaintenanceStart?: { year: number; month: number };
   existingMaintenanceEnd?: { year: number; month: number };
+  /** オプション追加時：現在契約中オプションの有無（OPTION_ITEMS のキー → 有無） */
+  optionPresence?: Record<string, boolean>;
+  /** オプション追加時：現在契約中オプションのライセンス数（OPTION_ITEMS のキー → 数） */
+  optionCounts?: Record<string, number>;
 };
+
+/** kintone の「有無」フィールド値を契約有りとみなすか（チェックボックス配列・選択肢・文字列に対応） */
+const PRESENCE_NEGATIVE_TOKENS = new Set(["", "0", "無", "なし", "無し", "no", "false", "off", "未契約", "ー", "-", "—"]);
+
+function isKintonePresenceTruthy(rec: KintoneRecord, fieldCode: string): boolean {
+  const cell = rec[fieldCode];
+  if (!cell || typeof cell !== "object" || !("value" in cell)) return false;
+  const v = (cell as { value: unknown }).value;
+  if (v == null) return false;
+  if (Array.isArray(v)) return v.length > 0;
+  if (typeof v === "number") return v > 0;
+  const s = String(v).trim();
+  return s !== "" && !PRESENCE_NEGATIVE_TOKENS.has(s.toLowerCase());
+}
 
 function mapRecordToCandidate(
   rec: KintoneRecord,
   fieldCustomer: string,
   fieldLicense: string,
   fieldStart: string,
-  fieldEnd: string
+  fieldEnd: string,
+  optionConfigs: KintoneOptionFieldConfig[]
 ): KintoneLicenseCandidate | null {
   const recordId = String(rec.$id?.value ?? "").trim();
   if (!recordId) return null;
@@ -49,12 +73,28 @@ function mapRecordToCandidate(
   const endRaw = kintoneStringValue(rec, fieldEnd);
   const existingMaintenanceStart = kintoneDateToYearMonth(startRaw) ?? undefined;
   const existingMaintenanceEnd = kintoneDateToYearMonth(endRaw) ?? undefined;
+
+  let optionPresence: Record<string, boolean> | undefined;
+  let optionCounts: Record<string, number> | undefined;
+  for (const cfg of optionConfigs) {
+    if (cfg.presenceField) {
+      const present = isKintonePresenceTruthy(rec, cfg.presenceField);
+      (optionPresence ??= {})[cfg.optionKey] = present;
+    }
+    if (cfg.countField) {
+      const cnt = kintoneNumberValue(rec, cfg.countField);
+      if (cnt != null) (optionCounts ??= {})[cfg.optionKey] = cnt;
+    }
+  }
+
   return {
     recordId,
     customerDisplay,
     existingLicenseCount,
     existingMaintenanceStart,
     existingMaintenanceEnd,
+    optionPresence,
+    optionCounts,
   };
 }
 
@@ -118,6 +158,17 @@ export async function POST(req: Request) {
     const fieldStart = env("KINTONE_FIELD_MAINT_START", "maint_start");
     const fieldEnd = env("KINTONE_FIELD_MAINT_END", "maint_end");
 
+    // オプション追加時のみ、現在のオプション契約（有無・ライセンス数）を参照する
+    const optionConfigs =
+      contractType === "option_add"
+        ? getKintoneOptionFieldConfigs(
+            Object.entries(OPTION_ITEMS).map(([key, opt]) => ({ key, id: opt.id }))
+          )
+        : [];
+    const optionFieldCodes = optionConfigs.flatMap((c) =>
+      [c.presenceField, c.countField].filter((x): x is string => !!x)
+    );
+
     const customerMode = env("KINTONE_CUSTOMER_MATCH_MODE", "like").toLowerCase();
     const maxResults = Math.min(Math.max(parseInt(env("KINTONE_LOOKUP_MAX_RESULTS", "30"), 10) || 30, 1), 100);
     const minLen = Math.max(1, parseInt(env("KINTONE_SEARCH_MIN_LENGTH", "2"), 10) || 2);
@@ -161,17 +212,22 @@ export async function POST(req: Request) {
 
     const query = `${agencyClause} and ${customerClause} order by $id desc limit ${limit}`;
 
+    // フィールド指定は重複を除外（オプションのフィールドが基本項目と被ることはまずないが念のため）
+    const fields = Array.from(
+      new Set(["$id", fieldCustomer, fieldLicense, fieldStart, fieldEnd, ...optionFieldCodes])
+    );
+
     const data = await fetchKintoneRecords({
       domain,
       appId,
       apiToken,
       query,
-      fields: ["$id", fieldCustomer, fieldLicense, fieldStart, fieldEnd],
+      fields,
     });
 
     const candidates: KintoneLicenseCandidate[] = [];
     for (const rec of data.records ?? []) {
-      const c = mapRecordToCandidate(rec, fieldCustomer, fieldLicense, fieldStart, fieldEnd);
+      const c = mapRecordToCandidate(rec, fieldCustomer, fieldLicense, fieldStart, fieldEnd, optionConfigs);
       if (c) candidates.push(c);
     }
 
@@ -195,6 +251,8 @@ export async function POST(req: Request) {
       existingLicenseCount: first.existingLicenseCount,
       existingMaintenanceStart: first.existingMaintenanceStart,
       existingMaintenanceEnd: first.existingMaintenanceEnd,
+      optionPresence: first.optionPresence,
+      optionCounts: first.optionCounts,
     });
   } catch (e) {
     const authRes = handleAuthError(e);

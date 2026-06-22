@@ -25,6 +25,38 @@ export function getKintoneLicenseAppConfig(): KintoneLicenseAppConfig | null {
   return { domain, appId, apiToken };
 }
 
+/**
+ * オプション契約参照用フィールド設定（オプション追加時に kintone の現在契約を表示するため）
+ *
+ * 各オプション（OPTION_ITEMS のキー）について、kintone ライセンス管理アプリの
+ * 「有無」フィールドと「ライセンス数」フィールドのフィールドコードを env で指定する。
+ *   KINTONE_FIELD_OPTION_<ID 大文字>_PRESENCE  … 契約有無のフィールドコード
+ *   KINTONE_FIELD_OPTION_<ID 大文字>_COUNT     … 契約ライセンス数のフィールドコード
+ * 例: i_repo_edge_ocr → KINTONE_FIELD_OPTION_I_REPO_EDGE_OCR_PRESENCE / _COUNT
+ * 未設定のオプションはスキップする（連携未設定は静かに無視する方針）。
+ */
+export type KintoneOptionFieldConfig = {
+  /** OPTION_ITEMS のキー */
+  optionKey: string;
+  presenceField?: string;
+  countField?: string;
+};
+
+export function getKintoneOptionFieldConfigs(
+  optionEntries: { key: string; id: string }[]
+): KintoneOptionFieldConfig[] {
+  const configs: KintoneOptionFieldConfig[] = [];
+  for (const { key, id } of optionEntries) {
+    const base = `KINTONE_FIELD_OPTION_${id.toUpperCase()}`;
+    const presenceField = process.env[`${base}_PRESENCE`]?.trim() || undefined;
+    const countField = process.env[`${base}_COUNT`]?.trim() || undefined;
+    if (presenceField || countField) {
+      configs.push({ optionKey: key, presenceField, countField });
+    }
+  }
+  return configs;
+}
+
 export function kintoneConfigErrorMessage(): string {
   return (
     "kintone が未設定です。KINTONE_DOMAIN と KINTONE_API_TOKEN（または KINTONE_API_TOKEN_APP219）、" +

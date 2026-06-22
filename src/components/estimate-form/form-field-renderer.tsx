@@ -226,8 +226,13 @@ export function FormFieldRenderer({ field, value, formValues, onChange, locale }
 
   if (kind === "options_check" && optionIds) {
     const data = (value as Record<string, boolean | unknown>) ?? {};
-    const hasOptions = data.hasOptions === true;
+    // defaultHasOptions が指定されたフィールド（オプション追加）は未入力時「有」を既定にする
+    const hasOptions = data.hasOptions === true || (field.defaultHasOptions === true && data.hasOptions === undefined);
     const checked = { ...data } as Record<string, boolean>;
+    const countsFieldId = field.licenseCountsField;
+    const counts = countsFieldId
+      ? ((formValues[countsFieldId] as Record<string, number | undefined>) ?? {})
+      : {};
     return (
       <div className="space-y-3">
         <div>
@@ -238,14 +243,17 @@ export function FormFieldRenderer({ field, value, formValues, onChange, locale }
                 type="radio"
                 name={`${id}_hasOptions`}
                 checked={!hasOptions}
-                onChange={() =>
+                onChange={() => {
                   onChange(
                     id,
                     Object.fromEntries([
                       ["hasOptions", false],
                       ...optionIds.map((k) => [k, false]),
                     ])
-                  )}
+                  );
+                  // 「無」を選んだらインラインで入力したライセンス数もクリアする
+                  if (countsFieldId) onChange(countsFieldId, {});
+                }}
               />
               {t(locale, "estimate.optionNone")}
             </label>
@@ -270,15 +278,43 @@ export function FormFieldRenderer({ field, value, formValues, onChange, locale }
             {optionIds.map((key) => {
               const opt = OPTION_ITEMS[key];
               if (!opt) return null;
+              const hasLicenseCount = "hasLicenseCount" in opt && opt.hasLicenseCount;
+              const isChecked = !!checked[key];
               return (
-                <label key={key} className="flex items-center gap-2 font-body text-sm" id={`${id}_${key}`}>
-                  <input
-                    type="checkbox"
-                    checked={!!checked[key]}
-                    onChange={(e) => onChange(id, { ...checked, [key]: e.target.checked })}
-                  />
-                  {locale === "en" ? opt.labelEn : opt.labelJa}
-                </label>
+                <div key={key} className="flex flex-wrap items-center gap-2" id={`${id}_${key}`}>
+                  <label className="flex items-center gap-2 font-body text-sm">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={(e) => {
+                        onChange(id, { ...checked, [key]: e.target.checked });
+                        // チェックを外したらそのオプションのライセンス数もクリア
+                        if (!e.target.checked && hasLicenseCount && countsFieldId) {
+                          onChange(countsFieldId, { ...counts, [key]: undefined });
+                        }
+                      }}
+                    />
+                    {locale === "en" ? opt.labelEn : opt.labelJa}
+                  </label>
+                  {hasLicenseCount && countsFieldId && isChecked && (
+                    <span className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        min={0}
+                        value={counts[key] ?? ""}
+                        onChange={(e) =>
+                          onChange(countsFieldId, {
+                            ...counts,
+                            [key]: e.target.value === "" ? undefined : Number(e.target.value),
+                          })
+                        }
+                        aria-label={`${locale === "en" ? opt.labelEn : opt.labelJa} ${t(locale, "estimate.licenses")}`}
+                        className="w-20 rounded-lg border border-stone-300 bg-white px-2 py-1.5 font-body text-sm dark:border-stone-600 dark:bg-stone-800"
+                      />
+                      <span className="font-body text-xs text-[var(--color-ink-muted)]">{t(locale, "estimate.licenses")}</span>
+                    </span>
+                  )}
+                </div>
               );
             })}
           </div>
@@ -359,37 +395,10 @@ export function FormFieldRenderer({ field, value, formValues, onChange, locale }
     );
   }
 
-  if (kind === "option_license_counts" && optionIds) {
-    const counts = (value as Record<string, number>) ?? {};
-    return (
-      <div className="space-y-2">
-        <span className="block font-body text-sm text-[var(--color-ink-muted)]">{label}</span>
-        {optionIds.map((key) => {
-          const opt = OPTION_ITEMS[key];
-          if (!opt || !("hasLicenseCount" in opt)) return null;
-          return (
-            <div key={key} className="flex items-center gap-2">
-              <span className="w-40 font-body text-sm text-[var(--color-ink)]">
-                {locale === "en" ? opt.labelEn : opt.labelJa}
-              </span>
-              <input
-                type="number"
-                min={0}
-                value={counts[key] ?? ""}
-                onChange={(e) =>
-                  onChange(id, {
-                    ...counts,
-                    [key]: e.target.value === "" ? undefined : Number(e.target.value),
-                  })
-                }
-                className="w-20 rounded-lg border border-stone-300 bg-white px-2 py-1.5 font-body text-sm dark:border-stone-600 dark:bg-stone-800"
-              />
-              <span className="font-body text-xs text-[var(--color-ink-muted)]">{t(locale, "estimate.licenses")}</span>
-            </div>
-          );
-        })}
-      </div>
-    );
+  // オプション別ライセンス数は options_check 内にチェックボックスの右側へインライン表示するため、
+  // 単独フィールドとしては描画しない（保存先 optionLicenseCounts は一覧・Excel・詳細表示で参照）。
+  if (kind === "option_license_counts") {
+    return null;
   }
 
   return null;
