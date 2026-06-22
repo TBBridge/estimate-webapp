@@ -19,28 +19,11 @@ import {
   resolveCustomerDisplayName,
   validateEstimateRequesterContact,
 } from "@/lib/estimate-schema";
+import { resolveTemplateId } from "@/lib/estimate-excel-build";
 import { handleAuthError, requireAuth } from "@/lib/auth/guards";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
-
-function resolveTemplateId(
-  deliveryType: string,
-  contractType: string,
-  cloudBilling?: string
-): string | null {
-  if (deliveryType === "onprem") {
-    if (contractType === "new") return "tpl-1";
-    if (contractType === "license_add") return "tpl-2";
-    if (contractType === "option_add") return "tpl-3";
-  }
-  if (deliveryType === "subscription" && contractType === "new") return "tpl-4";
-  if (deliveryType === "cloud") {
-    if (contractType === "new") return cloudBilling === "period" ? "tpl-6" : "tpl-5";
-    if (contractType === "license_add") return "tpl-7";
-  }
-  return null;
-}
 
 export async function POST(req: Request) {
   try {

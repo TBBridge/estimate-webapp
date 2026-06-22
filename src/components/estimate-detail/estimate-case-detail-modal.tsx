@@ -163,6 +163,11 @@ export function EstimateCaseDetailModal({
     needsCloudBillingChoice(e.deliveryType, e.contractType) && e.cloudBilling === "period";
 
   function updateFormField(id: string, v: unknown) {
+    // 会社名（正式名称）は一覧・Excel「For:」に使う顧客名 (customer_name) の元データ。
+    // 編集が一覧へ追従するよう、顧客名フィールドも同期する。
+    if (id === "userCompanyNameJa") {
+      setCustomerName(String(v ?? ""));
+    }
     setFormValues((prev) => {
       const next: FormFieldValues = { ...prev, [id]: v };
       if (id === "userReleaseSubscription" && v === "no") {

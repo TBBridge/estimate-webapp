@@ -17,6 +17,7 @@ import {
 import { randomBytes } from "crypto";
 import { updateExcelHubSpotNo } from "@/lib/excel-writer";
 import { generateEstimatePdfAndSave } from "@/lib/estimate-pdf-generate";
+import { regenerateEstimateExcel } from "@/lib/estimate-excel-build";
 import { sanitizeEstimateNoForBlobPath } from "@/lib/excel-file-history";
 import type { HubSpotSyncResultDto } from "@/lib/hubspot-approve-feedback";
 import { HUBSPOT_DEAL_SELECT_CREATE_NEW } from "@/lib/hubspot-approve-feedback";
@@ -32,6 +33,10 @@ import {
 } from "@/lib/auth/guards";
 
 type Params = { params: Promise<{ id: string }> };
+
+// PATCH（編集）・PUT（承認）では Excel/PDF 再生成を伴うため実行時間を延長する
+export const runtime = "nodejs";
+export const maxDuration = 60;
 
 export async function GET(req: Request, { params }: Params) {
   try {
@@ -214,7 +219,40 @@ export async function PATCH(req: Request, { params }: Params) {
                 TO_CHAR(approved_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS approved_at
     `;
     const r = updated[0] as Record<string, unknown>;
-    return NextResponse.json(jsonEstimateRow(r));
+
+    // 編集内容（会社名・申請内容）を成果物へ反映するため Excel を再生成し、
+    // 続けて PDF も作り直す。再生成に失敗しても編集自体は成功扱いとし、
+    // 結果フラグだけ返す（DB の編集はすでに確定済み）。
+    let excelRegenerated = false;
+    let pdfRegenerated = false;
+    let regenerateError: string | undefined;
+    try {
+      const regen = await regenerateEstimateExcel(sql, id);
+      if (regen) {
+        excelRegenerated = true;
+        r.excel_url = regen.excelUrl;
+        r.excel_file_history = regen.excelFileHistory;
+        r.pdf_url = "";
+        try {
+          const { pdfUrl } = await generateEstimatePdfAndSave(sql, id);
+          r.pdf_url = pdfUrl;
+          pdfRegenerated = true;
+        } catch (pdfErr) {
+          regenerateError = pdfErr instanceof Error ? pdfErr.message : String(pdfErr);
+          console.error("[estimates/id PATCH] PDF 再生成失敗（編集は確定済み）:", regenerateError);
+        }
+      }
+    } catch (excelErr) {
+      regenerateError = excelErr instanceof Error ? excelErr.message : String(excelErr);
+      console.error("[estimates/id PATCH] Excel 再生成失敗（編集は確定済み）:", regenerateError);
+    }
+
+    return NextResponse.json({
+      ...jsonEstimateRow(r),
+      excelRegenerated,
+      pdfRegenerated,
+      ...(regenerateError ? { regenerateError } : {}),
+    });
   } catch (e) {
     const authRes = handleAuthError(e);
     if (authRes) return authRes;

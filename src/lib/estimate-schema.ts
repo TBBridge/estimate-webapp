@@ -124,11 +124,11 @@ export const END_USER_COMPANY_FIELDS: FormFieldDef[] = [
     required: true,
   },
   { id: "userCompanyNameReading", labelJa: "会社名（略称のよみがな）", labelEn: "Company name (abbreviation reading)", kind: "text", required: false },
-  { id: "userContactLastName", labelJa: "担当者氏名（姓）", labelEn: "Contact last name", kind: "text", required: false },
-  { id: "userContactFirstName", labelJa: "担当者氏名（名）", labelEn: "Contact first name", kind: "text", required: false },
-  { id: "userDepartment", labelJa: "部署名", labelEn: "Department", kind: "text", required: false },
-  { id: "userAddress", labelJa: "住所", labelEn: "Address", kind: "text", required: false },
-  { id: "userEmail", labelJa: "メールアドレス", labelEn: "Email address", kind: "email", required: false },
+  { id: "userContactLastName", labelJa: "担当者氏名（姓）", labelEn: "Contact last name", kind: "text", required: true },
+  { id: "userContactFirstName", labelJa: "担当者氏名（名）", labelEn: "Contact first name", kind: "text", required: true },
+  { id: "userDepartment", labelJa: "部署名", labelEn: "Department", kind: "text", required: true },
+  { id: "userAddress", labelJa: "住所", labelEn: "Address", kind: "text", required: true },
+  { id: "userEmail", labelJa: "メールアドレス", labelEn: "Email address", kind: "email", required: true },
   {
     id: "userPhone",
     labelJa: "電話番号",
@@ -136,7 +136,7 @@ export const END_USER_COMPANY_FIELDS: FormFieldDef[] = [
     kind: "phone_country",
     dialField: "userPhoneDial",
     localField: "userPhoneLocal",
-    required: false,
+    required: true,
   },
   {
     id: "userReleaseSubscription",
@@ -227,10 +227,10 @@ export function getEstimateRequesterContact(
 
 /** 販売代理店情報（申請書面上の連絡先） */
 export const SALES_AGENCY_CONTACT_FIELDS: FormFieldDef[] = [
-  { id: "salesAgencyName", labelJa: "代理店名", labelEn: "Agency name", kind: "text", required: false },
-  { id: "salesAgencyContactName", labelJa: "担当者氏名", labelEn: "Contact person name", kind: "text", required: false },
-  { id: "salesAgencyDepartment", labelJa: "部署名", labelEn: "Department", kind: "text", required: false },
-  { id: "salesAgencyEmail", labelJa: "メールアドレス", labelEn: "Email address", kind: "email", required: false },
+  { id: "salesAgencyName", labelJa: "代理店名", labelEn: "Agency name", kind: "text", required: true },
+  { id: "salesAgencyContactName", labelJa: "担当者氏名", labelEn: "Contact person name", kind: "text", required: true },
+  { id: "salesAgencyDepartment", labelJa: "部署名", labelEn: "Department", kind: "text", required: true },
+  { id: "salesAgencyEmail", labelJa: "メールアドレス", labelEn: "Email address", kind: "email", required: true },
   {
     id: "salesAgencyPhone",
     labelJa: "電話番号",
@@ -238,7 +238,7 @@ export const SALES_AGENCY_CONTACT_FIELDS: FormFieldDef[] = [
     kind: "phone_country",
     dialField: "salesAgencyPhoneDial",
     localField: "salesAgencyPhoneLocal",
-    required: false,
+    required: true,
   },
   {
     id: "salesReleaseSubscription",
@@ -333,7 +333,7 @@ export const APPLICATION_DETAIL_EXTRA_FIELDS: FormFieldDef[] = [
     labelJa: "OS",
     labelEn: "OS",
     kind: "radio",
-    required: false,
+    required: true,
     radioOptions: [
       { value: "ios", labelJa: "iOS", labelEn: "iOS" },
       { value: "windows", labelJa: "Windows", labelEn: "Windows" },
@@ -345,7 +345,7 @@ export const APPLICATION_DETAIL_EXTRA_FIELDS: FormFieldDef[] = [
     labelJa: "外部システム連携API",
     labelEn: "External system integration API",
     kind: "radio",
-    required: false,
+    required: true,
     radioOptions: [
       { value: "yes", labelJa: "あり", labelEn: "Yes" },
       { value: "no", labelJa: "なし", labelEn: "No" },
