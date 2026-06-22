@@ -110,7 +110,7 @@ export function FormFieldRenderer({ field, value, formValues, onChange, locale }
     );
   }
 
-  if (kind === "number" && id === "licenseCount") {
+  if (kind === "number" && (id === "licenseCount" || field.licenseCountSelect)) {
     const allowed = ALLOWED_I_REPORTER_LICENSE_COUNTS as readonly number[];
     const n =
       value !== undefined && value !== null && value !== "" && typeof value === "number"
@@ -166,6 +166,25 @@ export function FormFieldRenderer({ field, value, formValues, onChange, locale }
   }
 
   if (kind === "number") {
+    // 表示専用（編集不可）：kintone 等で自動入力された値を確認表示する
+    if (field.readOnly) {
+      return (
+        <div>
+          <label className="block font-body text-sm text-[var(--color-ink-muted)]">
+            {label}
+            {required && " *"}
+          </label>
+          <input
+            type="number"
+            value={(value as number) ?? ""}
+            readOnly
+            aria-readonly="true"
+            tabIndex={-1}
+            className="mt-1 w-full max-w-[160px] cursor-not-allowed rounded-lg border border-stone-200 bg-stone-100 px-3 py-2 font-body text-sm text-[var(--color-ink-muted)] outline-none dark:border-stone-700 dark:bg-stone-900"
+          />
+        </div>
+      );
+    }
     return (
       <div>
         <label className="block font-body text-sm text-[var(--color-ink-muted)]">

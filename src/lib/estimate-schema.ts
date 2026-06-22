@@ -102,6 +102,10 @@ export interface FormFieldDef {
   defaultHasOptions?: boolean;
   /** options_check で、ライセンス数をチェックボックス右側にインライン入力させる際の保存先フィールド id */
   licenseCountsField?: string;
+  /** kind === "number" を表示専用（編集不可）にする。kintone 等で自動入力された値の確認表示に使う */
+  readOnly?: boolean;
+  /** kind === "number" を「新規」ライセンス数と同じ許可値プルダウンで入力させる */
+  licenseCountSelect?: boolean;
   required?: boolean;
   /** textarea の行数 */
   rows?: number;
@@ -414,8 +418,8 @@ export const ONPREM_NEW_FIELDS: FormFieldDef[] = [
 
 /** オンプレ ライセンス追加 */
 export const ONPREM_LICENSE_ADD_FIELDS: FormFieldDef[] = [
-  { id: "existingLicenseCount", labelJa: "既存ライセンス数", labelEn: "Existing license count", kind: "number", required: true },
-  { id: "addedLicenseCount", labelJa: "追加後ライセンス数", labelEn: "License count after addition", kind: "number", required: true },
+  { id: "existingLicenseCount", labelJa: "既存ライセンス数", labelEn: "Existing license count", kind: "number", readOnly: true, required: true },
+  { id: "addedLicenseCount", labelJa: "追加後ライセンス数", labelEn: "License count after addition", kind: "number", licenseCountSelect: true, required: true },
   { id: "existingMaintenanceStart", labelJa: "既存保守開始年月", labelEn: "Existing maintenance start (Y/M)", kind: "year_month", required: true },
   { id: "existingMaintenanceEnd", labelJa: "既存保守終了年月", labelEn: "Existing maintenance end (Y/M)", kind: "year_month", required: true },
   { id: "orderPlanned", labelJa: "発注予定年月", labelEn: "Planned order (Y/M)", kind: "year_month", required: true },
@@ -489,8 +493,8 @@ export const CLOUD_NEW_FIELDS: FormFieldDef[] = [
 
 /** クラウド 追加（ライセンスのみ） */
 export const CLOUD_LICENSE_ADD_FIELDS: FormFieldDef[] = [
-  { id: "existingLicenseCount", labelJa: "既存ライセンス数", labelEn: "Existing license count", kind: "number", required: true },
-  { id: "addedLicenseCount", labelJa: "追加後ライセンス数", labelEn: "License count after addition", kind: "number", required: true },
+  { id: "existingLicenseCount", labelJa: "既存ライセンス数", labelEn: "Existing license count", kind: "number", readOnly: true, required: true },
+  { id: "addedLicenseCount", labelJa: "追加後ライセンス数", labelEn: "License count after addition", kind: "number", licenseCountSelect: true, required: true },
   { id: "existingMaintenanceStart", labelJa: "既存保守開始年月", labelEn: "Existing maintenance start (Y/M)", kind: "year_month", required: true },
   { id: "existingMaintenanceEnd", labelJa: "既存保守終了年月", labelEn: "Existing maintenance end (Y/M)", kind: "year_month", required: true },
   { id: "orderPlanned", labelJa: "発注予定年月", labelEn: "Planned order (Y/M)", kind: "year_month", required: true },
