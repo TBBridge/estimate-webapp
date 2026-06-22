@@ -298,6 +298,9 @@ export function FormFieldRenderer({ field, value, formValues, onChange, locale }
                   </label>
                   {hasLicenseCount && countsFieldId && isChecked && (
                     <span className="flex items-center gap-1">
+                      <span className="font-body text-xs text-[var(--color-ink-muted)]">
+                        {t(locale, "estimate.licenses")}{locale === "en" ? ": " : "："}
+                      </span>
                       <input
                         type="number"
                         min={0}
@@ -311,7 +314,6 @@ export function FormFieldRenderer({ field, value, formValues, onChange, locale }
                         aria-label={`${locale === "en" ? opt.labelEn : opt.labelJa} ${t(locale, "estimate.licenses")}`}
                         className="w-20 rounded-lg border border-stone-300 bg-white px-2 py-1.5 font-body text-sm dark:border-stone-600 dark:bg-stone-800"
                       />
-                      <span className="font-body text-xs text-[var(--color-ink-muted)]">{t(locale, "estimate.licenses")}</span>
                     </span>
                   )}
                 </div>

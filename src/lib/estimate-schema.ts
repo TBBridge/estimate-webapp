@@ -44,10 +44,10 @@ export const OPTION_ITEMS = {
   conmasIoTProfessional: { id: "conmas_iot_professional", labelJa: "ConMas IoT professional版", labelEn: "ConMas IoT professional" },
   conmasIoTMappingTool: { id: "conmas_iot_mapping_tool", labelJa: "ConMas IoT MappingTOOL", labelEn: "ConMas IoT MappingTOOL" },
   iRepoLink: { id: "i_repo_link", labelJa: "i-Repo Link", labelEn: "i-Repo Link" },
-  iRepoEdgeOCR: { id: "i_repo_edge_ocr", labelJa: "i-Repo EdgeOCR", labelEn: "i-Repo EdgeOCR", hasLicenseCount: true },
   iRepoFreeDraw: { id: "i_repo_free_draw", labelJa: "i-Repo FreeDraw", labelEn: "i-Repo FreeDraw", hasLicenseCount: true },
   iRepoWorkFlow: { id: "i_repo_workflow", labelJa: "i-Repo WorkFlow", labelEn: "i-Repo WorkFlow", hasLicenseCount: true },
   iRepoScan: { id: "i_repo_scan", labelJa: "i-Repo Scan", labelEn: "i-Repo Scan", hasLicenseCount: true },
+  iRepoEdgeOCR: { id: "i_repo_edge_ocr", labelJa: "i-Repo EdgeOCR", labelEn: "i-Repo EdgeOCR", hasLicenseCount: true },
 } as const;
 
 /** 契約形態の選択肢（提供形態によって表示するものを制限） */
@@ -435,10 +435,10 @@ export const ONPREM_OPTION_ADD_FIELDS: FormFieldDef[] = [
       "conmasIoTProfessional",
       "conmasIoTMappingTool",
       "iRepoLink",
-      "iRepoEdgeOCR",
       "iRepoFreeDraw",
       "iRepoWorkFlow",
       "iRepoScan",
+      "iRepoEdgeOCR",
     ],
     // オプション追加は「有」を既定にし、ライセンス数はチェックボックス右側にインライン入力する
     defaultHasOptions: true,
@@ -452,7 +452,7 @@ export const ONPREM_OPTION_ADD_FIELDS: FormFieldDef[] = [
     labelJa: "オプション別ライセンス数",
     labelEn: "License count per option",
     kind: "option_license_counts",
-    optionIds: ["iRepoEdgeOCR", "iRepoFreeDraw", "iRepoWorkFlow", "iRepoScan"],
+    optionIds: ["iRepoFreeDraw", "iRepoWorkFlow", "iRepoScan", "iRepoEdgeOCR"],
     required: false,
   },
   { id: "existingMaintenanceStart", labelJa: "既存保守開始年月", labelEn: "Existing maintenance start (Y/M)", kind: "year_month", required: true },
