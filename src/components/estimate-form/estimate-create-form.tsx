@@ -99,11 +99,20 @@ export default function EstimateCreateForm() {
     ? getFormFields(deliveryType as DeliveryType, contractType as ContractType)
     : [];
 
+  // クラウド新規で「区切り」を選んだ場合は申請項目を出さず営業連絡の案内のみ表示
+  const showCloudPeriodContact = showCloudBilling && cloudBilling === "period";
+
   const showMainForm = Boolean(
     deliveryType &&
     contractType &&
-    (!showCloudBilling || cloudBilling)
+    (!showCloudBilling || cloudBilling === "annual")
   );
+
+  // クラウド新規でライセンス数が 100 以上のときシングルテナント構築の注意書きを表示
+  const showSingleTenantNote =
+    deliveryType === "cloud" &&
+    contractType === "new" &&
+    Number(values.licenseCount) >= 100;
 
   const showKintoneLookup =
     showMainForm &&
@@ -481,22 +490,10 @@ export default function EstimateCreateForm() {
                 ))}
               </div>
             </div>
-            {cloudBilling === "period" && (
-              <div>
-                <label className="block font-body text-sm text-[var(--color-ink-muted)]">
-                  {t(locale, "estimate.periodMonths")} *
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  value={(values.periodMonths as number) ?? ""}
-                  onChange={(e) =>
-                    update("periodMonths", e.target.value === "" ? undefined : Number(e.target.value))
-                  }
-                  required={cloudBilling === "period"}
-                  className="mt-1 w-full max-w-[160px] rounded-lg border border-stone-300 bg-white px-3 py-2 font-body text-sm text-[var(--color-ink)] outline-none focus:ring-2 focus:ring-[var(--color-brand)]/40 dark:border-stone-600 dark:bg-stone-800"
-                />
-              </div>
+            {showCloudPeriodContact && (
+              <p className="font-body text-sm font-medium text-red-600 dark:text-red-400" role="alert">
+                {t(locale, "estimate.cloudPeriodContactSales")}
+              </p>
             )}
           </div>
         )}
@@ -592,14 +589,20 @@ export default function EstimateCreateForm() {
                 </div>
               )}
               {formFields.map((f) => (
-                <FormFieldRenderer
-                  key={f.id}
-                  field={f}
-                  value={values[f.id]}
-                  formValues={values}
-                  onChange={(id, v) => update(id, v)}
-                  locale={locale}
-                />
+                <div key={f.id}>
+                  <FormFieldRenderer
+                    field={f}
+                    value={values[f.id]}
+                    formValues={values}
+                    onChange={(id, v) => update(id, v)}
+                    locale={locale}
+                  />
+                  {f.id === "licenseCount" && showSingleTenantNote && (
+                    <p className="mt-1.5 font-body text-sm font-medium text-red-600 dark:text-red-400" role="alert">
+                      {t(locale, "estimate.singleTenantNote")}
+                    </p>
+                  )}
+                </div>
               ))}
             </div>
 
