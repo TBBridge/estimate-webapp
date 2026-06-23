@@ -14,8 +14,8 @@ export const DELIVERY_TYPES = [
 
 export const CONTRACT_TYPES = [
   { value: "new", labelJa: "新規", labelEn: "New" },
-  { value: "license_add", labelJa: "ライセンス追加", labelEn: "License addition" },
-  { value: "option_add", labelJa: "オプション追加", labelEn: "Option addition" },
+  { value: "license_add", labelJa: "ライセンス追加", labelEn: "License Addition" },
+  { value: "option_add", labelJa: "オプション追加", labelEn: "Option Addition" },
 ] as const;
 
 /** kintone アプリ ID（要件仕様書 11.1） */

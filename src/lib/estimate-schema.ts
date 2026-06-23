@@ -54,12 +54,12 @@ export const OPTION_ITEMS = {
 export function getContractTypesForDelivery(deliveryType: DeliveryType): { value: ContractType; labelJa: string; labelEn: string }[] {
   const all: { value: ContractType; labelJa: string; labelEn: string }[] = [
     { value: "new", labelJa: "新規", labelEn: "New" },
-    { value: "license_add", labelJa: "ライセンス追加", labelEn: "License addition" },
-    { value: "option_add", labelJa: "オプション追加", labelEn: "Option addition" },
+    { value: "license_add", labelJa: "ライセンス追加", labelEn: "License Addition" },
+    { value: "option_add", labelJa: "オプション追加", labelEn: "Option Addition" },
   ];
   if (deliveryType === "onprem") return all;
   if (deliveryType === "subscription") return [{ value: "new", labelJa: "新規", labelEn: "New" }];
-  if (deliveryType === "cloud") return [{ value: "new", labelJa: "新規", labelEn: "New" }, { value: "license_add", labelJa: "ライセンス追加", labelEn: "License addition" }];
+  if (deliveryType === "cloud") return [{ value: "new", labelJa: "新規", labelEn: "New" }, { value: "license_add", labelJa: "ライセンス追加", labelEn: "License Addition" }];
   return all;
 }
 
@@ -128,20 +128,20 @@ export const END_USER_COMPANY_FIELDS: FormFieldDef[] = [
   {
     id: "userCompanyNameJa",
     labelJa: "会社名（正式名称）",
-    labelEn: "Company name (official legal name)",
+    labelEn: "Company Name (Official Legal Name)",
     kind: "text",
     required: true,
   },
-  { id: "userCompanyNameReading", labelJa: "会社名（略称のよみがな）", labelEn: "Company name (abbreviation reading)", kind: "text", required: false },
-  { id: "userContactLastName", labelJa: "担当者氏名（姓）", labelEn: "Contact last name", kind: "text", required: true },
-  { id: "userContactFirstName", labelJa: "担当者氏名（名）", labelEn: "Contact first name", kind: "text", required: true },
+  { id: "userCompanyNameReading", labelJa: "会社名（略称のよみがな）", labelEn: "Company Name (Abbreviation Reading)", kind: "text", required: false },
+  { id: "userContactLastName", labelJa: "担当者氏名（姓）", labelEn: "Contact Last Name", kind: "text", required: true },
+  { id: "userContactFirstName", labelJa: "担当者氏名（名）", labelEn: "Contact First Name", kind: "text", required: true },
   { id: "userDepartment", labelJa: "部署名", labelEn: "Department", kind: "text", required: true },
   { id: "userAddress", labelJa: "住所", labelEn: "Address", kind: "text", required: true },
-  { id: "userEmail", labelJa: "メールアドレス", labelEn: "Email address", kind: "email", required: true },
+  { id: "userEmail", labelJa: "メールアドレス", labelEn: "Email Address", kind: "email", required: true },
   {
     id: "userPhone",
     labelJa: "電話番号",
-    labelEn: "Phone number",
+    labelEn: "Phone Number",
     kind: "phone_country",
     dialField: "userPhoneDial",
     localField: "userPhoneLocal",
@@ -161,7 +161,7 @@ export const END_USER_COMPANY_FIELDS: FormFieldDef[] = [
   {
     id: "userReleaseLanguage",
     labelJa: "リリース案内言語（ユーザー）",
-    labelEn: "Release notice language (end user)",
+    labelEn: "Release Notice Language (End User)",
     kind: "radio",
     required: true,
     showWhen: { field: "userReleaseSubscription", equals: "yes" },
@@ -178,14 +178,14 @@ export const ESTIMATE_REQUESTER_FIELDS: FormFieldDef[] = [
   {
     id: "estimateRequesterName",
     labelJa: "担当者名",
-    labelEn: "Requester name",
+    labelEn: "Requester Name",
     kind: "text",
     required: true,
   },
   {
     id: "estimateRequesterEmail",
     labelJa: "連絡先メールアドレス",
-    labelEn: "Contact email address",
+    labelEn: "Contact Email Address",
     kind: "email",
     required: true,
   },
@@ -236,14 +236,14 @@ export function getEstimateRequesterContact(
 
 /** 販売代理店情報（申請書面上の連絡先） */
 export const SALES_AGENCY_CONTACT_FIELDS: FormFieldDef[] = [
-  { id: "salesAgencyName", labelJa: "代理店名", labelEn: "Agency name", kind: "text", required: true },
-  { id: "salesAgencyContactName", labelJa: "担当者氏名", labelEn: "Contact person name", kind: "text", required: true },
+  { id: "salesAgencyName", labelJa: "代理店名", labelEn: "Agency Name", kind: "text", required: true },
+  { id: "salesAgencyContactName", labelJa: "担当者氏名", labelEn: "Contact Person Name", kind: "text", required: true },
   { id: "salesAgencyDepartment", labelJa: "部署名", labelEn: "Department", kind: "text", required: true },
-  { id: "salesAgencyEmail", labelJa: "メールアドレス", labelEn: "Email address", kind: "email", required: true },
+  { id: "salesAgencyEmail", labelJa: "メールアドレス", labelEn: "Email Address", kind: "email", required: true },
   {
     id: "salesAgencyPhone",
     labelJa: "電話番号",
-    labelEn: "Phone number",
+    labelEn: "Phone Number",
     kind: "phone_country",
     dialField: "salesAgencyPhoneDial",
     localField: "salesAgencyPhoneLocal",
@@ -263,7 +263,7 @@ export const SALES_AGENCY_CONTACT_FIELDS: FormFieldDef[] = [
   {
     id: "salesReleaseLanguage",
     labelJa: "リリース案内言語（代理店）",
-    labelEn: "Release notice language (agency)",
+    labelEn: "Release Notice Language (Agency)",
     kind: "radio",
     required: true,
     showWhen: { field: "salesReleaseSubscription", equals: "yes" },
@@ -289,49 +289,49 @@ export const SALES_AGENCY_PRESERVED_KEYS: readonly string[] = (() => {
 
 /** 申込「用途」プルダウン */
 export const APPLICATION_PURPOSE_OPTIONS: RadioOptionDef[] = [
-  { value: "efficiency", labelJa: "業務効率化", labelEn: "Operational efficiency" },
-  { value: "compliance", labelJa: "法令・規制対応", labelEn: "Legal / regulatory compliance" },
-  { value: "quality", labelJa: "品質管理", labelEn: "Quality management" },
-  { value: "maintenance", labelJa: "設備保全・点検", labelEn: "Equipment maintenance / inspection" },
-  { value: "sales_service", labelJa: "営業・サービス支援", labelEn: "Sales / service support" },
+  { value: "efficiency", labelJa: "業務効率化", labelEn: "Operational Efficiency" },
+  { value: "compliance", labelJa: "法令・規制対応", labelEn: "Legal / Regulatory Compliance" },
+  { value: "quality", labelJa: "品質管理", labelEn: "Quality Management" },
+  { value: "maintenance", labelJa: "設備保全・点検", labelEn: "Equipment Maintenance / Inspection" },
+  { value: "sales_service", labelJa: "営業・サービス支援", labelEn: "Sales / Service Support" },
   { value: "other", labelJa: "その他", labelEn: "Other" },
 ];
 
 /** 申込「業種」プルダウン */
 export const APPLICATION_INDUSTRY_OPTIONS: RadioOptionDef[] = [
   { value: "manufacturing", labelJa: "製造業", labelEn: "Manufacturing" },
-  { value: "construction", labelJa: "建設・土木", labelEn: "Construction / civil engineering" },
-  { value: "energy", labelJa: "電力・エネルギー", labelEn: "Power / energy" },
-  { value: "logistics", labelJa: "運輸・物流", labelEn: "Transportation / logistics" },
-  { value: "it_comm", labelJa: "情報通信", labelEn: "IT / telecommunications" },
-  { value: "finance", labelJa: "金融・保険", labelEn: "Finance / insurance" },
-  { value: "medical", labelJa: "医療・福祉", labelEn: "Healthcare / welfare" },
-  { value: "government", labelJa: "官公庁・自治体", labelEn: "Government / public sector" },
-  { value: "retail", labelJa: "小売・流通", labelEn: "Retail / distribution" },
-  { value: "real_estate", labelJa: "不動産", labelEn: "Real estate" },
+  { value: "construction", labelJa: "建設・土木", labelEn: "Construction / Civil Engineering" },
+  { value: "energy", labelJa: "電力・エネルギー", labelEn: "Power / Energy" },
+  { value: "logistics", labelJa: "運輸・物流", labelEn: "Transportation / Logistics" },
+  { value: "it_comm", labelJa: "情報通信", labelEn: "IT / Telecommunications" },
+  { value: "finance", labelJa: "金融・保険", labelEn: "Finance / Insurance" },
+  { value: "medical", labelJa: "医療・福祉", labelEn: "Healthcare / Welfare" },
+  { value: "government", labelJa: "官公庁・自治体", labelEn: "Government / Public Sector" },
+  { value: "retail", labelJa: "小売・流通", labelEn: "Retail / Distribution" },
+  { value: "real_estate", labelJa: "不動産", labelEn: "Real Estate" },
   { value: "other", labelJa: "その他", labelEn: "Other" },
 ];
 
 /** 申込「提案状況」プルダウン */
 export const APPLICATION_PROPOSAL_STATUS_OPTIONS: RadioOptionDef[] = [
-  { value: "initial", labelJa: "初回アプローチ・ヒアリング", labelEn: "Initial approach / hearing" },
-  { value: "considering", labelJa: "検討中", labelEn: "Under consideration" },
-  { value: "proposal", labelJa: "提案・デモ実施中", labelEn: "Proposal / demo in progress" },
-  { value: "poc", labelJa: "PoC・実証実験", labelEn: "PoC / trial" },
-  { value: "quotation", labelJa: "見積提出済", labelEn: "Quotation submitted" },
-  { value: "verbal", labelJa: "口頭受注・内諾", labelEn: "Verbal commitment" },
-  { value: "order_pending", labelJa: "受注手続き中", labelEn: "Order processing" },
-  { value: "lost", labelJa: "失注・見送り", labelEn: "Lost / postponed" },
+  { value: "initial", labelJa: "初回アプローチ・ヒアリング", labelEn: "Initial Approach / Hearing" },
+  { value: "considering", labelJa: "検討中", labelEn: "Under Consideration" },
+  { value: "proposal", labelJa: "提案・デモ実施中", labelEn: "Proposal / Demo in Progress" },
+  { value: "poc", labelJa: "PoC・実証実験", labelEn: "PoC / Trial" },
+  { value: "quotation", labelJa: "見積提出済", labelEn: "Quotation Submitted" },
+  { value: "verbal", labelJa: "口頭受注・内諾", labelEn: "Verbal Commitment" },
+  { value: "order_pending", labelJa: "受注手続き中", labelEn: "Order Processing" },
+  { value: "lost", labelJa: "失注・見送り", labelEn: "Lost / Postponed" },
 ];
 
 /** 申込「受注見込み時期」プルダウン */
 export const APPLICATION_EXPECTED_ORDER_OPTIONS: RadioOptionDef[] = [
-  { value: "this_month", labelJa: "今月中", labelEn: "Within this month" },
-  { value: "next_month", labelJa: "翌月", labelEn: "Next month" },
-  { value: "within_3mo", labelJa: "3ヶ月以内", labelEn: "Within 3 months" },
-  { value: "within_6mo", labelJa: "6ヶ月以内", labelEn: "Within 6 months" },
-  { value: "this_fy", labelJa: "当会計年度内", labelEn: "Within this fiscal year" },
-  { value: "next_fy", labelJa: "来期以降", labelEn: "Next fiscal year or later" },
+  { value: "this_month", labelJa: "今月中", labelEn: "Within This Month" },
+  { value: "next_month", labelJa: "翌月", labelEn: "Next Month" },
+  { value: "within_3mo", labelJa: "3ヶ月以内", labelEn: "Within 3 Months" },
+  { value: "within_6mo", labelJa: "6ヶ月以内", labelEn: "Within 6 Months" },
+  { value: "this_fy", labelJa: "当会計年度内", labelEn: "Within This Fiscal Year" },
+  { value: "next_fy", labelJa: "来期以降", labelEn: "Next Fiscal Year or Later" },
   { value: "undecided", labelJa: "未定", labelEn: "Undecided" },
 ];
 
@@ -352,7 +352,7 @@ export const APPLICATION_DETAIL_EXTRA_FIELDS: FormFieldDef[] = [
   {
     id: "externalSystemApi",
     labelJa: "外部システム連携API",
-    labelEn: "External system integration API",
+    labelEn: "External System Integration API",
     kind: "radio",
     required: true,
     radioOptions: [
@@ -363,7 +363,7 @@ export const APPLICATION_DETAIL_EXTRA_FIELDS: FormFieldDef[] = [
   {
     id: "applicationPurpose",
     labelJa: "用途",
-    labelEn: "Purpose of use",
+    labelEn: "Purpose of Use",
     kind: "select",
     required: true,
     radioOptions: APPLICATION_PURPOSE_OPTIONS,
@@ -379,7 +379,7 @@ export const APPLICATION_DETAIL_EXTRA_FIELDS: FormFieldDef[] = [
   {
     id: "applicationProposalStatus",
     labelJa: "提案状況",
-    labelEn: "Proposal status",
+    labelEn: "Proposal Status",
     kind: "select",
     required: true,
     radioOptions: APPLICATION_PROPOSAL_STATUS_OPTIONS,
@@ -387,7 +387,7 @@ export const APPLICATION_DETAIL_EXTRA_FIELDS: FormFieldDef[] = [
   {
     id: "applicationExpectedOrder",
     labelJa: "受注見込み時期",
-    labelEn: "Expected order timing",
+    labelEn: "Expected Order Timing",
     kind: "select",
     required: true,
     radioOptions: APPLICATION_EXPECTED_ORDER_OPTIONS,
@@ -405,7 +405,7 @@ export function resolveCustomerDisplayName(formInputs: Record<string, unknown>):
 
 /** オンプレ 新規 */
 export const ONPREM_NEW_FIELDS: FormFieldDef[] = [
-  { id: "licenseCount", labelJa: "i-Reporter ライセンス数", labelEn: "i-Reporter license count", kind: "number", required: true },
+  { id: "licenseCount", labelJa: "i-Reporter ライセンス数", labelEn: "i-Reporter License Count", kind: "number", required: true },
   {
     id: "options",
     labelJa: "オプション有無",
@@ -418,16 +418,16 @@ export const ONPREM_NEW_FIELDS: FormFieldDef[] = [
 
 /** オンプレ ライセンス追加 */
 export const ONPREM_LICENSE_ADD_FIELDS: FormFieldDef[] = [
-  { id: "existingLicenseCount", labelJa: "既存ライセンス数", labelEn: "Existing license count", kind: "number", readOnly: true, required: true },
-  { id: "addedLicenseCount", labelJa: "追加後ライセンス数", labelEn: "License count after addition", kind: "number", licenseCountSelect: true, required: true },
-  { id: "existingMaintenanceStart", labelJa: "既存保守開始年月", labelEn: "Existing maintenance start (Y/M)", kind: "year_month", required: true },
-  { id: "existingMaintenanceEnd", labelJa: "既存保守終了年月", labelEn: "Existing maintenance end (Y/M)", kind: "year_month", required: true },
-  { id: "orderPlanned", labelJa: "発注予定年月", labelEn: "Planned order (Y/M)", kind: "year_month", required: true },
+  { id: "existingLicenseCount", labelJa: "既存ライセンス数", labelEn: "Existing License Count", kind: "number", readOnly: true, required: true },
+  { id: "addedLicenseCount", labelJa: "追加後ライセンス数", labelEn: "License Count After Addition", kind: "number", licenseCountSelect: true, required: true },
+  { id: "existingMaintenanceStart", labelJa: "既存保守開始年月", labelEn: "Existing Maintenance Start (Y/M)", kind: "year_month", required: true },
+  { id: "existingMaintenanceEnd", labelJa: "既存保守終了年月", labelEn: "Existing Maintenance End (Y/M)", kind: "year_month", required: true },
+  { id: "orderPlanned", labelJa: "発注予定年月", labelEn: "Planned Order (Y/M)", kind: "year_month", required: true },
 ];
 
 /** オンプレ オプション追加 */
 export const ONPREM_OPTION_ADD_FIELDS: FormFieldDef[] = [
-  { id: "existingLicenseCount", labelJa: "既存ライセンス数", labelEn: "Existing license count", kind: "number", required: true },
+  { id: "existingLicenseCount", labelJa: "既存ライセンス数", labelEn: "Existing License Count", kind: "number", required: true },
   {
     id: "options",
     labelJa: "オプション有無",
@@ -454,20 +454,20 @@ export const ONPREM_OPTION_ADD_FIELDS: FormFieldDef[] = [
     // 一覧・Excel・詳細表示で参照するためフィールド定義は残す（保存先は optionLicenseCounts）
     id: "optionLicenseCounts",
     labelJa: "オプション別ライセンス数",
-    labelEn: "License count per option",
+    labelEn: "License Count per Option",
     kind: "option_license_counts",
     optionIds: ["iRepoFreeDraw", "iRepoWorkFlow", "iRepoScan", "iRepoEdgeOCR"],
     required: false,
   },
-  { id: "existingMaintenanceStart", labelJa: "既存保守開始年月", labelEn: "Existing maintenance start (Y/M)", kind: "year_month", required: true },
-  { id: "existingMaintenanceEnd", labelJa: "既存保守終了年月", labelEn: "Existing maintenance end (Y/M)", kind: "year_month", required: true },
-  { id: "orderPlanned", labelJa: "発注予定年月", labelEn: "Planned order (Y/M)", kind: "year_month", required: true },
+  { id: "existingMaintenanceStart", labelJa: "既存保守開始年月", labelEn: "Existing Maintenance Start (Y/M)", kind: "year_month", required: true },
+  { id: "existingMaintenanceEnd", labelJa: "既存保守終了年月", labelEn: "Existing Maintenance End (Y/M)", kind: "year_month", required: true },
+  { id: "orderPlanned", labelJa: "発注予定年月", labelEn: "Planned Order (Y/M)", kind: "year_month", required: true },
 ];
 
 /** サブスク 新規 */
 export const SUBSCRIPTION_NEW_FIELDS: FormFieldDef[] = [
-  { id: "licenseCount", labelJa: "ライセンス数", labelEn: "License count", kind: "number", required: true },
-  { id: "contractMonths", labelJa: "契約月数", labelEn: "Contract months", kind: "number", required: true },
+  { id: "licenseCount", labelJa: "ライセンス数", labelEn: "License Count", kind: "number", required: true },
+  { id: "contractMonths", labelJa: "契約月数", labelEn: "Contract Months", kind: "number", required: true },
   {
     id: "options",
     labelJa: "オプション有無",
@@ -480,7 +480,7 @@ export const SUBSCRIPTION_NEW_FIELDS: FormFieldDef[] = [
 
 /** クラウド 新規（年額・区切り共通） */
 export const CLOUD_NEW_FIELDS: FormFieldDef[] = [
-  { id: "licenseCount", labelJa: "i-Reporter ライセンス数", labelEn: "i-Reporter license count", kind: "number", required: true },
+  { id: "licenseCount", labelJa: "i-Reporter ライセンス数", labelEn: "i-Reporter License Count", kind: "number", required: true },
   {
     id: "options",
     labelJa: "オプション有無",
@@ -493,11 +493,11 @@ export const CLOUD_NEW_FIELDS: FormFieldDef[] = [
 
 /** クラウド 追加（ライセンスのみ） */
 export const CLOUD_LICENSE_ADD_FIELDS: FormFieldDef[] = [
-  { id: "existingLicenseCount", labelJa: "既存ライセンス数", labelEn: "Existing license count", kind: "number", readOnly: true, required: true },
-  { id: "addedLicenseCount", labelJa: "追加後ライセンス数", labelEn: "License count after addition", kind: "number", licenseCountSelect: true, required: true },
-  { id: "existingMaintenanceStart", labelJa: "既存保守開始年月", labelEn: "Existing maintenance start (Y/M)", kind: "year_month", required: true },
-  { id: "existingMaintenanceEnd", labelJa: "既存保守終了年月", labelEn: "Existing maintenance end (Y/M)", kind: "year_month", required: true },
-  { id: "orderPlanned", labelJa: "発注予定年月", labelEn: "Planned order (Y/M)", kind: "year_month", required: true },
+  { id: "existingLicenseCount", labelJa: "既存ライセンス数", labelEn: "Existing License Count", kind: "number", readOnly: true, required: true },
+  { id: "addedLicenseCount", labelJa: "追加後ライセンス数", labelEn: "License Count After Addition", kind: "number", licenseCountSelect: true, required: true },
+  { id: "existingMaintenanceStart", labelJa: "既存保守開始年月", labelEn: "Existing Maintenance Start (Y/M)", kind: "year_month", required: true },
+  { id: "existingMaintenanceEnd", labelJa: "既存保守終了年月", labelEn: "Existing Maintenance End (Y/M)", kind: "year_month", required: true },
+  { id: "orderPlanned", labelJa: "発注予定年月", labelEn: "Planned Order (Y/M)", kind: "year_month", required: true },
 ];
 
 export function getFormFields(
