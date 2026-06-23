@@ -12,8 +12,9 @@ import { getHubSpotConfig } from "@/lib/hubspot-env";
 import {
   searchDealsByCompanyName,
   createDealByCompanyName,
-  updateDealEstimatedAmount,
 } from "@/lib/hubspot-deals";
+import { addEstimateNoteToDeal } from "@/lib/hubspot-notes";
+import { buildEstimateNoteBody } from "@/lib/hubspot-estimate-note-body";
 import { randomBytes } from "crypto";
 import { updateExcelHubSpotNo } from "@/lib/excel-writer";
 import { generateEstimatePdfAndSave } from "@/lib/estimate-pdf-generate";
@@ -415,14 +416,8 @@ export async function PUT(req: Request, { params }: Params) {
 
           if (chosenExistingId) {
             finalDealId = chosenExistingId;
-            // 既存取引にも見積金額を反映（失敗しても承認は成功させる）
-            const upd = await updateDealEstimatedAmount(hubCfg, finalDealId, estimatedAmount);
-            if (!upd.ok) {
-              console.warn(
-                "[estimates/id PUT] HubSpot 既存取引の見積金額更新失敗（承認は継続）:",
-                upd.error
-              );
-            }
+            // 1 取引に複数見積を集約するため、既存取引の金額プロパティは上書きしない。
+            // 各見積の内容は後段でメモ（Note）として deal に追加する。
             hubspotSync = {
               ok: true,
               action: "existing",
@@ -555,6 +550,75 @@ export async function PUT(req: Request, { params }: Params) {
         } catch (pdfErr) {
           const pdfMsg = pdfErr instanceof Error ? pdfErr.message : String(pdfErr);
           console.error("[estimates/id PUT] PDF 再生成失敗（承認・Excel 更新は完了）:", pdfMsg);
+        }
+      }
+
+      // ── HubSpot 取引にメモ（Note）を追加し、最新 PDF を添付 ──────────
+      // 1 取引に複数見積を集約するため、見積内容を 1 メモとして deal に登録する。
+      // メモは「既存取引にマッチして紐付けた場合（action=existing）」のみ追加する。
+      // 0 件マッチや「新規作成」で取引を作った場合（action=created）はメモを追加しない。
+      // 失敗しても承認自体は完了扱いとし、結果は hubspotSync に載せて返す。
+      const noteCfg = getHubSpotConfig();
+      const shouldAddNote =
+        hubspotSync && hubspotSync.ok && "action" in hubspotSync && hubspotSync.action === "existing";
+      if (noteCfg && shouldAddNote) {
+        try {
+          // PDF は Excel C13 更新後に再生成されている可能性があるため最新値を取り直す
+          const pdfRows = await sql`SELECT pdf_url FROM estimates WHERE id = ${id}`;
+          const pdfUrl = String((pdfRows[0] as { pdf_url?: unknown })?.pdf_url ?? "").trim();
+          let pdf: { buffer: Buffer; fileName: string } | null = null;
+          if (pdfUrl) {
+            const pdfRes = await fetch(pdfUrl, { cache: "no-store" });
+            if (pdfRes.ok) {
+              const ab = await pdfRes.arrayBuffer();
+              pdf = {
+                buffer: Buffer.from(new Uint8Array(ab)),
+                fileName: `${sanitizeEstimateNoForBlobPath(r.no)}.pdf`,
+              };
+            } else {
+              console.warn(`[estimates/id PUT] メモ添付用 PDF 取得失敗: HTTP ${pdfRes.status}`);
+            }
+          }
+
+          const noteBody = buildEstimateNoteBody({
+            customerName: r.customer_name,
+            agencyName: r.agency_name,
+            deliveryType: r.delivery_type,
+            contractType: r.contract_type,
+            amount: Number(r.amount ?? 0),
+            maintenanceFee: Number(r.maintenance_fee ?? 0),
+            formInputs: (r.form_inputs as Record<string, unknown>) ?? {},
+          });
+
+          const noteRes = await addEstimateNoteToDeal(noteCfg, {
+            dealId: finalDealId,
+            body: noteBody,
+            pdf,
+          });
+
+          if (hubspotSync && hubspotSync.ok && "action" in hubspotSync) {
+            if (noteRes.ok) {
+              hubspotSync = {
+                ...hubspotSync,
+                noteCreated: true,
+                noteAttachmentUploaded: noteRes.attachmentUploaded,
+              };
+              console.log("[estimates/id PUT] HubSpot メモ作成完了, noteId=", noteRes.noteId);
+            } else {
+              hubspotSync = {
+                ...hubspotSync,
+                noteCreated: false,
+                noteError: noteRes.error.slice(0, 300),
+              };
+              console.warn("[estimates/id PUT] HubSpot メモ作成失敗（承認は完了）:", noteRes.error);
+            }
+          }
+        } catch (noteErr) {
+          const noteMsg = noteErr instanceof Error ? noteErr.message : String(noteErr);
+          console.error("[estimates/id PUT] HubSpot メモ作成で例外（承認は完了）:", noteMsg);
+          if (hubspotSync && hubspotSync.ok && "action" in hubspotSync) {
+            hubspotSync = { ...hubspotSync, noteCreated: false, noteError: noteMsg.slice(0, 300) };
+          }
         }
       }
     }

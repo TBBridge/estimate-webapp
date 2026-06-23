@@ -47,7 +47,7 @@ type HubSpotErrorBody = {
   errors?: Array<{ message?: string; context?: Record<string, unknown> }>;
 };
 
-function formatHubSpotErrorBody(status: number, text: string): string {
+export function formatHubSpotErrorBody(status: number, text: string): string {
   let detail = text.slice(0, 2000);
   try {
     const j = JSON.parse(text) as HubSpotErrorBody;
@@ -68,7 +68,7 @@ function formatHubSpotErrorBody(status: number, text: string): string {
   return `HubSpot API ${status}: ${detail}`;
 }
 
-async function hubspotFetchJson<T>(
+export async function hubspotFetchJson<T>(
   config: HubSpotConfig,
   method: string,
   path: string,

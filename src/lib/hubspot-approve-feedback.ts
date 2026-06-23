@@ -3,7 +3,19 @@ import { t } from "@/lib/translations";
 
 /** PUT /api/estimates/[id] approved の HubSpot 同期結果 DTO */
 export type HubSpotSyncResultDto =
-  | { ok: true; action: "created" | "existing"; dealId: string; excelUpdated: boolean; pdfRegenerated?: boolean }
+  | {
+      ok: true;
+      action: "created" | "existing";
+      dealId: string;
+      excelUpdated: boolean;
+      pdfRegenerated?: boolean;
+      /** deal にメモ（Note）を作成できたか */
+      noteCreated?: boolean;
+      /** メモに PDF を添付できたか */
+      noteAttachmentUploaded?: boolean;
+      /** メモ作成に失敗したときの理由 */
+      noteError?: string;
+    }
   | { ok: true; skipped: true; reason: string }
   | { ok: false; error: string };
 
@@ -92,6 +104,10 @@ export function alertHubSpotSyncAfterApprove(
       alert(t(locale, "admin.estimates.hubspotCreated", { dealId: sync.dealId }));
     } else if (sync.action === "existing") {
       alert(t(locale, "admin.estimates.hubspotExisting", { dealId: sync.dealId }));
+    }
+    // メモ追加に失敗していた場合は別途警告（承認自体は完了している）
+    if (sync.noteError) {
+      alert(t(locale, "admin.estimates.hubspotNoteFailed", { detail: sync.noteError }));
     }
   }
 }
