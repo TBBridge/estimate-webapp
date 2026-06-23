@@ -427,7 +427,7 @@ export const ONPREM_LICENSE_ADD_FIELDS: FormFieldDef[] = [
 
 /** オンプレ オプション追加 */
 export const ONPREM_OPTION_ADD_FIELDS: FormFieldDef[] = [
-  { id: "existingLicenseCount", labelJa: "既存ライセンス数", labelEn: "Existing License Count", kind: "number", required: true },
+  { id: "existingLicenseCount", labelJa: "既存ライセンス数", labelEn: "Existing License Count", kind: "number", readOnly: true, required: true },
   {
     id: "options",
     labelJa: "オプション有無",
