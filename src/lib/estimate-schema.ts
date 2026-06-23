@@ -40,9 +40,9 @@ export function isValidLicenseCountValue(v: unknown): boolean {
 /** オプション有無で選べる項目（オンプレ・サブスク・クラウドで一部異なる） */
 export const OPTION_ITEMS = {
   webApi: { id: "web_api", labelJa: "Web API Module Set (for external system coordination)", labelEn: "Web API Module Set (for external system coordination)" },
-  conmasIoTStandard: { id: "conmas_iot_standard", labelJa: "ConMas IoT standard版", labelEn: "ConMas IoT standard" },
-  conmasIoTProfessional: { id: "conmas_iot_professional", labelJa: "ConMas IoT professional版", labelEn: "ConMas IoT professional" },
-  conmasIoTMappingTool: { id: "conmas_iot_mapping_tool", labelJa: "ConMas IoT MappingTOOL", labelEn: "ConMas IoT MappingTOOL" },
+  conmasIoTStandard: { id: "conmas_iot_standard", labelJa: "i-Repo IoT standard版", labelEn: "i-Repo IoT standard" },
+  conmasIoTProfessional: { id: "conmas_iot_professional", labelJa: "i-Repo IoT professional版", labelEn: "i-Repo IoT professional" },
+  conmasIoTMappingTool: { id: "conmas_iot_mapping_tool", labelJa: "i-Repo IoT MappingTOOL", labelEn: "i-Repo IoT MappingTOOL" },
   iRepoLink: { id: "i_repo_link", labelJa: "i-Repo Link", labelEn: "i-Repo Link" },
   iRepoFreeDraw: { id: "i_repo_free_draw", labelJa: "i-Repo FreeDraw", labelEn: "i-Repo FreeDraw", hasLicenseCount: true },
   iRepoWorkFlow: { id: "i_repo_workflow", labelJa: "i-Repo WorkFlow", labelEn: "i-Repo WorkFlow", hasLicenseCount: true },
@@ -150,7 +150,7 @@ export const END_USER_COMPANY_FIELDS: FormFieldDef[] = [
   {
     id: "userReleaseSubscription",
     labelJa: "リリース配信登録（ユーザー）",
-    labelEn: "Release notification registration (end user)",
+    labelEn: "Newsletter Subscription (End User)",
     kind: "radio",
     required: true,
     radioOptions: [
@@ -252,7 +252,7 @@ export const SALES_AGENCY_CONTACT_FIELDS: FormFieldDef[] = [
   {
     id: "salesReleaseSubscription",
     labelJa: "リリース配信登録（代理店）",
-    labelEn: "Release notification registration (agency)",
+    labelEn: "Newsletter Subscription (Agency)",
     kind: "radio",
     required: true,
     radioOptions: [

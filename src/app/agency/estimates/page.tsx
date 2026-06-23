@@ -212,7 +212,7 @@ export default function AgencyEstimatesPage() {
                         </button>
                       </th>
                     ))}
-                    <th className="px-4 py-3 text-left font-medium text-[var(--color-ink-muted)]">見積書</th>
+                    <th className="px-4 py-3 text-left font-medium text-[var(--color-ink-muted)]">{l("admin.estimates.estimateDocuments")}</th>
                   </tr>
                 </thead>
                 <tbody>
