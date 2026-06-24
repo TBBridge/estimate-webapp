@@ -12,6 +12,17 @@ function contractTypeLabelJa(raw: string): string {
   return CONTRACT_TYPES.find((c) => c.value === raw)?.labelJa ?? raw;
 }
 
+/**
+ * HubSpot の商談区分（ステータス）に送る値。
+ * 新規はそのまま「新規」、ライセンス追加・オプション追加は「更新」に集約する。
+ */
+function hubspotNegotiationValue(raw: string): string {
+  if (raw === "license_add" || raw === "option_add") {
+    return "更新";
+  }
+  return contractTypeLabelJa(raw);
+}
+
 function buildDealName(config: HubSpotConfig, customerName: string, estimateNo?: string): string {
   const name = customerName.trim();
   if (config.dealNameIncludeEstimateNo && estimateNo?.trim()) {
@@ -381,7 +392,7 @@ async function applyDealRequiredAndExtraFields(
     properties.hubspot_owner_id = ownerId;
   }
   if (config.dealNegotiationProperty && input.contractType) {
-    properties[config.dealNegotiationProperty] = contractTypeLabelJa(input.contractType);
+    properties[config.dealNegotiationProperty] = hubspotNegotiationValue(input.contractType);
   }
   // 見積金額（本体 + 保守料 の合計）を、(1) カスタムプロパティ（HUBSPOT_DEAL_PROPERTY_AMOUNT、
   // 既定 estimated_amount）と (2) HubSpot 標準プロパティ "amount" の両方に書き込む。
