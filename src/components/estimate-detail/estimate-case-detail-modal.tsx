@@ -260,6 +260,11 @@ export function EstimateCaseDetailModal({
       await onRefreshEstimate(e.id);
       await mutate(() => true, undefined, { revalidate: true });
       setEditOpen(false);
+      // 編集で Excel を作り直した場合は PDF も再生成する。
+      // 重い PDF 変換はサーバ側で別リクエストに分離しているため、ここから呼び出す。
+      if ((data as { excelRegenerated?: boolean }).excelRegenerated) {
+        void handleGeneratePdf();
+      }
     } catch (err) {
       setEditError(String(err));
     } finally {

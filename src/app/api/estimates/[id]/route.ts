@@ -221,11 +221,12 @@ export async function PATCH(req: Request, { params }: Params) {
     `;
     const r = updated[0] as Record<string, unknown>;
 
-    // 編集内容（会社名・申請内容）を成果物へ反映するため Excel を再生成し、
-    // 続けて PDF も作り直す。再生成に失敗しても編集自体は成功扱いとし、
-    // 結果フラグだけ返す（DB の編集はすでに確定済み）。
+    // 編集内容（会社名・申請内容）を成果物へ反映するため Excel を再生成する。
+    // PDF 変換は重く（Gotenberg のコールドスタート等で）関数のタイムアウトを招くため、
+    // ここではインライン実行せず pdf_url をクリアするだけにとどめ、クライアントが
+    // 別リクエスト（POST /api/estimates/[id]/generate-pdf）で作り直す。
+    // 再生成に失敗しても編集自体は成功扱いとし、結果フラグだけ返す（編集は確定済み）。
     let excelRegenerated = false;
-    let pdfRegenerated = false;
     let regenerateError: string | undefined;
     try {
       const regen = await regenerateEstimateExcel(sql, id);
@@ -234,14 +235,6 @@ export async function PATCH(req: Request, { params }: Params) {
         r.excel_url = regen.excelUrl;
         r.excel_file_history = regen.excelFileHistory;
         r.pdf_url = "";
-        try {
-          const { pdfUrl } = await generateEstimatePdfAndSave(sql, id);
-          r.pdf_url = pdfUrl;
-          pdfRegenerated = true;
-        } catch (pdfErr) {
-          regenerateError = pdfErr instanceof Error ? pdfErr.message : String(pdfErr);
-          console.error("[estimates/id PATCH] PDF 再生成失敗（編集は確定済み）:", regenerateError);
-        }
       }
     } catch (excelErr) {
       regenerateError = excelErr instanceof Error ? excelErr.message : String(excelErr);
@@ -251,7 +244,6 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({
       ...jsonEstimateRow(r),
       excelRegenerated,
-      pdfRegenerated,
       ...(regenerateError ? { regenerateError } : {}),
     });
   } catch (e) {
