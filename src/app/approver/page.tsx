@@ -9,10 +9,7 @@ import { DELIVERY_TYPES, CONTRACT_TYPES } from "@/lib/constants";
 import { mutate } from "swr";
 import {
   alertHubSpotSyncAfterApprove,
-  buildHubSpotDuplicateConfirmMessage,
-  getHubSpotDuplicateFromPayload,
   getHubSpotDealSelectionFromPayload,
-  HUBSPOT_DUPLICATE_CANCELLED,
   HUBSPOT_DEAL_SELECTION_CANCELLED,
 } from "@/lib/hubspot-approve-feedback";
 import {
@@ -58,7 +55,6 @@ export default function ApproverPage() {
     status: "approved" | "rejected",
     options?: { selectedHubSpotDealId?: string }
   ) {
-    let confirmHubSpotDuplicate = false;
     let selectedHubSpotDealId: string | undefined = options?.selectedHubSpotDealId;
     for (let attempt = 0; attempt < 3; attempt++) {
       const res = await fetch(`/api/estimates/${id}`, {
@@ -66,14 +62,12 @@ export default function ApproverPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           status,
-          confirmHubSpotDuplicate,
           ...(selectedHubSpotDealId !== undefined ? { selectedHubSpotDealId } : {}),
         }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
         message?: string;
-        hubspotDuplicate?: unknown;
         hubspotDealSelection?: unknown;
       };
       if (res.ok) {
@@ -87,15 +81,6 @@ export default function ApproverPage() {
           if (!chosen) throw new Error(HUBSPOT_DEAL_SELECTION_CANCELLED);
           selectedHubSpotDealId = chosen;
           continue;
-        }
-        const dup = getHubSpotDuplicateFromPayload(data);
-        if (dup) {
-          const msg = buildHubSpotDuplicateConfirmMessage(locale, dup);
-          if (confirm(msg)) {
-            confirmHubSpotDuplicate = true;
-            continue;
-          }
-          throw new Error(HUBSPOT_DUPLICATE_CANCELLED);
         }
       }
       const errMsg =
@@ -209,8 +194,7 @@ export default function ApproverPage() {
                         .then((payload) => alertHubSpotSyncAfterApprove(locale, "approved", payload))
                         .catch((err) => {
                           const m = err instanceof Error ? err.message : String(err);
-                          if (m !== HUBSPOT_DUPLICATE_CANCELLED && m !== HUBSPOT_DEAL_SELECTION_CANCELLED)
-                            alert(m);
+                          if (m !== HUBSPOT_DEAL_SELECTION_CANCELLED) alert(m);
                         });
                     }}
                     disabled={!e.pdfUrl?.trim()}

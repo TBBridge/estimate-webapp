@@ -261,16 +261,13 @@ export async function PUT(req: Request, { params }: Params) {
     const { id } = await params;
     const body = (await req.json()) as {
       status: "approved" | "rejected";
-      /** クライアントが既存重複を確認済みかどうか（contract_type=new で単一重複ありの場合に必要） */
-      confirmHubSpotDuplicate?: boolean;
       /**
-       * 会社名で複数取引がマッチした場合に承認者/管理者が選択した取引 ID。
+       * 会社名で取引がマッチした場合に承認者/管理者が選択した取引 ID。
        * 特殊値 "__new__" は「新規取引を作成」を意味する。
        */
       selectedHubSpotDealId?: string;
     };
     const { status } = body;
-    const confirmHubSpotDuplicate = body.confirmHubSpotDuplicate === true;
     const selectedHubSpotDealId =
       typeof body.selectedHubSpotDealId === "string" && body.selectedHubSpotDealId.trim() !== ""
         ? body.selectedHubSpotDealId.trim()
@@ -335,39 +332,13 @@ export async function PUT(req: Request, { params }: Params) {
 
           const existing = await searchDealsByCompanyName(hubCfg, cur.customer_name);
 
-          // 複数マッチ + 選択未指定 → どの取引に紐付けるか承認者/管理者に選ばせる
-          if (
-            existing.length > 1 &&
-            selectedHubSpotDealId === undefined
-          ) {
+          // 既存取引が 1 件以上あり選択未指定 → どの取引に紐付けるか
+          // （または新規取引を作成するか）を承認者/管理者に選ばせる。
+          if (existing.length >= 1 && selectedHubSpotDealId === undefined) {
             return NextResponse.json(
               {
                 error: "hubspot_deal_selection_required",
                 hubspotDealSelection: {
-                  customerName: cur.customer_name,
-                  deals: existing.map((d) => ({
-                    id: d.id,
-                    dealName: d.dealName,
-                    customerName: d.customerName,
-                  })),
-                },
-              },
-              { status: 409 }
-            );
-          }
-
-          // 単一マッチ + contract_type=new + 未確認 → 従来の重複警告
-          if (
-            existing.length === 1 &&
-            cur.contract_type === "new" &&
-            !confirmHubSpotDuplicate &&
-            selectedHubSpotDealId === undefined
-          ) {
-            return NextResponse.json(
-              {
-                error: "duplicate_hubspot_deal",
-                hubspotDuplicate: {
-                  contractType: cur.contract_type,
                   customerName: cur.customer_name,
                   deals: existing.map((d) => ({
                     id: d.id,
@@ -401,10 +372,8 @@ export async function PUT(req: Request, { params }: Params) {
               }
               chosenExistingId = found.id;
             }
-          } else if (existing.length === 1) {
-            chosenExistingId = existing[0].id;
           }
-          // existing.length === 0 → wantsCreateNew/chosenExistingId 共に未設定 → 後段で新規作成
+          // existing.length === 0（マッチ無し）→ wantsCreateNew/chosenExistingId 共に未設定 → 後段で新規作成
 
           if (chosenExistingId) {
             finalDealId = chosenExistingId;

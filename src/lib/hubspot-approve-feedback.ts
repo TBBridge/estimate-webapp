@@ -19,43 +19,17 @@ export type HubSpotSyncResultDto =
   | { ok: true; skipped: true; reason: string }
   | { ok: false; error: string };
 
-/** ユーザーが重複承認確認をキャンセルしたことを示すエラー */
-export const HUBSPOT_DUPLICATE_CANCELLED = "hubspot_duplicate_cancelled";
-
-/** 複数取引マッチ時のユーザー選択キャンセルを示すエラー */
+/** 取引マッチ時のユーザー選択キャンセルを示すエラー */
 export const HUBSPOT_DEAL_SELECTION_CANCELLED = "hubspot_deal_selection_cancelled";
 
 /** 「新規取引を作成」を表す selectedHubSpotDealId の特殊値 */
 export const HUBSPOT_DEAL_SELECT_CREATE_NEW = "__new__";
 
-/** PUT のレスポンスから HubSpot の重複情報を取り出す（409 時に使う） */
-export type HubSpotDuplicatePayload = {
-  contractType: "new" | string;
-  customerName: string;
-  deals: Array<{ id: string; dealName: string; customerName?: string }>;
-};
-
-/** 複数マッチ時の取引選択要求ペイロード（409 時） */
+/** 取引マッチ時の取引選択要求ペイロード（409 時） */
 export type HubSpotDealSelectionPayload = {
   customerName: string;
   deals: Array<{ id: string; dealName: string; customerName?: string }>;
 };
-
-function isDuplicatePayload(x: unknown): x is HubSpotDuplicatePayload {
-  if (!x || typeof x !== "object") return false;
-  const o = x as Record<string, unknown>;
-  return (
-    typeof o.contractType === "string" &&
-    Array.isArray(o.deals)
-  );
-}
-
-export function getHubSpotDuplicateFromPayload(payload: unknown): HubSpotDuplicatePayload | undefined {
-  if (!payload || typeof payload !== "object") return undefined;
-  const raw = (payload as { hubspotDuplicate?: unknown }).hubspotDuplicate;
-  if (!isDuplicatePayload(raw)) return undefined;
-  return raw;
-}
 
 function isSelectionPayload(x: unknown): x is HubSpotDealSelectionPayload {
   if (!x || typeof x !== "object") return false;
@@ -110,26 +84,4 @@ export function alertHubSpotSyncAfterApprove(
       alert(t(locale, "admin.estimates.hubspotNoteFailed", { detail: sync.noteError }));
     }
   }
-}
-
-/** 重複時の確認メッセージ（承認者に提示する） */
-export function buildHubSpotDuplicateConfirmMessage(
-  locale: Locale,
-  duplicate: HubSpotDuplicatePayload
-): string {
-  const list = duplicate.deals
-    .slice(0, 5)
-    .map((d, i) => `  ${i + 1}. [${d.id}] ${d.dealName || d.customerName || ""}`)
-    .join("\n");
-  const more = duplicate.deals.length > 5 ? `\n  ... +${duplicate.deals.length - 5}` : "";
-  return (
-    t(locale, "admin.estimates.hubspotDuplicateWarning", {
-      customerName: duplicate.customerName,
-    }) +
-    "\n\n" +
-    list +
-    more +
-    "\n\n" +
-    t(locale, "admin.estimates.hubspotDuplicateProceedQuestion")
-  );
 }

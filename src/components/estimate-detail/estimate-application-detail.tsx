@@ -159,7 +159,7 @@ export function EstimateApplicationDetail({
                     count: String(hubspotDeals.deals.length),
                   })}
                 </p>
-                {selectionEnabled && hubspotDeals.deals.length > 1 ? (
+                {selectionEnabled && hubspotDeals.deals.length >= 1 ? (
                   <>
                     <p className="font-body text-xs text-[var(--color-ink-muted)]">
                       {t(locale, "admin.estimates.hubspotDealSelectionInlinePrompt")}
