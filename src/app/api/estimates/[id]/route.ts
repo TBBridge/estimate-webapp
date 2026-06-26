@@ -563,8 +563,18 @@ export async function PUT(req: Request, { params }: Params) {
                 ...hubspotSync,
                 noteCreated: true,
                 noteAttachmentUploaded: noteRes.attachmentUploaded,
+                ...(noteRes.attachmentError
+                  ? { noteAttachmentError: noteRes.attachmentError.slice(0, 300) }
+                  : {}),
               };
-              console.log("[estimates/id PUT] HubSpot メモ作成完了, noteId=", noteRes.noteId);
+              if (noteRes.attachmentError) {
+                console.warn(
+                  "[estimates/id PUT] HubSpot メモは作成、PDF 添付に失敗:",
+                  noteRes.attachmentError
+                );
+              } else {
+                console.log("[estimates/id PUT] HubSpot メモ作成完了, noteId=", noteRes.noteId);
+              }
             } else {
               hubspotSync = {
                 ...hubspotSync,

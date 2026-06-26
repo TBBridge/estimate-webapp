@@ -26,7 +26,9 @@ function noteFileFolderPath(): string {
 }
 
 function noteFileAccess(): string {
-  return process.env.HUBSPOT_NOTE_FILE_ACCESS?.trim() || "PUBLIC_NOT_INDEXED";
+  // HubSpot Files v3 の有効値は PUBLIC_INDEXABLE / PUBLIC_NOT_INDEXABLE / PRIVATE。
+  // 添付を CRM から閲覧できるよう既定は PUBLIC_NOT_INDEXABLE（URL 直アクセス可・検索非対象）。
+  return process.env.HUBSPOT_NOTE_FILE_ACCESS?.trim() || "PUBLIC_NOT_INDEXABLE";
 }
 
 /** hs_note_body は HTML として描画されるため、エスケープ＋改行を <br> に変換する */
@@ -50,7 +52,17 @@ async function uploadFileToHubSpot(
     form.append("file", blob, input.fileName);
     form.append("fileName", input.fileName);
     form.append("folderPath", noteFileFolderPath());
-    form.append("options", JSON.stringify({ access: noteFileAccess() }));
+    // options には access に加えて重複検証方針が必須。未指定だと検証エラーで失敗する。
+    // 承認のたびに新規ファイルとして登録するため NONE（重複チェックなし）にする。
+    form.append(
+      "options",
+      JSON.stringify({
+        access: noteFileAccess(),
+        overwrite: false,
+        duplicateValidationStrategy: "NONE",
+        duplicateValidationScope: "EXACT_FOLDER",
+      })
+    );
 
     const url = `${config.apiBase}/files/v3/files`;
     const res = await fetch(url, {
@@ -86,7 +98,7 @@ export type AddEstimateNoteInput = {
 };
 
 export type AddEstimateNoteResult =
-  | { ok: true; noteId: string; attachmentUploaded: boolean }
+  | { ok: true; noteId: string; attachmentUploaded: boolean; attachmentError?: string }
   | { ok: false; error: string };
 
 /**
@@ -100,6 +112,7 @@ export async function addEstimateNoteToDeal(
   try {
     let attachmentIds = "";
     let attachmentUploaded = false;
+    let attachmentError: string | undefined;
 
     if (input.pdf) {
       const up = await uploadFileToHubSpot(config, {
@@ -111,7 +124,8 @@ export async function addEstimateNoteToDeal(
         attachmentIds = up.fileId;
         attachmentUploaded = true;
       } else {
-        // 添付に失敗してもメモ本文は登録する（添付なし）
+        // 添付に失敗してもメモ本文は登録する（添付なし）。失敗理由は呼び出し側へ伝える。
+        attachmentError = up.error;
         console.warn("[hubspot-notes] PDF 添付アップロード失敗（メモは本文のみ作成）:", up.error);
       }
     }
@@ -144,7 +158,12 @@ export async function addEstimateNoteToDeal(
     if (!created.id) {
       return { ok: false, error: "HubSpot Note 作成のレスポンスに id がありません。" };
     }
-    return { ok: true, noteId: String(created.id), attachmentUploaded };
+    return {
+      ok: true,
+      noteId: String(created.id),
+      attachmentUploaded,
+      ...(attachmentError ? { attachmentError } : {}),
+    };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }

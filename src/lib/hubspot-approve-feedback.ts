@@ -15,6 +15,8 @@ export type HubSpotSyncResultDto =
       noteAttachmentUploaded?: boolean;
       /** メモ作成に失敗したときの理由 */
       noteError?: string;
+      /** メモは作成できたが PDF 添付に失敗したときの理由 */
+      noteAttachmentError?: string;
     }
   | { ok: true; skipped: true; reason: string }
   | { ok: false; error: string };
@@ -82,6 +84,13 @@ export function alertHubSpotSyncAfterApprove(
     // メモ追加に失敗していた場合は別途警告（承認自体は完了している）
     if (sync.noteError) {
       alert(t(locale, "admin.estimates.hubspotNoteFailed", { detail: sync.noteError }));
+    } else if (sync.noteAttachmentError) {
+      // メモは作成できたが PDF 添付のみ失敗
+      alert(
+        t(locale, "admin.estimates.hubspotNoteAttachmentFailed", {
+          detail: sync.noteAttachmentError,
+        })
+      );
     }
   }
 }
