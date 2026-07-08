@@ -2,7 +2,7 @@ export type Role = "admin" | "agency" | "approver";
 
 export const ROLES: Record<Role, { labelJa: string; labelEn: string }> = {
   admin: { labelJa: "自社管理者", labelEn: "Admin" },
-  agency: { labelJa: "代理店", labelEn: "Agency" },
+  agency: { labelJa: "代理店", labelEn: "Distributor" },
   approver: { labelJa: "承認者", labelEn: "Approver" },
 };
 

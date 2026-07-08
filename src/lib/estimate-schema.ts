@@ -236,7 +236,7 @@ export function getEstimateRequesterContact(
 
 /** 販売代理店情報（申請書面上の連絡先） */
 export const SALES_AGENCY_CONTACT_FIELDS: FormFieldDef[] = [
-  { id: "salesAgencyName", labelJa: "代理店名", labelEn: "Agency Name", kind: "text", required: true },
+  { id: "salesAgencyName", labelJa: "代理店名", labelEn: "Distributor Name", kind: "text", required: true },
   { id: "salesAgencyContactName", labelJa: "担当者氏名", labelEn: "Contact Person Name", kind: "text", required: true },
   { id: "salesAgencyDepartment", labelJa: "部署名", labelEn: "Department", kind: "text", required: true },
   { id: "salesAgencyEmail", labelJa: "メールアドレス", labelEn: "Email Address", kind: "email", required: true },
@@ -252,7 +252,7 @@ export const SALES_AGENCY_CONTACT_FIELDS: FormFieldDef[] = [
   {
     id: "salesReleaseSubscription",
     labelJa: "リリース配信登録（代理店）",
-    labelEn: "Newsletter Subscription (Agency)",
+    labelEn: "Newsletter Subscription (Distributor)",
     kind: "radio",
     required: true,
     radioOptions: [
@@ -263,7 +263,7 @@ export const SALES_AGENCY_CONTACT_FIELDS: FormFieldDef[] = [
   {
     id: "salesReleaseLanguage",
     labelJa: "リリース案内言語（代理店）",
-    labelEn: "Release Notice Language (Agency)",
+    labelEn: "Release Notice Language (Distributor)",
     kind: "radio",
     required: true,
     showWhen: { field: "salesReleaseSubscription", equals: "yes" },
