@@ -19,6 +19,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const rows = await sql`
       SELECT id, name, login_id, email, agency_type, contact_name, department,
              phone_country_code, phone_local,
+             hubspot_internal_name,
              approver_name, approver_email,
              TO_CHAR(created_at, 'YYYY-MM-DD') AS created_at
       FROM agencies
@@ -36,6 +37,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       department: r.department ?? "",
       phoneCountryCode: r.phone_country_code ?? "+81",
       phoneLocal: r.phone_local ?? "",
+      hubspotInternalName: r.hubspot_internal_name ?? "",
       approverName: r.approver_name,
       approverEmail: r.approver_email,
       createdAt: r.created_at,
@@ -64,6 +66,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     const department = String(b.department ?? "");
     const phoneCountryCode = String(b.phoneCountryCode ?? "+81");
     const phoneLocal = String(b.phoneLocal ?? "");
+    const hubspotInternalName = String(b.hubspotInternalName ?? "");
     const approverName = String(b.approverName ?? "");
     const approverEmail = String(b.approverEmail ?? "");
     if (!name || !isValidLoginId(loginId) || !email) {
@@ -85,10 +88,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               phone_local = ${phoneLocal},
               fax_country_code = ${"+81"},
               fax_local = ${""},
+              hubspot_internal_name = ${hubspotInternalName},
               approver_name = ${approverName}, approver_email = ${approverEmail}
           WHERE id = ${id}
           RETURNING id, name, login_id, email, agency_type, contact_name, department,
                     phone_country_code, phone_local,
+                    hubspot_internal_name,
                     approver_name, approver_email,
                     TO_CHAR(created_at, 'YYYY-MM-DD') AS created_at
         `
@@ -102,10 +107,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
               phone_local = ${phoneLocal},
               fax_country_code = ${"+81"},
               fax_local = ${""},
+              hubspot_internal_name = ${hubspotInternalName},
               approver_name = ${approverName}, approver_email = ${approverEmail}
           WHERE id = ${id}
           RETURNING id, name, login_id, email, agency_type, contact_name, department,
                     phone_country_code, phone_local,
+                    hubspot_internal_name,
                     approver_name, approver_email,
                     TO_CHAR(created_at, 'YYYY-MM-DD') AS created_at
         `;
@@ -121,6 +128,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       department: r.department ?? "",
       phoneCountryCode: r.phone_country_code ?? "+81",
       phoneLocal: r.phone_local ?? "",
+      hubspotInternalName: r.hubspot_internal_name ?? "",
       approverName: r.approver_name,
       approverEmail: r.approver_email,
       createdAt: r.created_at,

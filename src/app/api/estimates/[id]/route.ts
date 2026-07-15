@@ -278,11 +278,13 @@ export async function PUT(req: Request, { params }: Params) {
     }
 
     const curRows = await sql`
-      SELECT id, no, status, customer_name, contract_type,
-             agency_id, agency_name, delivery_type, cloud_billing,
-             pdf_url, excel_url, amount, maintenance_fee, form_inputs
-      FROM estimates
-      WHERE id = ${id}
+      SELECT e.id, e.no, e.status, e.customer_name, e.contract_type,
+             e.agency_id, e.agency_name, e.delivery_type, e.cloud_billing,
+             e.pdf_url, e.excel_url, e.amount, e.maintenance_fee, e.form_inputs,
+             a.hubspot_internal_name
+      FROM estimates e
+      LEFT JOIN agencies a ON a.id = e.agency_id
+      WHERE e.id = ${id}
     `;
     if (curRows.length === 0) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -302,6 +304,7 @@ export async function PUT(req: Request, { params }: Params) {
       amount: unknown;
       maintenance_fee: unknown;
       form_inputs: unknown;
+      hubspot_internal_name: string | null;
     };
 
     if (!String(cur.pdf_url ?? "").trim()) {
@@ -390,6 +393,7 @@ export async function PUT(req: Request, { params }: Params) {
             const created = await createDealByCompanyName(hubCfg, {
               agencyId: cur.agency_id,
               agencyName: cur.agency_name,
+              agencyHubspotInternalName: cur.hubspot_internal_name ?? "",
               customerName: cur.customer_name,
               contractType: cur.contract_type,
               estimateNo: cur.no,

@@ -31,6 +31,9 @@ ALTER TABLE agencies ADD COLUMN IF NOT EXISTS phone_local          TEXT NOT NULL
 -- FAX 列はアプリから未使用（互換のため残す。API では常に +81 / 空を書き込み）
 ALTER TABLE agencies ADD COLUMN IF NOT EXISTS fax_country_code    TEXT NOT NULL DEFAULT '+81';
 ALTER TABLE agencies ADD COLUMN IF NOT EXISTS fax_local            TEXT NOT NULL DEFAULT '';
+-- HubSpot 取引作成時、代理店選択プロパティ（ドロップダウン等）に送る内部名。
+-- HubSpot 側のラベル名と内部名が異なる場合に設定する。未設定（空）なら name（代理店名）を使う。
+ALTER TABLE agencies ADD COLUMN IF NOT EXISTS hubspot_internal_name TEXT NOT NULL DEFAULT '';
 
 -- 仕切り率（本製品: 代理店 × 製品 × 提供形態）
 CREATE TABLE IF NOT EXISTS margin_rates (

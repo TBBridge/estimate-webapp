@@ -14,6 +14,7 @@ export async function GET(req: Request) {
     const rows = await sql`
       SELECT id, name, login_id, email, agency_type, contact_name, department,
              phone_country_code, phone_local,
+             hubspot_internal_name,
              approver_name, approver_email,
              TO_CHAR(created_at, 'YYYY-MM-DD') AS created_at
       FROM agencies
@@ -30,6 +31,7 @@ export async function GET(req: Request) {
       department: r.department ?? "",
       phoneCountryCode: r.phone_country_code ?? "+81",
       phoneLocal: r.phone_local ?? "",
+      hubspotInternalName: r.hubspot_internal_name ?? "",
       approverName: r.approver_name,
       approverEmail: r.approver_email,
       createdAt: r.created_at,
@@ -63,6 +65,7 @@ export async function POST(req: Request) {
     const department = String(body.department ?? "");
     const phoneCountryCode = String(body.phoneCountryCode ?? "+81");
     const phoneLocal = String(body.phoneLocal ?? "");
+    const hubspotInternalName = String(body.hubspotInternalName ?? "");
     const approverName = String(body.approverName ?? "");
     const approverEmail = String(body.approverEmail ?? "");
     const rows = await sql`
@@ -70,6 +73,7 @@ export async function POST(req: Request) {
         name, login_id, email, login_password, password_hash, password_migrated_at,
         agency_type, contact_name, department,
         phone_country_code, phone_local, fax_country_code, fax_local,
+        hubspot_internal_name,
         approver_name, approver_email
       )
       VALUES (
@@ -78,10 +82,12 @@ export async function POST(req: Request) {
         ${contactName}, ${department},
         ${phoneCountryCode}, ${phoneLocal},
         ${"+81"}, ${""},
+        ${hubspotInternalName},
         ${approverName}, ${approverEmail}
       )
       RETURNING id, name, login_id, email, agency_type, contact_name, department,
                 phone_country_code, phone_local,
+                hubspot_internal_name,
                 approver_name, approver_email,
                 TO_CHAR(created_at, 'YYYY-MM-DD') AS created_at
     `;
@@ -96,6 +102,7 @@ export async function POST(req: Request) {
       department: r.department ?? "",
       phoneCountryCode: r.phone_country_code ?? "+81",
       phoneLocal: r.phone_local ?? "",
+      hubspotInternalName: r.hubspot_internal_name ?? "",
       approverName: r.approver_name,
       approverEmail: r.approver_email,
       createdAt: r.created_at,

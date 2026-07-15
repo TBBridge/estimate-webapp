@@ -14,6 +14,7 @@ const emptyForm = (): Omit<Agency, "id" | "createdAt"> => ({
   email: "",
   loginPassword: "",
   agencyType: "",
+  hubspotInternalName: "",
   contactName: "",
   department: "",
   phoneCountryCode: DEFAULT_DIAL_CODE,
@@ -78,6 +79,7 @@ export default function AdminAgentsPage() {
       email: ag.email,
       loginPassword: ag.loginPassword ?? "",
       agencyType: ag.agencyType ?? "",
+      hubspotInternalName: ag.hubspotInternalName ?? "",
       contactName: ag.contactName ?? "",
       department: ag.department ?? "",
       phoneCountryCode: ag.phoneCountryCode ?? DEFAULT_DIAL_CODE,
@@ -308,6 +310,12 @@ export default function AdminAgentsPage() {
               <div>
                 <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.agencyType")}</label>
                 <input type="text" value={form.agencyType ?? ""} onChange={(e) => setForm((p) => ({ ...p, agencyType: e.target.value }))} className={inputCls} />
+              </div>
+              {/* HubSpot 内部名 */}
+              <div>
+                <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.hubspotInternalName")}</label>
+                <input type="text" value={form.hubspotInternalName ?? ""} onChange={(e) => setForm((p) => ({ ...p, hubspotInternalName: e.target.value }))} className={inputCls} />
+                <p className="mt-1 font-body text-xs text-[var(--color-ink-muted)]">{t(locale, "admin.agents.hubspotInternalNameHint")}</p>
               </div>
               <div>
                 <label className="mb-1 block font-body text-sm text-[var(--color-ink-muted)]">{t(locale, "admin.agents.contactName")}</label>

@@ -31,11 +31,20 @@ function buildDealName(config: HubSpotConfig, customerName: string, estimateNo?:
   return name.slice(0, 500);
 }
 
-/** AND モードの代理店プロパティに送る値（HubSpot が UUID 用テキストか代理店名ドロップダウンかで切替） */
-function agencyFieldValue(config: HubSpotConfig, input: { agencyId: string; agencyName: string }): string {
-  return config.agencyMatchSends === "name"
-    ? String(input.agencyName ?? "").trim()
-    : String(input.agencyId ?? "").trim();
+/**
+ * AND モードの代理店プロパティに送る値（HubSpot が UUID 用テキストか代理店名ドロップダウンかで切替）。
+ * ドロップダウン（name）モードでは、代理店に HubSpot 内部名（hubspotInternalName）が
+ * 設定されていればラベル名の代わりにそちらを送る。未設定なら代理店名にフォールバックする。
+ */
+function agencyFieldValue(
+  config: HubSpotConfig,
+  input: { agencyId: string; agencyName: string; agencyHubspotInternalName?: string }
+): string {
+  if (config.agencyMatchSends !== "name") {
+    return String(input.agencyId ?? "").trim();
+  }
+  const internalName = String(input.agencyHubspotInternalName ?? "").trim();
+  return internalName || String(input.agencyName ?? "").trim();
 }
 
 type HubSpotSearchResult = {
@@ -105,7 +114,7 @@ export async function hubspotFetchJson<T>(
 
 function buildSearchBody(
   config: HubSpotConfig,
-  input: { agencyId: string; agencyName: string; customerName: string }
+  input: { agencyId: string; agencyName: string; agencyHubspotInternalName?: string; customerName: string }
 ): { filterGroups: Array<{ filters: Array<Record<string, string>> }>; limit: number; properties: string[] } {
   const { dedupe } = config;
   const props = new Set<string>(["dealname", "pipeline", "dealstage"]);
@@ -136,7 +145,11 @@ function buildSearchBody(
             {
               propertyName: dedupe.agencyProperty,
               operator: "EQ",
-              value: agencyFieldValue(config, { agencyId: input.agencyId, agencyName: input.agencyName }),
+              value: agencyFieldValue(config, {
+                agencyId: input.agencyId,
+                agencyName: input.agencyName,
+                agencyHubspotInternalName: input.agencyHubspotInternalName,
+              }),
             },
             { propertyName: dedupe.customerProperty, operator: "EQ", value: input.customerName.trim() },
           ],
@@ -412,6 +425,8 @@ async function applyDealRequiredAndExtraFields(
 export type FindOrCreateDealInput = {
   agencyId: string;
   agencyName: string;
+  /** HubSpot 内部名（未設定なら agencyName にフォールバック） */
+  agencyHubspotInternalName?: string;
   customerName: string;
   /** 見積番号（取引名に使用） */
   estimateNo: string;
@@ -436,6 +451,7 @@ export async function findOrCreateDeal(
     const searchBody = buildSearchBody(config, {
       agencyId: input.agencyId,
       agencyName: input.agencyName,
+      agencyHubspotInternalName: input.agencyHubspotInternalName,
       customerName: input.customerName,
     });
     const searched = await hubspotFetchJson<HubSpotSearchResult>(
@@ -468,6 +484,7 @@ export async function findOrCreateDeal(
       properties[dedupe.agencyProperty] = agencyFieldValue(config, {
         agencyId: input.agencyId,
         agencyName: input.agencyName,
+        agencyHubspotInternalName: input.agencyHubspotInternalName,
       });
       properties[dedupe.customerProperty] = input.customerName.trim();
     } else if (dedupe.kind === "customer") {
@@ -580,6 +597,8 @@ export async function searchDealsByCompanyName(
 export type CreateDealByCompanyInput = {
   agencyId: string;
   agencyName: string;
+  /** HubSpot 内部名（未設定なら agencyName にフォールバック） */
+  agencyHubspotInternalName?: string;
   customerName: string;
   /** DB の contract_type（商談区分に日本語ラベルを設定） */
   contractType: string;
@@ -616,6 +635,7 @@ export async function createDealByCompanyName(
       properties[dedupe.agencyProperty] = agencyFieldValue(config, {
         agencyId: input.agencyId,
         agencyName: input.agencyName,
+        agencyHubspotInternalName: input.agencyHubspotInternalName,
       });
       properties[dedupe.customerProperty] = customerName;
     } else if (dedupe.kind === "customer") {

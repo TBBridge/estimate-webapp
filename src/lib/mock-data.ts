@@ -15,6 +15,8 @@ export type Agency = {
   email: string;
   loginPassword?: string;
   agencyType?: string;
+  /** HubSpot 取引作成時に代理店選択プロパティへ送る内部名（未設定なら name を使用） */
+  hubspotInternalName?: string;
   /** 代理店側担当者名（見積フォーム初期値用） */
   contactName?: string;
   department?: string;
