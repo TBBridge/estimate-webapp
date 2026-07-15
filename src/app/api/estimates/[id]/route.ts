@@ -519,13 +519,11 @@ export async function PUT(req: Request, { params }: Params) {
       }
 
       // ── HubSpot 取引にメモ（Note）を追加し、最新 PDF を添付 ──────────
-      // 1 取引に複数見積を集約するため、見積内容を 1 メモとして deal に登録する。
-      // メモは「既存取引にマッチして紐付けた場合（action=existing）」のみ追加する。
-      // 0 件マッチや「新規作成」で取引を作った場合（action=created）はメモを追加しない。
+      // 既存取引への紐付け（action=existing）・新規取引の作成（action=created）
+      // のいずれでも、見積内容と見積書PDFを 1 メモとして deal に登録する。
       // 失敗しても承認自体は完了扱いとし、結果は hubspotSync に載せて返す。
       const noteCfg = getHubSpotConfig();
-      const shouldAddNote =
-        hubspotSync && hubspotSync.ok && "action" in hubspotSync && hubspotSync.action === "existing";
+      const shouldAddNote = hubspotSync && hubspotSync.ok && "action" in hubspotSync;
       if (noteCfg && shouldAddNote) {
         try {
           // PDF は Excel C13 更新後に再生成されている可能性があるため最新値を取り直す
