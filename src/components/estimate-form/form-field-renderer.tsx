@@ -252,6 +252,14 @@ export function FormFieldRenderer({ field, value, formValues, onChange, locale }
     const counts = countsFieldId
       ? ((formValues[countsFieldId] as Record<string, number | undefined>) ?? {})
       : {};
+    const capFieldId = field.licenseCountCapField;
+    const capRaw = capFieldId ? formValues[capFieldId] : undefined;
+    const capValue =
+      typeof capRaw === "number" && Number.isFinite(capRaw)
+        ? capRaw
+        : typeof capRaw === "string" && capRaw.trim() !== "" && Number.isFinite(Number(capRaw))
+          ? Number(capRaw)
+          : undefined;
     return (
       <div className="space-y-3">
         <div>
@@ -298,6 +306,7 @@ export function FormFieldRenderer({ field, value, formValues, onChange, locale }
               const opt = OPTION_ITEMS[key];
               if (!opt) return null;
               const hasLicenseCount = "hasLicenseCount" in opt && opt.hasLicenseCount;
+              const isSelectMode = "licenseCountMode" in opt && opt.licenseCountMode === "select";
               const isChecked = !!checked[key];
               return (
                 <div key={key} className="flex flex-wrap items-center gap-2" id={`${id}_${key}`}>
@@ -320,19 +329,42 @@ export function FormFieldRenderer({ field, value, formValues, onChange, locale }
                       <span className="font-body text-xs text-[var(--color-ink-muted)]">
                         {t(locale, "estimate.licenses")}{locale === "en" ? ": " : "："}
                       </span>
-                      <input
-                        type="number"
-                        min={0}
-                        value={counts[key] ?? ""}
-                        onChange={(e) =>
-                          onChange(countsFieldId, {
-                            ...counts,
-                            [key]: e.target.value === "" ? undefined : Number(e.target.value),
-                          })
-                        }
-                        aria-label={`${locale === "en" ? opt.labelEn : opt.labelJa} ${t(locale, "estimate.licenses")}`}
-                        className="w-20 rounded-lg border border-stone-300 bg-white px-2 py-1.5 font-body text-sm dark:border-stone-600 dark:bg-stone-800"
-                      />
+                      {isSelectMode ? (
+                        <select
+                          value={counts[key] ?? ""}
+                          onChange={(e) =>
+                            onChange(countsFieldId, {
+                              ...counts,
+                              [key]: e.target.value === "" ? undefined : Number(e.target.value),
+                            })
+                          }
+                          aria-label={`${locale === "en" ? opt.labelEn : opt.labelJa} ${t(locale, "estimate.licenses")}`}
+                          className="rounded-lg border border-stone-300 bg-white px-2 py-1.5 font-body text-sm dark:border-stone-600 dark:bg-stone-800"
+                        >
+                          <option value="">{t(locale, "common.selectPlaceholder")}</option>
+                          {(ALLOWED_I_REPORTER_LICENSE_COUNTS as readonly number[])
+                            .filter((c) => capValue === undefined || c <= capValue)
+                            .map((c) => (
+                              <option key={c} value={c}>
+                                {c}
+                              </option>
+                            ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="number"
+                          min={0}
+                          value={counts[key] ?? ""}
+                          onChange={(e) =>
+                            onChange(countsFieldId, {
+                              ...counts,
+                              [key]: e.target.value === "" ? undefined : Number(e.target.value),
+                            })
+                          }
+                          aria-label={`${locale === "en" ? opt.labelEn : opt.labelJa} ${t(locale, "estimate.licenses")}`}
+                          className="w-20 rounded-lg border border-stone-300 bg-white px-2 py-1.5 font-body text-sm dark:border-stone-600 dark:bg-stone-800"
+                        />
+                      )}
                     </span>
                   )}
                 </div>

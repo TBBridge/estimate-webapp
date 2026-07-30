@@ -44,8 +44,8 @@ export const OPTION_ITEMS = {
   conmasIoTProfessional: { id: "conmas_iot_professional", labelJa: "i-Repo IoT professional版", labelEn: "i-Repo IoT professional" },
   conmasIoTMappingTool: { id: "conmas_iot_mapping_tool", labelJa: "i-Repo IoT MappingTOOL", labelEn: "i-Repo IoT MappingTOOL" },
   iRepoLink: { id: "i_repo_link", labelJa: "i-Repo Link", labelEn: "i-Repo Link" },
-  iRepoFreeDraw: { id: "i_repo_free_draw", labelJa: "i-Repo FreeDraw", labelEn: "i-Repo FreeDraw", hasLicenseCount: true },
-  iRepoWorkFlow: { id: "i_repo_workflow", labelJa: "i-Repo WorkFlow", labelEn: "i-Repo WorkFlow", hasLicenseCount: true },
+  iRepoFreeDraw: { id: "i_repo_free_draw", labelJa: "i-Repo FreeDraw", labelEn: "i-Repo FreeDraw", hasLicenseCount: true, licenseCountMode: "select" },
+  iRepoWorkFlow: { id: "i_repo_workflow", labelJa: "i-Repo WorkFlow", labelEn: "i-Repo WorkFlow", hasLicenseCount: true, licenseCountMode: "select" },
   iRepoScan: { id: "i_repo_scan", labelJa: "i-Repo Scan", labelEn: "i-Repo Scan", hasLicenseCount: true },
   iRepoEdgeOCR: { id: "i_repo_edge_ocr", labelJa: "i-Repo EdgeOCR", labelEn: "i-Repo EdgeOCR", hasLicenseCount: true },
 } as const;
@@ -102,6 +102,8 @@ export interface FormFieldDef {
   defaultHasOptions?: boolean;
   /** options_check で、ライセンス数をチェックボックス右側にインライン入力させる際の保存先フィールド id */
   licenseCountsField?: string;
+  /** options_check のインラインライセンス数プルダウン（licenseCountMode: "select"）で選択上限とする i-Reporter ライセンス数フィールド id */
+  licenseCountCapField?: string;
   /** kind === "number" を表示専用（編集不可）にする。kintone 等で自動入力された値の確認表示に使う */
   readOnly?: boolean;
   /** kind === "number" を「新規」ライセンス数と同じ許可値プルダウンで入力させる */
@@ -423,6 +425,7 @@ export const ONPREM_NEW_FIELDS: FormFieldDef[] = [
       "iRepoEdgeOCR",
     ],
     licenseCountsField: "optionLicenseCounts",
+    licenseCountCapField: "licenseCount",
     required: false,
   },
   {
@@ -468,6 +471,7 @@ export const ONPREM_OPTION_ADD_FIELDS: FormFieldDef[] = [
     // オプション追加は「有」を既定にし、ライセンス数はチェックボックス右側にインライン入力する
     defaultHasOptions: true,
     licenseCountsField: "optionLicenseCounts",
+    licenseCountCapField: "existingLicenseCount",
     required: false,
   },
   {
