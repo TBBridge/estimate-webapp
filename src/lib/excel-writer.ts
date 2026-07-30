@@ -11,7 +11,9 @@
  *   C13: Hubspot NO（承認時に HubSpot 取引 ID を書き込む）
  *
  * オンプレ 新規（tpl-1）:
- *   C18: ライセンス数 / C21: オプション① / C24: オプション②
+ *   C18: ライセンス数 / C21: オプション① / C24: オプション②（ライセンス数付きオプションは含まない）
+ *   C27: WorkFlow / C28: ライセンス数、C31: FreeDraw / C32: ライセンス数
+ *   C35: Scan / C36: ライセンス数、C38: EdgeOCR / C39: ライセンス数
  *
  * オンプレ ライセンス追加（tpl-2）:
  *   C18: 既存ライセンス数 / C21: 追加ライセンス数
@@ -85,13 +87,14 @@ function parseYearMonth(ym: unknown): { year: string; month: string } {
 
 /**
  * options フィールドは { hasOptions: boolean, webApi: boolean, ... } 形式で送られてくる。
- * チェックされた（true の）オプションのラベル名を順番に返す。
+ * チェックされた（true の）オプションのラベル名を順番に返す。excludeKeys に含まれるキーは除外する。
  */
-function getCheckedOptionLabels(options: unknown): string[] {
+function getCheckedOptionLabels(options: unknown, excludeKeys: (keyof typeof OPTION_ITEMS)[] = []): string[] {
   if (!options || typeof options !== "object" || Array.isArray(options)) return [];
   const obj = options as Record<string, unknown>;
   const labels: string[] = [];
   for (const [key, val] of Object.entries(OPTION_ITEMS)) {
+    if (excludeKeys.includes(key as keyof typeof OPTION_ITEMS)) continue;
     if (obj[key] === true) {
       labels.push(val.labelJa);
     }
@@ -101,26 +104,56 @@ function getCheckedOptionLabels(options: unknown): string[] {
 
 const WEB_API_LABEL_JA = OPTION_ITEMS.webApi.labelJa;
 
+/** ライセンス数を個別セルに書き込むオプション（tpl-1 の C21/C24 には含めない） */
+const LICENSE_COUNT_OPTION_KEYS: (keyof typeof OPTION_ITEMS)[] = ["iRepoWorkFlow", "iRepoFreeDraw", "iRepoScan", "iRepoEdgeOCR"];
+
 /** 「外部システム連携API：あり」とオプションチェックを整合（C21 等に反映） */
 function getOptionLabelsForTemplate(
   formInputs: Record<string, unknown>,
-  optionsField: unknown
+  optionsField: unknown,
+  excludeKeys: (keyof typeof OPTION_ITEMS)[] = []
 ): string[] {
-  const labels = getCheckedOptionLabels(optionsField);
+  const labels = getCheckedOptionLabels(optionsField, excludeKeys);
   if (formInputs.externalSystemApi === "yes" && !labels.includes(WEB_API_LABEL_JA)) {
     return [WEB_API_LABEL_JA, ...labels];
   }
   return labels;
 }
 
-function firstOptionFromForm(formInputs: Record<string, unknown>): string {
-  const labels = getOptionLabelsForTemplate(formInputs, formInputs.options);
+function firstOptionFromForm(formInputs: Record<string, unknown>, excludeKeys: (keyof typeof OPTION_ITEMS)[] = []): string {
+  const labels = getOptionLabelsForTemplate(formInputs, formInputs.options, excludeKeys);
   return labels[0] ?? "オプションなし";
 }
 
-function secondOptionFromForm(formInputs: Record<string, unknown>): string {
-  const labels = getOptionLabelsForTemplate(formInputs, formInputs.options);
+function secondOptionFromForm(formInputs: Record<string, unknown>, excludeKeys: (keyof typeof OPTION_ITEMS)[] = []): string {
+  const labels = getOptionLabelsForTemplate(formInputs, formInputs.options, excludeKeys);
   return labels[1] ?? "オプションなし";
+}
+
+/** オンプレ新規（tpl-1）: ライセンス数付きオプションの個別セル（C27/28, C31/32, C35/36, C38/39） */
+function writeLicenseCountOptionCells(sheet: ExcelJS.Worksheet, formInputs: Record<string, unknown>) {
+  const options = formInputs.options;
+  const isChecked = (key: keyof typeof OPTION_ITEMS): boolean =>
+    !!options && typeof options === "object" && (options as Record<string, unknown>)[key] === true;
+  const counts = formInputs.optionLicenseCounts as Record<string, number> | undefined;
+  const countFor = (key: keyof typeof OPTION_ITEMS): number | undefined => counts?.[key];
+
+  if (isChecked("iRepoWorkFlow")) {
+    setCell(sheet, "C27", "i-Repo WorkFlow");
+    setCell(sheet, "C28", countFor("iRepoWorkFlow"));
+  }
+  if (isChecked("iRepoFreeDraw")) {
+    setCell(sheet, "C31", "i-Repo FreeDraw");
+    setCell(sheet, "C32", countFor("iRepoFreeDraw"));
+  }
+  if (isChecked("iRepoScan")) {
+    setCell(sheet, "C35", "i-Repo Scan Option license (Annual subscription license)");
+    setCell(sheet, "C36", countFor("iRepoScan"));
+  }
+  if (isChecked("iRepoEdgeOCR")) {
+    setCell(sheet, "C38", "i-Repo EdgeOCR Option license (Annual subscription license)");
+    setCell(sheet, "C39", countFor("iRepoEdgeOCR"));
+  }
 }
 
 export async function writeEstimateToTemplate(
@@ -166,13 +199,14 @@ export async function writeEstimateToTemplate(
   // ── パターン別フィールド ────────────────────────────
 
   if (deliveryType === "onprem" && contractType === "new") {
-    // tpl-1: ライセンス数・オプション①②
+    // tpl-1: ライセンス数・オプション①②・ライセンス数付きオプション個別欄
     setCell(sheet, "C18", formatLicenseCountForExcel(formInputs.licenseCount));
-    const opt1 = firstOptionFromForm(formInputs);
-    const opt2 = secondOptionFromForm(formInputs);
+    const opt1 = firstOptionFromForm(formInputs, LICENSE_COUNT_OPTION_KEYS);
+    const opt2 = secondOptionFromForm(formInputs, LICENSE_COUNT_OPTION_KEYS);
     setCell(sheet, "C21", opt1);
     setCell(sheet, "C24", opt2);
-    console.log(`[excel-writer] onprem/new: C18=${formInputs.licenseCount} C21=${opt1} C24=${opt2}`);
+    writeLicenseCountOptionCells(sheet, formInputs);
+    console.log(`[excel-writer] onprem/new: C18=${formInputs.licenseCount} C21=${opt1} C24=${opt2} optionLicenseCounts=${JSON.stringify(formInputs.optionLicenseCounts)}`);
 
   } else if (deliveryType === "onprem" && contractType === "license_add") {
     // tpl-2: 既存/追加ライセンス数・保守期間・発注予定
