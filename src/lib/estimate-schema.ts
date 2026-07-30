@@ -411,7 +411,28 @@ export const ONPREM_NEW_FIELDS: FormFieldDef[] = [
     labelJa: "オプション有無",
     labelEn: "Options",
     kind: "options_check",
-    optionIds: ["webApi", "conmasIoTStandard", "conmasIoTProfessional", "conmasIoTMappingTool", "iRepoLink"],
+    optionIds: [
+      "webApi",
+      "conmasIoTStandard",
+      "conmasIoTProfessional",
+      "conmasIoTMappingTool",
+      "iRepoLink",
+      "iRepoFreeDraw",
+      "iRepoWorkFlow",
+      "iRepoScan",
+      "iRepoEdgeOCR",
+    ],
+    licenseCountsField: "optionLicenseCounts",
+    required: false,
+  },
+  {
+    // ライセンス数は options_check 内にインライン表示するため入力欄は描画しないが、
+    // 一覧・Excel・詳細表示で参照するためフィールド定義は残す（保存先は optionLicenseCounts）
+    id: "optionLicenseCounts",
+    labelJa: "オプション別ライセンス数",
+    labelEn: "License Count per Option",
+    kind: "option_license_counts",
+    optionIds: ["iRepoFreeDraw", "iRepoWorkFlow", "iRepoScan", "iRepoEdgeOCR"],
     required: false,
   },
 ];
